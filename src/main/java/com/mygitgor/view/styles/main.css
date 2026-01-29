@@ -1,0 +1,325 @@
+.root {
+    -fx-font-family: 'Segoe UI', Arial, sans-serif;
+    -fx-font-size: 14px;
+    -fx-background-color: #f5f7fa;
+}
+
+/* Заголовки */
+.title {
+    -fx-font-size: 24px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #2c3e50;
+}
+
+.subtitle {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #34495e;
+}
+
+/* Кнопки */
+.button {
+    -fx-background-color: #3498db;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-padding: 10px 20px;
+    -fx-border-radius: 5px;
+    -fx-background-radius: 5px;
+    -fx-cursor: hand;
+}
+
+.button:hover {
+    -fx-background-color: #2980b9;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.2), 10, 0, 0, 2);
+}
+
+.button:pressed {
+    -fx-background-color: #1c5a7a;
+}
+
+.button-primary {
+    -fx-background-color: linear-gradient(to bottom, #3498db, #2980b9);
+}
+
+.button-success {
+    -fx-background-color: #2ecc71;
+}
+
+.button-success:hover {
+    -fx-background-color: #27ae60;
+}
+
+.button-danger {
+    -fx-background-color: #e74c3c;
+}
+
+.button-danger:hover {
+    -fx-background-color: #c0392b;
+}
+
+.button-warning {
+    -fx-background-color: #f39c12;
+}
+
+.button-warning:hover {
+    -fx-background-color: #d35400;
+}
+
+/* Текстовые поля */
+.text-field, .text-area {
+    -fx-background-color: white;
+    -fx-border-color: #bdc3c7;
+    -fx-border-radius: 4px;
+    -fx-padding: 8px;
+    -fx-font-size: 14px;
+}
+
+.text-field:focused, .text-area:focused {
+    -fx-border-color: #3498db;
+    -fx-border-width: 2px;
+}
+
+/* Панели */
+.panel {
+    -fx-background-color: white;
+    -fx-border-color: #ecf0f1;
+    -fx-border-radius: 8px;
+    -fx-padding: 15px;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.1), 10, 0, 0, 2);
+}
+
+.chat-panel {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #dfe6e9;
+}
+
+.analysis-panel {
+    -fx-background-color: #f8f9fa;
+    -fx-border-color: #dfe6e9;
+}
+
+/* Метки */
+.label {
+    -fx-text-fill: #2c3e50;
+}
+
+.label-info {
+    -fx-text-fill: #3498db;
+}
+
+.label-success {
+    -fx-text-fill: #27ae60;
+}
+
+.label-warning {
+    -fx-text-fill: #f39c12;
+}
+
+.label-error {
+    -fx-text-fill: #e74c3c;
+}
+
+/* Progress bar */
+.progress-bar {
+    -fx-accent: #3498db;
+}
+
+.progress-bar .track {
+    -fx-background-color: #ecf0f1;
+    -fx-background-radius: 5px;
+}
+
+/* Индикатор записи */
+.recording-indicator {
+    -fx-accent: #e74c3c;
+}
+
+/* Сплит панель */
+.split-pane {
+    -fx-background-color: transparent;
+}
+
+.split-pane-divider {
+    -fx-background-color: #dfe6e9;
+}
+
+/* Вкладки */
+.tab-pane {
+    -fx-background-color: white;
+}
+
+.tab {
+    -fx-background-color: #ecf0f1;
+    -fx-background-radius: 5px 5px 0 0;
+}
+
+.tab:selected {
+    -fx-background-color: #3498db;
+    -fx-text-fill: white;
+}
+
+/* Список */
+.list-view {
+    -fx-background-color: white;
+    -fx-border-color: #dfe6e9;
+}
+
+.list-cell {
+    -fx-padding: 10px;
+    -fx-border-color: #ecf0f1;
+    -fx-border-width: 0 0 1px 0;
+}
+
+.list-cell:filled:hover {
+    -fx-background-color: #f8f9fa;
+}
+
+.list-cell:filled:selected {
+    -fx-background-color: #3498db;
+    -fx-text-fill: white;
+}
+
+/* Полоса прокрутки */
+.scroll-bar:vertical,
+.scroll-bar:horizontal {
+    -fx-background-color: transparent;
+}
+
+.scroll-bar:vertical .track,
+.scroll-bar:horizontal .track {
+    -fx-background-color: #ecf0f1;
+    -fx-border-color: transparent;
+}
+
+.scroll-bar:vertical .thumb,
+.scroll-bar:horizontal .thumb {
+    -fx-background-color: #bdc3c7;
+    -fx-background-radius: 5px;
+}
+
+.scroll-bar:vertical .thumb:hover,
+.scroll-bar:horizontal .thumb:hover {
+    -fx-background-color: #95a5a6;
+}
+
+/* Статус бар */
+.status-bar {
+    -fx-background-color: #2c3e50;
+    -fx-text-fill: white;
+    -fx-padding: 5px 10px;
+}
+
+/* Анимации */
+@keyframes pulse {
+    0% { -fx-opacity: 1; }
+    50% { -fx-opacity: 0.5; }
+    100% { -fx-opacity: 1; }
+}
+
+.pulse {
+    -fx-animation: pulse 2s infinite;
+}
+
+/* Кастомные классы для чата */
+.chat-bubble-user {
+    -fx-background-color: #3498db;
+    -fx-background-radius: 15px 15px 0 15px;
+    -fx-padding: 10px 15px;
+    -fx-text-fill: white;
+    -fx-font-size: 14px;
+    -fx-max-width: 300px;
+}
+
+.chat-bubble-bot {
+    -fx-background-color: #ecf0f1;
+    -fx-background-radius: 15px 15px 15px 0;
+    -fx-padding: 10px 15px;
+    -fx-text-fill: #2c3e50;
+    -fx-font-size: 14px;
+    -fx-max-width: 300px;
+}
+
+.chat-timestamp {
+    -fx-font-size: 11px;
+    -fx-text-fill: #95a5a6;
+    -fx-font-style: italic;
+}
+
+/* Аватарки */
+.avatar {
+    -fx-background-color: #3498db;
+    -fx-background-radius: 50%;
+    -fx-min-width: 40px;
+    -fx-min-height: 40px;
+    -fx-max-width: 40px;
+    -fx-max-height: 40px;
+}
+
+.avatar-user {
+    -fx-background-color: #3498db;
+}
+
+.avatar-bot {
+    -fx-background-color: #2ecc71;
+}
+
+/* Иконки */
+.icon {
+    -fx-font-family: 'FontAwesome';
+    -fx-font-size: 16px;
+}
+
+.icon-microphone {
+    -fx-text-fill: #e74c3c;
+}
+
+.icon-send {
+    -fx-text-fill: #3498db;
+}
+
+.icon-settings {
+    -fx-text-fill: #95a5a6;
+}
+
+.icon-help {
+    -fx-text-fill: #f39c12;
+}
+
+/* Градиенты */
+.gradient-primary {
+    -fx-background-color: linear-gradient(to right, #3498db, #2980b9);
+}
+
+.gradient-success {
+    -fx-background-color: linear-gradient(to right, #2ecc71, #27ae60);
+}
+
+.gradient-warning {
+    -fx-background-color: linear-gradient(to right, #f39c12, #d35400);
+}
+
+/* Тени */
+.shadow-light {
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.1), 5, 0, 0, 1);
+}
+
+.shadow-medium {
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.2), 10, 0, 0, 2);
+}
+
+.shadow-heavy {
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.3), 15, 0, 0, 3);
+}
+
+/* Адаптивность */
+@media (max-width: 768px) {
+    .button {
+        -fx-padding: 8px 16px;
+        -fx-font-size: 12px;
+    }
+
+    .text-field, .text-area {
+        -fx-font-size: 12px;
+        -fx-padding: 6px;
+    }
+}

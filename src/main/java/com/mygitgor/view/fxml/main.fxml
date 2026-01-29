@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.text.*?>
+
+<VBox xmlns="http://javafx.com/javafx/17"
+      xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.mygitgor.chatbot.ChatBotController"
+      spacing="10"
+      style="-fx-background-color: #f5f7fa; -fx-padding: 15;"
+      stylesheets="@../styles/main.css">
+
+
+    <!-- Заголовок приложения -->
+    <HBox spacing="10" alignment="CENTER_LEFT" style="-fx-padding: 0 0 10 0;">
+        <Label text="🎤 SpeakAI" style="-fx-font-size: 28px; -fx-font-weight: bold; -fx-text-fill: #2c3e50;"/>
+        <Label text="Разговорный ИИ-бот с анализом речи" style="-fx-font-size: 16px; -fx-text-fill: #7f8c8d; -fx-padding: 5 0 0 0;"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Label fx:id="statusLabel" text="✅ Готов" style="-fx-font-size: 12px; -fx-text-fill: #27ae60;"/>
+    </HBox>
+
+    <!-- Основной контейнер -->
+    <SplitPane dividerPositions="0.7" VBox.vgrow="ALWAYS">
+
+        <!-- Левая часть: Чат -->
+        <VBox spacing="10" style="-fx-padding: 10;">
+            <!-- Заголовок чата -->
+            <HBox spacing="10" alignment="CENTER_LEFT">
+                <Label text="💬 Диалог с ИИ-репетитором"
+                       style="-fx-font-size: 18px; -fx-font-weight: bold;"/>
+                <Region HBox.hgrow="ALWAYS"/>
+                <Button fx:id="historyButton" text="📋 История"
+                        onAction="#onShowHistory"
+                        style="-fx-font-size: 12px;"/>
+                <Button fx:id="clearButton" text="🗑️ Очистить"
+                        onAction="#onClearChat"
+                        style="-fx-font-size: 12px; -fx-background-color: #e74c3c;"/>
+            </HBox>
+
+            <!-- Область чата -->
+            <TextArea fx:id="chatArea"
+                      editable="false"
+                      wrapText="true"
+                      VBox.vgrow="ALWAYS"
+                      style="-fx-font-family: 'Segoe UI'; -fx-font-size: 14px; -fx-background-color: white;"/>
+
+            <!-- Панель ввода -->
+            <VBox spacing="5" style="-fx-padding: 10; -fx-background-color: white; -fx-border-radius: 5;">
+                <Label text="Ваше сообщение:" style="-fx-font-weight: bold;"/>
+                <TextArea fx:id="inputField"
+                          promptText="Напишите сообщение на английском или запишите голос..."
+                          wrapText="true"
+                          prefRowCount="3"
+                          style="-fx-font-family: 'Segoe UI';"/>
+
+                <!-- Панель управления записью -->
+                <HBox spacing="10" alignment="CENTER_LEFT" style="-fx-padding: 5 0 0 0;">
+                    <Button fx:id="recordButton" text="🎤 Запись"
+                            onAction="#onStartRecording"
+                            style="-fx-background-color: #e74c3c;"/>
+                    <Button fx:id="stopButton" text="⏹️ Стоп"
+                            onAction="#onStopRecording"
+                            style="-fx-background-color: #95a5a6;" disabled="true"/>
+                    <ProgressIndicator fx:id="recordingIndicator"
+                                       visible="false"
+                                       style="-fx-progress-color: #e74c3c;"/>
+                    <Label fx:id="recordingTimeLabel" text="00:00"
+                           style="-fx-text-fill: #e74c3c; -fx-font-weight: bold;"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Button fx:id="analyzeButton" text="🔍 Анализ"
+                            style="-fx-background-color: #3498db;" disabled="true"/>
+                    <Button fx:id="pronunciationButton" text="🗣️ Тренажер"
+                            style="-fx-background-color: #2ecc71;" disabled="true"/>
+                    <Button fx:id="sendButton" text="📤 Отправить"
+                            onAction="#onSendMessage"
+                            style="-fx-background-color: #9b59b6; -fx-font-weight: bold;"/>
+                </HBox>
+
+                <!-- Прогресс анализа -->
+                <ProgressBar fx:id="analysisProgress"
+                             visible="false"
+                             style="-fx-accent: #3498db;"/>
+            </VBox>
+        </VBox>
+
+        <!-- Правая часть: Анализ -->
+        <VBox spacing="10" style="-fx-padding: 10;">
+            <!-- Заголовок анализа -->
+            <HBox spacing="10" alignment="CENTER_LEFT">
+                <Label text="📊 Анализ речи"
+                       style="-fx-font-size: 18px; -fx-font-weight: bold;"/>
+                <Region HBox.hgrow="ALWAYS"/>
+                <Label fx:id="phonemeLabel" text=""
+                       style="-fx-font-size: 12px; -fx-text-fill: #e74c3c;"/>
+            </HBox>
+
+            <!-- Вкладки анализа -->
+            <TabPane tabClosingPolicy="UNAVAILABLE" VBox.vgrow="ALWAYS">
+                <Tab text="Краткий анализ">
+                    <VBox spacing="10" style="-fx-padding: 10;">
+                        <Label text="Результаты анализа:"
+                               style="-fx-font-weight: bold;"/>
+                        <TextArea fx:id="analysisArea"
+                                  editable="false"
+                                  wrapText="true"
+                                  VBox.vgrow="ALWAYS"
+                                  style="-fx-font-family: 'Consolas'; -fx-font-size: 13px;"/>
+                    </VBox>
+                </Tab>
+
+                <Tab text="Детальный отчет">
+                    <VBox spacing="10" style="-fx-padding: 10;">
+                        <Label text="Полный детальный отчет:"
+                               style="-fx-font-weight: bold;"/>
+                        <TextArea fx:id="detailedAnalysisArea"
+                                  editable="false"
+                                  wrapText="true"
+                                  VBox.vgrow="ALWAYS"
+                                  style="-fx-font-family: 'Consolas'; -fx-font-size: 11px;"
+                                  visible="false"/>
+                    </VBox>
+                </Tab>
+
+                <Tab text="Рекомендации">
+                    <VBox spacing="10" style="-fx-padding: 10;">
+                        <Label text="Персональные рекомендации:"
+                               style="-fx-font-weight: bold;"/>
+                        <TextArea fx:id="recommendationsArea"
+                                  editable="false"
+                                  wrapText="true"
+                                  VBox.vgrow="ALWAYS"
+                                  style="-fx-font-family: 'Segoe UI'; -fx-font-size: 14px;"/>
+                    </VBox>
+                </Tab>
+            </TabPane>
+
+            <!-- Быстрые действия -->
+            <HBox spacing="10" style="-fx-padding: 10 0 0 0;">
+                <Button text="⚙️ Настройки"
+                        onAction="#onSettings"
+                        style="-fx-background-color: #95a5a6;"/>
+                <Button text="❓ Помощь"
+                        onAction="#onHelp"
+                        style="-fx-background-color: #f39c12;"/>
+                <Region HBox.hgrow="ALWAYS"/>
+                <Label text="💡 Записывайте речь для лучшего анализа"
+                       style="-fx-font-size: 12px; -fx-text-fill: #7f8c8d;"/>
+            </HBox>
+        </VBox>
+    </SplitPane>
+
+    <!-- Нижний колонтитул -->
+    <HBox spacing="10" style="-fx-padding: 10 0 0 0; -fx-border-color: #dfe6e9; -fx-border-width: 1 0 0 0;">
+        <Label text="© 2024 SpeakAI. Все права защищены."
+               style="-fx-font-size: 12px; -fx-text-fill: #95a5a6;"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Label text="Версия 1.1.0 с анализом речи"
+               style="-fx-font-size: 12px; -fx-text-fill: #95a5a6;"/>
+    </HBox>
+</VBox>
