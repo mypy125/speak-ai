@@ -61,7 +61,7 @@
                             style="-fx-background-color: #e74c3c;"/>
                     <Button fx:id="stopButton" text="⏹️ Стоп"
                             onAction="#onStopRecording"
-                            style="-fx-background-color: #95a5a6;" disabled="true"/>
+                            style="-fx-background-color: #95a5a6;" disable="true"/>
                     <ProgressIndicator fx:id="recordingIndicator"
                                        visible="false"
                                        style="-fx-progress-color: #e74c3c;"/>
@@ -69,9 +69,9 @@
                            style="-fx-text-fill: #e74c3c; -fx-font-weight: bold;"/>
                     <Region HBox.hgrow="ALWAYS"/>
                     <Button fx:id="analyzeButton" text="🔍 Анализ"
-                            style="-fx-background-color: #3498db;" disabled="true"/>
+                            style="-fx-background-color: #3498db;" disable="true"/>
                     <Button fx:id="pronunciationButton" text="🗣️ Тренажер"
-                            style="-fx-background-color: #2ecc71;" disabled="true"/>
+                            style="-fx-background-color: #2ecc71;" disable="true"/>
                     <Button fx:id="sendButton" text="📤 Отправить"
                             onAction="#onSendMessage"
                             style="-fx-background-color: #9b59b6; -fx-font-weight: bold;"/>

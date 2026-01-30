@@ -1,6 +1,7 @@
 package com.mygitgor.speech;
 
 import javax.sound.sampled.*;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import org.slf4j.Logger;
@@ -92,7 +93,7 @@ public class SpeechRecorder {
 
             // Сохраняем как WAV файл
             AudioInputStream audioStream = new AudioInputStream(
-                    new javax.sound.sampled.ByteArrayInputStream(audioData),
+                    new ByteArrayInputStream(audioData),
                     audioFormat,
                     audioData.length / audioFormat.getFrameSize()
             );
