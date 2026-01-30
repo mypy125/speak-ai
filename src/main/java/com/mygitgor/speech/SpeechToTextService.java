@@ -40,20 +40,12 @@ public class SpeechToTextService {
         logger.info("Начинается распознавание речи из файла: {}", audioFilePath);
 
         try {
-            switch (serviceType) {
-                case WHISPER:
-                    return transcribeWithWhisper(audioFilePath);
-
-                case GOOGLE:
-                    return transcribeWithGoogle(audioFilePath);
-
-                case VOSK:
-                    return transcribeWithVosk(audioFilePath);
-
-                case MOCK:
-                default:
-                    return mockTranscription(audioFilePath);
-            }
+            return switch (serviceType) {
+                case WHISPER -> transcribeWithWhisper(audioFilePath);
+                case GOOGLE -> transcribeWithGoogle(audioFilePath);
+                case VOSK -> transcribeWithVosk(audioFilePath);
+                default -> mockTranscription(audioFilePath);
+            };
         } catch (Exception e) {
             logger.error("Ошибка при распознавании речи", e);
             return new SpeechRecognitionResult("", 0.0, "Ошибка: " + e.getMessage());

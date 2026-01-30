@@ -9,54 +9,88 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
 public class OpenAIService implements AiService {
     private static final Logger logger = LoggerFactory.getLogger(OpenAIService.class);
-    private static final String API_URL = "https://api.openai.com/v1/chat/completions";
+
+    // Конфигурируемые параметры
+    private final String apiKey;
+    private final String model;
+    private final double temperature;
+    private final int maxTokens;
+    private final String apiUrl;
 
     private final OkHttpClient client;
-    private final String apiKey;
     private boolean isAvailable;
 
-    public OpenAIService(String apiKey) {
+    // Конструктор с параметрами
+    public OpenAIService(String apiKey, String model, double temperature, int maxTokens, String apiUrl) {
         this.apiKey = apiKey;
+        this.model = model != null && !model.trim().isEmpty() ? model.trim() : "gpt-3.5-turbo";
+        this.temperature = temperature;
+        this.maxTokens = maxTokens;
+        this.apiUrl = apiUrl != null && !apiUrl.trim().isEmpty() ? apiUrl.trim() : "https://api.openai.com/v1/chat/completions";
+
         this.client = new OkHttpClient.Builder()
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
                 .writeTimeout(30, TimeUnit.SECONDS)
                 .build();
+
         this.isAvailable = testConnection();
+    }
+
+    // Конструктор с минимальными параметрами (для обратной совместимости)
+    public OpenAIService(String apiKey) {
+        this(apiKey, "gpt-3.5-turbo", 0.7, 1500, "https://api.openai.com/v1/chat/completions");
+    }
+
+    // Фабричный метод для создания сервиса из конфигурации
+    public static OpenAIService fromConfig(Properties config) {
+        String apiKey = config.getProperty("openai.api.key", "").trim();
+        String model = config.getProperty("openai.api.model", "gpt-3.5-turbo").trim();
+        double temperature = Double.parseDouble(config.getProperty("openai.api.temperature", "0.7"));
+        int maxTokens = Integer.parseInt(config.getProperty("openai.api.max_tokens", "1500"));
+        String apiUrl = config.getProperty("openai.api.url", "https://api.openai.com/v1/chat/completions").trim();
+
+        return new OpenAIService(apiKey, model, temperature, maxTokens, apiUrl);
     }
 
     private boolean testConnection() {
         if (apiKey == null || apiKey.isEmpty() || apiKey.equals("your-api-key-here")) {
-            logger.warn("API ключ OpenAI не настроен");
+            logger.warn("API ключ не настроен. Сервис будет работать в демо-режиме.");
             return false;
         }
 
         try {
-            // Простой тестовый запрос
-            JsonObject testRequest = new JsonObject();
-            testRequest.addProperty("model", "gpt-3.5-turbo");
-            testRequest.add("messages", JsonParser.parseString(
-                    "[{\"role\": \"user\", \"content\": \"Hello\"}]"
-            ));
+            // Тестовый запрос с минимальными параметрами
+            JsonObject testRequest = createBaseRequest("Hello");
             testRequest.addProperty("max_tokens", 10);
 
             Request request = createRequest(testRequest);
 
             try (Response response = client.newCall(request).execute()) {
                 if (response.isSuccessful()) {
-                    logger.info("Соединение с OpenAI API успешно установлено");
+                    logger.info("Соединение с {} API успешно установлено. Модель: {}", getProviderName(), model);
                     return true;
                 } else {
-                    logger.error("Ошибка соединения с OpenAI API: {}", response.code());
+                    String errorBody = response.body() != null ? response.body().string() : "";
+                    logger.error("Ошибка соединения с API ({}): {}. Ответ: {}",
+                            response.code(), response.message(), errorBody);
+
+                    // Проверяем, может это ошибка ключа или доступности модели
+                    if (response.code() == 401) {
+                        logger.error("Неверный API ключ. Проверьте настройки в application.properties");
+                    } else if (response.code() == 404) {
+                        logger.error("Модель '{}' не найдена. Проверьте доступность модели.", model);
+                    }
                     return false;
                 }
             }
         } catch (Exception e) {
-            logger.error("Ошибка при тестировании соединения с OpenAI API", e);
+            logger.error("Ошибка при тестировании соединения с API", e);
             return false;
         }
     }
@@ -75,45 +109,57 @@ public class OpenAIService implements AiService {
             4. Рекомендации по использованию словарного запаса
             
             Форматируй ответ с использованием Markdown для лучшей читаемости.
+            
+            Если в сообщении есть русские слова, предложи их английские эквиваленты.
             """, text);
 
         try {
-            return callOpenAI(prompt);
+            return callAPI(prompt);
         } catch (IOException e) {
             logger.error("Ошибка при анализе текста", e);
-            return "Извините, произошла ошибка при анализе текста. Пожалуйста, попробуйте еще раз.";
+            return fallbackTextAnalysis(text);
         }
     }
 
     @Override
     public SpeechAnalysis analyzePronunciation(String text, String audioPath) {
-        // В MVP версии эмулируем анализ произношения
-        // В будущем можно интегрировать с Whisper API или другими сервисами
-
         SpeechAnalysis analysis = new SpeechAnalysis();
         analysis.setText(text);
         analysis.setAudioPath(audioPath);
 
-        // Эмуляция анализа
-        analysis.setPronunciationScore(75 + Math.random() * 20);
-        analysis.setFluencyScore(70 + Math.random() * 25);
-        analysis.setGrammarScore(80 + Math.random() * 15);
-        analysis.setVocabularyScore(85 + Math.random() * 10);
+        // Генерируем анализ через AI, если доступен
+        if (isAvailable) {
+            try {
+                String prompt = String.format("""
+                    Ты - эксперт по фонетике английского языка. Проанализируй произношение следующего текста:
+                    
+                    Текст: "%s"
+                    
+                    Предполагаемые проблемы произношения (если аудио недоступно):
+                    1. Сложные звуки для русскоговорящих
+                    2. Интонационные паттерны
+                    3. Ритм и ударение
+                    
+                    Дай оценку по 100-балльной шкале для:
+                    - Произношения
+                    - Беглости речи
+                    - Грамматики
+                    - Словарного запаса
+                    
+                    Укажи конкретные рекомендации для улучшения.
+                    """, text);
 
-        // Добавляем примеры ошибок и рекомендаций
-        if (analysis.getPronunciationScore() < 80) {
-            analysis.addError("Некоторые звуки произносятся нечетко");
-            analysis.addRecommendation("Практикуйте произношение звуков 'th' и 'r'");
-        }
+                String aiResponse = callAPI(prompt);
 
-        if (analysis.getFluencyScore() < 75) {
-            analysis.addError("Есть паузы и колебания в речи");
-            analysis.addRecommendation("Попробуйте говорить медленнее, но увереннее");
-        }
+                // Парсим ответ AI
+                parseAIResponseToAnalysis(aiResponse, analysis);
 
-        if (analysis.getGrammarScore() < 85) {
-            analysis.addError("Небольшие грамматические неточности");
-            analysis.addRecommendation("Обратите внимание на использование времен");
+            } catch (IOException e) {
+                logger.error("Ошибка при анализе произношения через AI", e);
+                generateMockAnalysis(analysis); // Fallback на мок-данные
+            }
+        } else {
+            generateMockAnalysis(analysis);
         }
 
         return analysis;
@@ -126,7 +172,6 @@ public class OpenAIService implements AiService {
             
             Сообщение ученика: "%s"
             
-            Результаты анализа речи ученика:
             %s
             
             Твой ответ должен быть:
@@ -136,14 +181,22 @@ public class OpenAIService implements AiService {
             4. Предлагать полезные советы для улучшения
             5. Поощрять дальнейшую практику
             
-            Отвечай на русском языке, но при необходимости используй английские примеры.
-            """, userMessage, analysis != null ? analysis.getSummary() : "Анализ не проводился");
+            Формат ответа:
+            - Используй Markdown для форматирования
+            - Отвечай на русском языке
+            - Для английских примеров используй код: `пример`
+            - Будь конкретным и полезным
+            """,
+                userMessage,
+                analysis != null ?
+                        String.format("Результаты анализа речи ученика:\n%s", analysis.getSummary()) :
+                        "Анализ речи не проводился.");
 
         try {
-            return callOpenAI(prompt);
+            return callAPI(prompt);
         } catch (IOException e) {
             logger.error("Ошибка при генерации ответа бота", e);
-            return "Привет! Я твой AI репетитор английского. Давай продолжим нашу беседу!";
+            return fallbackBotResponse(userMessage, analysis);
         }
     }
 
@@ -152,20 +205,33 @@ public class OpenAIService implements AiService {
         String prompt = String.format("""
             Сгенерируй упражнение по английскому языку на тему "%s" для уровня сложности "%s".
             
-            Упражнение должно включать:
-            1. Краткое объяснение темы
-            2. 5 практических заданий
-            3. Примеры выполнения
-            4. Ключевые слова и выражения
+            Структура упражнения:
+            ## Тема: [Название темы]
             
-            Форматируй ответ с использованием Markdown.
+            ### Объяснение:
+            [Краткое объяснение темы на русском с английскими примерами]
+            
+            ### Практические задания (5 заданий):
+            1. [Задание 1 с примером]
+            2. [Задание 2 с примером]
+            3. [Задание 3 с примером]
+            4. [Задание 4 с примером]
+            5. [Задание 5 с примером]
+            
+            ### Ключевые слова и выражения:
+            - [Английское слово/фраза]: [Перевод и пример использования]
+            
+            ### Советы для выполнения:
+            [Полезные советы для ученика]
+            
+            Используй Markdown форматирование.
             """, topic, difficulty);
 
         try {
-            return callOpenAI(prompt);
+            return callAPI(prompt);
         } catch (IOException e) {
             logger.error("Ошибка при генерации упражнения", e);
-            return "Упражнение на тему \"" + topic + "\" будет доступно в следующем обновлении!";
+            return fallbackExercise(topic, difficulty);
         }
     }
 
@@ -174,11 +240,41 @@ public class OpenAIService implements AiService {
         return isAvailable;
     }
 
-    private String callOpenAI(String prompt) throws IOException {
+    // Основной метод вызова API
+    private String callAPI(String prompt) throws IOException {
+        JsonObject requestBody = createBaseRequest(prompt);
+
+        Request request = createRequest(requestBody);
+
+        try (Response response = client.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                String errorBody = response.body() != null ? response.body().string() : "";
+                logger.error("Ошибка API ({}): {}. Ответ: {}",
+                        response.code(), response.message(), errorBody);
+
+                // Пробуем обработать ошибку
+                handleAPIError(response.code(), errorBody);
+
+                throw new IOException(String.format("API request failed: %d - %s",
+                        response.code(), response.message()));
+            }
+
+            String responseBody = response.body().string();
+            return parseAPIResponse(responseBody);
+        }
+    }
+
+    private JsonObject createBaseRequest(String prompt) {
         JsonObject requestBody = new JsonObject();
-        requestBody.addProperty("model", "gpt-3.5-turbo");
-        requestBody.addProperty("temperature", 0.7);
-        requestBody.addProperty("max_tokens", 1500);
+        requestBody.addProperty("model", model);
+        requestBody.addProperty("temperature", temperature);
+        requestBody.addProperty("max_tokens", maxTokens);
+
+        // Добавляем параметры для разных провайдеров
+        if (model.contains("claude")) {
+            // Anthropic Claude специфичные параметры
+            requestBody.addProperty("anthropic_version", "2023-06-01");
+        }
 
         JsonArray messages = new JsonArray();
         JsonObject message = new JsonObject();
@@ -188,26 +284,7 @@ public class OpenAIService implements AiService {
 
         requestBody.add("messages", messages);
 
-        Request request = createRequest(requestBody);
-
-        try (Response response = client.newCall(request).execute()) {
-            if (!response.isSuccessful()) {
-                logger.error("Ошибка OpenAI API: {}", response.code());
-                throw new IOException("API request failed: " + response.code());
-            }
-
-            String responseBody = response.body().string();
-            JsonObject jsonResponse = JsonParser.parseString(responseBody).getAsJsonObject();
-
-            return jsonResponse.get("choices")
-                    .getAsJsonArray()
-                    .get(0)
-                    .getAsJsonObject()
-                    .get("message")
-                    .getAsJsonObject()
-                    .get("content")
-                    .getAsString();
-        }
+        return requestBody;
     }
 
     private Request createRequest(JsonObject requestBody) {
@@ -216,17 +293,221 @@ public class OpenAIService implements AiService {
                 MediaType.parse("application/json")
         );
 
-        return new Request.Builder()
-                .url(API_URL)
-                .header("Authorization", "Bearer " + apiKey)
+        Request.Builder requestBuilder = new Request.Builder()
+                .url(apiUrl)
                 .header("Content-Type", "application/json")
-                .post(body)
-                .build();
+                .post(body);
+
+        // Добавляем заголовки авторизации в зависимости от провайдера
+        if (apiUrl.contains("openai.com")) {
+            requestBuilder.header("Authorization", "Bearer " + apiKey);
+        } else if (apiUrl.contains("anthropic.com")) {
+            requestBuilder.header("x-api-key", apiKey)
+                    .header("anthropic-version", "2023-06-01");
+        } else if (apiUrl.contains("groq.com")) {
+            requestBuilder.header("Authorization", "Bearer " + apiKey);
+        } else if (apiUrl.contains("together.xyz")) {
+            requestBuilder.header("Authorization", "Bearer " + apiKey);
+        } else {
+            // По умолчанию OpenAI-совместимый формат
+            requestBuilder.header("Authorization", "Bearer " + apiKey);
+        }
+
+        return requestBuilder.build();
     }
 
-    public void setApiKey(String apiKey) {
-        // Метод для обновления API ключа
-        // this.apiKey = apiKey; // Заметка: поле final
-        logger.info("API ключ обновлен");
+    private String parseAPIResponse(String responseBody) throws IOException {
+        try {
+            JsonObject jsonResponse = JsonParser.parseString(responseBody).getAsJsonObject();
+
+            // Обработка разных форматов ответов
+            if (jsonResponse.has("choices")) {
+                // OpenAI-совместимый формат
+                return jsonResponse.get("choices")
+                        .getAsJsonArray()
+                        .get(0)
+                        .getAsJsonObject()
+                        .get("message")
+                        .getAsJsonObject()
+                        .get("content")
+                        .getAsString();
+            } else if (jsonResponse.has("content")) {
+                // Anthropic Claude формат
+                return jsonResponse.getAsJsonArray("content")
+                        .get(0)
+                        .getAsJsonObject()
+                        .get("text")
+                        .getAsString();
+            } else if (jsonResponse.has("output")) {
+                // Другие форматы
+                return jsonResponse.get("output").getAsJsonObject()
+                        .get("choices").getAsJsonArray()
+                        .get(0).getAsJsonObject()
+                        .get("text").getAsString();
+            } else {
+                throw new IOException("Неизвестный формат ответа API");
+            }
+        } catch (Exception e) {
+            logger.error("Ошибка парсинга ответа API", e);
+            throw new IOException("Ошибка обработки ответа API", e);
+        }
+    }
+
+    // Вспомогательные методы
+    private String getProviderName() {
+        if (apiUrl.contains("openai.com")) return "OpenAI";
+        if (apiUrl.contains("anthropic.com")) return "Anthropic Claude";
+        if (apiUrl.contains("groq.com")) return "Groq";
+        if (apiUrl.contains("together.xyz")) return "Together AI";
+        if (apiUrl.contains("deepseek.com")) return "DeepSeek";
+        if (apiUrl.contains("ollama")) return "Ollama (локальный)";
+        return "Неизвестный провайдер";
+    }
+
+    private void handleAPIError(int code, String errorBody) {
+        try {
+            JsonObject errorJson = JsonParser.parseString(errorBody).getAsJsonObject();
+            JsonObject error = errorJson.getAsJsonObject("error");
+
+            if (error != null) {
+                String errorMessage = error.has("message") ?
+                        error.get("message").getAsString() : "Unknown error";
+                logger.error("API Error Message: {}", errorMessage);
+
+                // Логируем тип ошибки
+                if (error.has("type")) {
+                    logger.error("Error Type: {}", error.get("type").getAsString());
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Не удалось распарсить тело ошибки", e);
+        }
+    }
+
+    private void parseAIResponseToAnalysis(String aiResponse, SpeechAnalysis analysis) {
+        try {
+            // Простой парсинг ответа AI (можно улучшить)
+            if (aiResponse.contains("Произношение:")) {
+                // Извлекаем оценки из текста
+                String[] lines = aiResponse.split("\n");
+                for (String line : lines) {
+                    if (line.contains("Произношение:") && line.contains("/100")) {
+                        String score = line.replaceAll(".*?(\\d+(\\.\\d+)?).*", "$1");
+                        analysis.setPronunciationScore(Double.parseDouble(score));
+                    }
+                    if (line.contains("Беглость:") && line.contains("/100")) {
+                        String score = line.replaceAll(".*?(\\d+(\\.\\d+)?).*", "$1");
+                        analysis.setFluencyScore(Double.parseDouble(score));
+                    }
+                    if (line.contains("Грамматика:") && line.contains("/100")) {
+                        String score = line.replaceAll(".*?(\\d+(\\.\\d+)?).*", "$1");
+                        analysis.setGrammarScore(Double.parseDouble(score));
+                    }
+                    if (line.contains("Словарный запас:") && line.contains("/100")) {
+                        String score = line.replaceAll(".*?(\\d+(\\.\\d+)?).*", "$1");
+                        analysis.setVocabularyScore(Double.parseDouble(score));
+                    }
+                }
+            }
+
+            // Добавляем общие рекомендации из ответа AI
+            analysis.addRecommendation("Обратитесь к полному ответу AI выше для детальных рекомендаций");
+
+        } catch (Exception e) {
+            logger.error("Ошибка при парсинге ответа AI", e);
+            generateMockAnalysis(analysis);
+        }
+    }
+
+    private void generateMockAnalysis(SpeechAnalysis analysis) {
+        // Fallback генерация мок-данных
+        analysis.setPronunciationScore(75 + Math.random() * 20);
+        analysis.setFluencyScore(70 + Math.random() * 25);
+        analysis.setGrammarScore(80 + Math.random() * 15);
+        analysis.setVocabularyScore(85 + Math.random() * 10);
+
+        analysis.addRecommendation("Практикуйте произношение сложных звуков");
+        analysis.addRecommendation("Уделите внимание использованию правильных времен");
+        analysis.addRecommendation("Расширяйте словарный запас по теме");
+    }
+
+    private String fallbackTextAnalysis(String text) {
+        return String.format("""
+            ### Анализ текста (демо-режим)
+            
+            **Ваш текст:** "%s"
+            
+            **Рекомендации:**
+            1. Обратите внимание на грамматические конструкции
+            2. Используйте разнообразный словарный запас
+            3. Практикуйте естественные формулировки
+            
+            **Пример улучшения:**
+            Оригинал: %s
+            Улучшенный вариант: Try to use more natural expressions in your sentences.
+            
+            *Примечание: Для получения полноценного анализа настройте API ключ в application.properties*
+            """, text, text);
+    }
+
+    private String fallbackBotResponse(String userMessage, SpeechAnalysis analysis) {
+        return String.format("""
+            Привет! 👋 
+            
+            Я получил ваше сообщение: "%s"
+            
+            %s
+            
+            **Совет:** Продолжайте практиковать английский каждый день. 
+            Даже короткие ежедневные занятия приносят результаты!
+            
+            *Работаю в демо-режиме. Для получения персональных рекомендаций настройте API ключ.*
+            """,
+                userMessage,
+                analysis != null ?
+                        "Ваша речь была проанализирована. " + analysis.getSummary() :
+                        "Ваше сообщение получено.");
+    }
+
+    private String fallbackExercise(String topic, String difficulty) {
+        return String.format("""
+            ## Упражнение: %s
+            **Уровень:** %s
+            
+            ### Объяснение:
+            В этом упражнении мы будем практиковать тему "%s".
+            
+            ### Задания:
+            1. Составьте 5 предложений на тему
+            2. Переведите предложения с русского на английский
+            3. Найдите ошибки в примерах
+            4. Составьте диалог на тему
+            5. Напишите краткое эссе
+            
+            ### Ключевые слова:
+            - Practice: практика
+            - Improve: улучшать
+            - Learn: учить
+            
+            ### Советы:
+            - Занимайтесь регулярно
+            - Используйте словарь при необходимости
+            - Практикуйте произношение вслух
+            
+            *Для получения персонализированных упражнений настройте API ключ.*
+            """, topic, difficulty, topic);
+    }
+
+    // Геттеры для информации о конфигурации
+    public String getModel() {
+        return model;
+    }
+
+    public String getApiUrl() {
+        return apiUrl;
+    }
+
+    public String getProvider() {
+        return getProviderName();
     }
 }
