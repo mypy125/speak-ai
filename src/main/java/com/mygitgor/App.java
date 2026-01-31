@@ -55,14 +55,10 @@ public class App extends Application {
                 logger.info("CSS стили загружены: {}", cssPath);
             } else {
                 logger.warn("CSS файл не найден: {}", cssPath);
-                // Создаем базовые стили программно если файл не найден
-                scene.getStylesheets().add(createDefaultStyles());
             }
 
-            // Настройка stage
             stage.setTitle("SpeakAI - Разговорный ИИ-бот для изучения английского");
 
-            // Загрузка иконки - правильный путь
             String iconPath = "/com/mygitgor/view/icons/logo.png";
             InputStream iconStream = getClass().getResourceAsStream(iconPath);
 
@@ -130,44 +126,6 @@ public class App extends Application {
         } catch (Exception e) {
             logger.error("Ошибка при создании директорий", e);
         }
-    }
-
-    /**
-     * Создание базовых стилей программно если CSS файл не найден
-     */
-    private String createDefaultStyles() {
-        return """
-            .root {
-                -fx-font-family: 'Segoe UI', Arial, sans-serif;
-                -fx-font-size: 14px;
-                -fx-background-color: #f5f7fa;
-            }
-            .button {
-                -fx-background-color: #3498db;
-                -fx-text-fill: white;
-                -fx-font-weight: bold;
-                -fx-padding: 8px 16px;
-                -fx-border-radius: 4px;
-                -fx-background-radius: 4px;
-                -fx-cursor: hand;
-            }
-            .button:hover {
-                -fx-background-color: #2980b9;
-            }
-            .text-area, .text-field {
-                -fx-background-color: white;
-                -fx-border-color: #bdc3c7;
-                -fx-border-radius: 4px;
-                -fx-padding: 6px;
-            }
-            .text-area:focused, .text-field:focused {
-                -fx-border-color: #3498db;
-                -fx-border-width: 2px;
-            }
-            .label {
-                -fx-text-fill: #2c3e50;
-            }
-            """;
     }
 
     private void showErrorDialog(String title, String message) {
