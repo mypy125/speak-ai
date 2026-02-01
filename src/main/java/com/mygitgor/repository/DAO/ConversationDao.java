@@ -4,19 +4,21 @@ import com.j256.ormlite.dao.Dao;
 import com.j256.ormlite.dao.DaoManager;
 import com.j256.ormlite.stmt.DeleteBuilder;
 import com.j256.ormlite.stmt.QueryBuilder;
+import com.j256.ormlite.support.ConnectionSource;
 import com.mygitgor.model.Conversation;
 import com.mygitgor.model.User;
 import com.mygitgor.repository.DatabaseManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.Date;
 import java.util.List;
 
 public class ConversationDao {
     private static final Logger logger = LoggerFactory.getLogger(ConversationDao.class);
     private Dao<Conversation, Integer> conversationDao;
+    private ConnectionSource connectionSource;
 
     public ConversationDao() {
         try {
@@ -31,22 +33,107 @@ public class ConversationDao {
     }
 
     public Conversation createConversation(Conversation conversation) {
+        java.sql.Connection jdbcConnection = null;
+        java.sql.PreparedStatement stmt = null;
+        java.sql.ResultSet generatedKeys = null;
+
         try {
-            conversationDao.create(conversation);
-            logger.debug("Создана новая запись разговора для пользователя: {}",
-                    conversation.getUser().getUsername());
+            jdbcConnection = java.sql.DriverManager.getConnection("jdbc:sqlite:data/speakai.db");
+
+            String sql = "INSERT INTO conversations (user_id, userMessage, botResponse, audioPath, " +
+                    "analysisResult, recommendations, timestamp, pronunciationScore, grammarScore, vocabularyScore) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            stmt = jdbcConnection.prepareStatement(sql, java.sql.Statement.RETURN_GENERATED_KEYS);
+
+            stmt.setInt(1, conversation.getUserId());
+            stmt.setString(2, conversation.getUserMessage());
+            stmt.setString(3, conversation.getBotResponse());
+            stmt.setString(4, conversation.getAudioPath());
+            stmt.setString(5, conversation.getAnalysisResult() != null ? conversation.getAnalysisResult() : "");
+            stmt.setString(6, conversation.getRecommendations() != null ? conversation.getRecommendations() : "");
+            stmt.setLong(7, conversation.getTimestamp().getTime());
+            stmt.setDouble(8, conversation.getPronunciationScore());
+            stmt.setDouble(9, conversation.getGrammarScore());
+            stmt.setDouble(10, conversation.getVocabularyScore());
+
+            int affectedRows = stmt.executeUpdate();
+
+            if (affectedRows > 0) {
+                generatedKeys = stmt.getGeneratedKeys();
+                if (generatedKeys.next()) {
+                    int id = generatedKeys.getInt(1);
+                    conversation.setId(id);
+                    logger.info("Разговор сохранен (JDBC), ID: {}", id);
+                }
+            }
+
             return conversation;
-        } catch (SQLException e) {
+
+        } catch (java.sql.SQLException e) {
             logger.error("Ошибка при создании записи разговора", e);
             throw new RuntimeException("Не удалось сохранить разговор", e);
+        } finally {
+            try {
+                if (generatedKeys != null) generatedKeys.close();
+                if (stmt != null) stmt.close();
+                if (jdbcConnection != null) jdbcConnection.close();
+            } catch (java.sql.SQLException e) {
+                logger.error("Ошибка при закрытии ресурсов", e);
+            }
         }
     }
 
-    public List<Conversation> getConversationsByUser(User user) {
+    private Conversation createConversationWithDirectJDBC(Conversation conversation) {
+        String sql = "INSERT INTO conversations (user_id, userMessage, botResponse, audioPath, " +
+                "analysisResult, recommendations, timestamp, pronunciationScore, grammarScore, vocabularyScore) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+        try (Connection connection = DatabaseManager.getInstance().getJdbcConnection();
+             PreparedStatement stmt = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+
+            // Определяем user_id
+            int userId = conversation.getUser() != null ? conversation.getUser().getId() :
+                    (conversation.getUserId() > 0 ? conversation.getUserId() : 1);
+
+            stmt.setInt(1, userId);
+            stmt.setString(2, conversation.getUserMessage());
+            stmt.setString(3, conversation.getBotResponse());
+            stmt.setString(4, conversation.getAudioPath());
+            stmt.setString(5, conversation.getAnalysisResult());
+            stmt.setString(6, conversation.getRecommendations());
+            stmt.setLong(7, conversation.getTimestamp() != null ?
+                    conversation.getTimestamp().getTime() : System.currentTimeMillis());
+            stmt.setDouble(8, conversation.getPronunciationScore());
+            stmt.setDouble(9, conversation.getGrammarScore());
+            stmt.setDouble(10, conversation.getVocabularyScore());
+
+            int affectedRows = stmt.executeUpdate();
+
+            if (affectedRows > 0) {
+                try (ResultSet generatedKeys = stmt.getGeneratedKeys()) {
+                    if (generatedKeys.next()) {
+                        int id = generatedKeys.getInt(1);
+                        conversation.setId(id);
+                        logger.debug("Разговор сохранен (JDBC), ID: {}", id);
+                    }
+                }
+                return conversation;
+            } else {
+                throw new RuntimeException("Не удалось сохранить разговор: affectedRows = 0");
+            }
+
+        } catch (SQLException e) {
+            logger.error("Ошибка при сохранении разговора через JDBC", e);
+            throw new RuntimeException("Не удалось сохранить разговор (JDBC метод)", e);
+        }
+    }
+
+    public List<Conversation> getConversationsByUser(int userId) {
         try {
             QueryBuilder<Conversation, Integer> queryBuilder = conversationDao.queryBuilder();
-            queryBuilder.where().eq("user_id", user.getId());
-            queryBuilder.orderBy("timestamp", false); // Сначала новые
+            queryBuilder.where().eq("user_id", userId);
+            queryBuilder.orderBy("timestamp", false);
             return conversationDao.query(queryBuilder.prepare());
         } catch (SQLException e) {
             logger.error("Ошибка при получении разговоров пользователя", e);
@@ -54,11 +141,11 @@ public class ConversationDao {
         }
     }
 
-    public List<Conversation> getConversationsByDateRange(User user, Date startDate, Date endDate) {
+    public List<Conversation> getConversationsByDateRange(int userId, Date startDate, Date endDate) {
         try {
             QueryBuilder<Conversation, Integer> queryBuilder = conversationDao.queryBuilder();
             queryBuilder.where()
-                    .eq("user_id", user.getId())
+                    .eq("user_id", userId)
                     .and()
                     .ge("timestamp", startDate)
                     .and()
@@ -91,12 +178,12 @@ public class ConversationDao {
         }
     }
 
-    public void deleteConversationsByUser(User user) {
+    public void deleteConversationsByUser(int userId) {
         try {
             DeleteBuilder<Conversation, Integer> deleteBuilder = conversationDao.deleteBuilder();
-            deleteBuilder.where().eq("user_id", user.getId());
+            deleteBuilder.where().eq("user_id", userId);
             int deleted = deleteBuilder.delete();
-            logger.info("Удалено {} записей разговоров для пользователя: {}", deleted, user.getUsername());
+            logger.info("Удалено {} записей разговоров для пользователя ID: {}", deleted, userId);
         } catch (SQLException e) {
             logger.error("Ошибка при удалении разговоров пользователя", e);
             throw new RuntimeException("Не удалось удалить разговоры пользователя", e);
@@ -121,5 +208,10 @@ public class ConversationDao {
             logger.error("Ошибка при получении всех разговоров", e);
             throw new RuntimeException("Не удалось получить все разговоры", e);
         }
+    }
+
+    // Метод для получения разговоров по userId (альтернатива)
+    public List<Conversation> getConversationsByUserId(int userId) {
+        return getConversationsByUser(userId);
     }
 }

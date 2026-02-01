@@ -1,5 +1,6 @@
 package com.mygitgor.chatbot;
 
+import com.j256.ormlite.support.ConnectionSource;
 import com.mygitgor.ai.AiService;
 import com.mygitgor.analysis.PronunciationTrainer;
 import com.mygitgor.analysis.RecommendationEngine;
@@ -8,6 +9,8 @@ import com.mygitgor.model.EnhancedSpeechAnalysis;
 import com.mygitgor.model.SpeechAnalysis;
 import com.mygitgor.model.User;
 import com.mygitgor.repository.DAO.ConversationDao;
+import com.mygitgor.repository.DAO.UserDao;
+import com.mygitgor.repository.DatabaseManager;
 import com.mygitgor.speech.AudioAnalyzer;
 import com.mygitgor.speech.SpeechToTextService;
 import org.slf4j.Logger;
@@ -112,8 +115,7 @@ public class ChatBotService {
                 weeklyPlan = recommendationEngine.generateWeeklyPlan(speechAnalysis);
             }
 
-            // 7. Сохранение в историю
-            saveConversation(recognizedText, botResponse, audioFilePath, speechAnalysis);
+            saveConversation(recognizedText, botResponse, speechAnalysis, audioFilePath);
 
             // 8. Формирование полного ответа
             String fullResponse = formatResponse(botResponse, textAnalysis,
@@ -133,34 +135,65 @@ public class ChatBotService {
     }
 
     private void saveConversation(String userMessage, String botResponse,
-                                  String audioPath, SpeechAnalysis analysis) {
-        Conversation conversation = new Conversation(currentUser, userMessage, botResponse);
-        conversation.setAudioPath(audioPath);
+                                  SpeechAnalysis analysis, String audioPath) {
+        try {
+            // Получаем или создаем пользователя
+            User defaultUser = ensureDefaultUserExists();
 
-        if (analysis != null) {
-            conversation.setAnalysisResult(analysis.getSummary());
+            // Создаем Conversation с объектом User
+            Conversation conversation = new Conversation();
+            conversation.setUser(defaultUser);
+            conversation.setUserMessage(userMessage);
+            conversation.setBotResponse(botResponse);
+            conversation.setAudioPath(audioPath);
+            conversation.setTimestamp(new Date());
 
-            if (!analysis.getRecommendations().isEmpty()) {
-                conversation.setRecommendations(String.join("\n", analysis.getRecommendations()));
+            if (analysis != null) {
+                conversation.setPronunciationScore(analysis.getPronunciationScore());
+                conversation.setGrammarScore(analysis.getGrammarScore());
+                conversation.setVocabularyScore(analysis.getVocabularyScore());
+                conversation.setAnalysisResult(analysis.getSummary());
+
+                if (analysis.getRecommendations() != null && !analysis.getRecommendations().isEmpty()) {
+                    conversation.setRecommendations(String.join("; ", analysis.getRecommendations()));
+                }
             }
 
-            // Используем EnhancedSpeechAnalysis если доступен
-            if (analysis instanceof EnhancedSpeechAnalysis enhancedAnalysis) {
-                conversation.setPronunciationScore((float) enhancedAnalysis.getPronunciationScore());
-                conversation.setGrammarScore((float) enhancedAnalysis.getGrammarScore());
-                conversation.setVocabularyScore((float) enhancedAnalysis.getVocabularyScore());
-            } else {
-                conversation.setPronunciationScore((float) analysis.getPronunciationScore());
-                conversation.setGrammarScore((float) analysis.getGrammarScore());
-                conversation.setVocabularyScore((float) analysis.getVocabularyScore());
-            }
+            ConversationDao conversationDao = new ConversationDao();
+            conversationDao.createConversation(conversation);
+
+            logger.info("Разговор сохранен в БД, ID: {}, для пользователя: {}",
+                    conversation.getId(), defaultUser.getUsername());
+
+        } catch (Exception e) {
+            logger.error("Ошибка при сохранении разговора в БД", e);
+        }
+    }
+
+    private User ensureDefaultUserExists() {
+        if (currentUser != null) {
+            return currentUser;
         }
 
         try {
-            conversationDao.createConversation(conversation);
-            logger.debug("Разговор сохранен в базу данных. ID: {}", conversation.getId());
+            UserDao userDao = new UserDao();
+            User user = userDao.getUserById(1);
+
+            if (user == null) {
+                user = userDao.getUserByEmail("demo@speakai.com");
+
+                if (user == null) {
+                    user = createDefaultUser();
+                    userDao.createUser(user);
+                    logger.info("Создан пользователь по умолчанию в ensureDefaultUserExists");
+                }
+            }
+            currentUser = user;
+            return user;
+
         } catch (Exception e) {
-            logger.error("Ошибка при сохранении разговора в БД", e);
+            logger.error("Ошибка при проверке/создании пользователя", e);
+            return createDefaultUser();
         }
     }
 
@@ -324,7 +357,7 @@ public class ChatBotService {
 
     public List<Conversation> getConversationHistory() {
         try {
-            return conversationDao.getConversationsByUser(currentUser);
+            return conversationDao.getConversationsByUser(currentUser.getId());
         } catch (Exception e) {
             logger.error("Ошибка при получении истории разговоров", e);
             return List.of();
@@ -334,7 +367,7 @@ public class ChatBotService {
     public void clearHistory() {
         try {
             // Используем новый метод для удаления всех разговоров пользователя
-            conversationDao.deleteConversationsByUser(currentUser);
+            conversationDao.deleteConversationsByUser(currentUser.getId());
             logger.info("История разговоров очищена для пользователя: {}", currentUser.getUsername());
         } catch (Exception e) {
             logger.error("Ошибка при очистке истории", e);

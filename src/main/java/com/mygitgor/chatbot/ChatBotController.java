@@ -1,8 +1,9 @@
 package com.mygitgor.chatbot;
 
+import com.mygitgor.ai.AIServiceFactory;
 import com.mygitgor.ai.AiService;
 import com.mygitgor.ai.MockAiService;
-import com.mygitgor.ai.OpenAIService;
+import com.mygitgor.ai.UniversalAIService;
 import com.mygitgor.analysis.PronunciationTrainer;
 import com.mygitgor.analysis.RecommendationEngine;
 import com.mygitgor.model.Conversation;
@@ -77,32 +78,26 @@ public class ChatBotController implements Initializable {
 
     private void initializeServices() {
         try {
-            // Сначала пытаемся использовать OpenAI API
+            // Загружаем конфигурацию
             Properties props = new Properties();
             props.load(getClass().getResourceAsStream("/application.properties"));
-            String apiKey = props.getProperty("openai.api.key", "").trim();
 
-            AiService aiService;
+            // Создаем AI сервис через фабрику
+            AiService aiService = AIServiceFactory.createService(props);
+            isAiServiceAvailable = aiService.isAvailable();
 
-            if (apiKey.isEmpty() || apiKey.equals("your-api-key-here")) {
-                logger.warn("API ключ OpenAI не найден. Используется мок-сервис.");
-                aiService = new MockAiService();
-                isAiServiceAvailable = false;
-                Platform.runLater(() -> {
-                    showWarning("Используется демонстрационный режим\n" +
-                            "Для полноценной работы укажите API ключ OpenAI в файле application.properties");
-                });
-            } else {
-                aiService = new OpenAIService(apiKey);
-                isAiServiceAvailable = true;
-                logger.info("OpenAI сервис инициализирован");
+            // Логируем информацию о сервисе
+            if (aiService instanceof UniversalAIService universalService) {
+                logger.info("✅ {} сервис инициализирован", universalService.getProvider());
+                logger.info("Модель: {}", universalService.getModel());
+            } else if (aiService instanceof MockAiService) {
+                logger.warn("🔄 Используется Mock сервис (демо-режим)");
             }
 
-            // Инициализация сервисов анализа аудио
+            // Инициализация остальных сервисов
             this.audioAnalyzer = new AudioAnalyzer();
             this.pronunciationTrainer = new PronunciationTrainer();
 
-            // Создаем ChatBotService со всеми зависимостями
             this.chatBotService = new ChatBotService(
                     aiService,
                     audioAnalyzer,
@@ -112,10 +107,79 @@ public class ChatBotController implements Initializable {
             this.speechRecorder = new SpeechRecorder();
             this.speechPlayer = new SpeechPlayer();
 
+            // Показываем статус пользователю
+            showServiceStatus(aiService);
+
         } catch (Exception e) {
             logger.error("Ошибка при инициализации сервисов", e);
             throw new RuntimeException("Не удалось инициализировать сервисы", e);
         }
+    }
+
+    private void showServiceStatus(AiService aiService) {
+        Platform.runLater(() -> {
+            if (aiService instanceof UniversalAIService universalService) {
+                String providerName = getProviderDisplayName(universalService.getProvider());
+                String model = universalService.getModel();
+
+                showInfo("AI сервис подключен",
+                        String.format("✅ Успешно подключено к %s\n\nМодель: %s\n\nПриложение готово к работе!",
+                                providerName, model));
+
+                statusLabel.setText(String.format("✅ %s (%s)", providerName, model));
+                statusLabel.setStyle("-fx-text-fill: #27ae60;");
+
+            } else if (aiService instanceof MockAiService) {
+                showWarning("Демонстрационный режим",
+                        "Приложение работает без AI API.\n\n" +
+                                "Для подключения к AI репетитору:\n\n" +
+                                "1. Получите БЕСПЛАТНЫЙ API ключ:\n" +
+                                "   • Groq: https://console.groq.com/\n" +
+                                "   • DeepSeek: https://platform.deepseek.com/\n\n" +
+                                "2. Обновите application.properties\n" +
+                                "3. Перезапустите приложение");
+
+                statusLabel.setText("⚠️ Демо-режим (без AI)");
+                statusLabel.setStyle("-fx-text-fill: #f39c12;");
+            }
+        });
+    }
+
+    // Методы для показа диалоговых окон
+    private void showInfo(String title, String message) {
+        Platform.runLater(() -> {
+            Alert alert = new Alert(Alert.AlertType.INFORMATION);
+            alert.setTitle(title);
+            alert.setHeaderText(null);
+            alert.setContentText(message);
+            alert.setResizable(true);
+            alert.getDialogPane().setPrefSize(600, 400);
+            alert.show();
+        });
+    }
+
+    private void showWarning(String title, String message) {
+        Platform.runLater(() -> {
+            Alert alert = new Alert(Alert.AlertType.WARNING);
+            alert.setTitle(title);
+            alert.setHeaderText(null);
+            alert.setContentText(message);
+            alert.setResizable(true);
+            alert.getDialogPane().setPrefSize(700, 500);
+            alert.showAndWait();
+        });
+    }
+
+    private String getProviderDisplayName(String provider) {
+        return switch (provider) {
+            case "groq" -> "Groq";
+            case "openai" -> "OpenAI GPT";
+            case "deepseek" -> "DeepSeek";
+            case "anthropic" -> "Anthropic Claude";
+            case "together" -> "Together AI";
+            case "ollama" -> "Ollama (локальный)";
+            default -> "AI Service";
+        };
     }
 
     private void setupUI() {
