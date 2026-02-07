@@ -5,30 +5,29 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.sound.sampled.*;
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-public class AudioAnalyzer {
+public class AudioAnalyzer implements Closeable {
     private static final Logger logger = LoggerFactory.getLogger(AudioAnalyzer.class);
 
-    // Константы для анализа
     private static final int SAMPLE_RATE = 44100;
     private static final int FRAME_SIZE = 1024;
     private static final double MIN_VOLUME_THRESHOLD = 0.01;
     private static final double PAUSE_THRESHOLD = 0.3; // секунды
     private static final double MAX_FLUENCY_SILENCE = 0.5; // секунды
 
+    private volatile boolean closed = false;
+    private List<AudioInputStream> openStreams = new ArrayList<>();
+
     public AudioAnalyzer() {
         logger.info("Инициализирован анализатор аудио");
     }
 
-    /**
-     * Основной метод анализа аудиофайла
-     * Возвращает EnhancedSpeechAnalysis
-     */
     public EnhancedSpeechAnalysis analyzeAudio(String audioFilePath, String referenceText) {
         EnhancedSpeechAnalysis analysis = new EnhancedSpeechAnalysis();
         analysis.setAudioPath(audioFilePath);
@@ -36,38 +35,19 @@ public class AudioAnalyzer {
 
         try {
             logger.info("Начинается анализ аудиофайла: {}", audioFilePath);
-
-            // 1. Загрузка аудиоданных
             AudioData audioData = loadAudioData(audioFilePath);
             if (audioData == null) {
                 throw new IOException("Не удалось загрузить аудиоданные");
             }
 
-            // 2. Базовый анализ
             analyzeBasicMetrics(audioData, analysis);
-
-            // 3. Анализ произношения (эмуляция)
             analyzePronunciation(audioData, analysis);
-
-            // 4. Анализ беглости
             analyzeFluency(audioData, analysis);
-
-            // 5. Анализ интонации
             analyzeIntonation(audioData, analysis);
-
-            // 6. Анализ громкости
             analyzeVolume(audioData, analysis);
-
-            // 7. Анализ пауз
             analyzePauses(audioData, analysis);
-
-            // 8. Общая оценка
             calculateOverallScore(analysis);
-
-            // 9. Генерация рекомендаций
             generateRecommendations(analysis);
-
-            // 10. Добавление демо-данных фонем
             addDemoPhonemeData(analysis);
 
             logger.info("Анализ аудио завершен. Общая оценка: {}/100",
@@ -84,7 +64,6 @@ public class AudioAnalyzer {
     }
 
     private void addDemoPhonemeData(EnhancedSpeechAnalysis analysis) {
-        // Демо-данные для фонем
         String[] phonemes = {"θ", "ð", "r", "æ", "ɪ", "iː", "ʃ", "w", "v", "p", "b", "t", "d"};
 
         for (String phoneme : phonemes) {
@@ -92,21 +71,20 @@ public class AudioAnalyzer {
             analysis.addPhonemeScore(phoneme, score);
         }
 
-        // Добавляем демо-ошибки
         if (analysis.getPronunciationScore() < 75) {
             analysis.addDetectedError("Слабые звуки 'th' в словах 'the' и 'that'");
             analysis.addDetectedError("Замена английского 'r' на русский 'р'");
         }
 
-        // Добавляем демо-предупреждения
         analysis.addWarning("Интонация в вопросах нуждается в улучшении");
         analysis.addWarning("Старайтесь говорить более уверенно");
     }
 
-    /**
-     * Загрузка и подготовка аудиоданных
-     */
     private AudioData loadAudioData(String filePath) throws IOException, UnsupportedAudioFileException {
+        if (closed) {
+            throw new IllegalStateException("AudioAnalyzer закрыт");
+        }
+
         File audioFile = new File(filePath);
         if (!audioFile.exists()) {
             logger.error("Аудиофайл не найден: {}", filePath);
@@ -114,9 +92,9 @@ public class AudioAnalyzer {
         }
 
         AudioInputStream audioStream = AudioSystem.getAudioInputStream(audioFile);
+        openStreams.add(audioStream);
         AudioFormat format = audioStream.getFormat();
 
-        // Конвертируем в нужный формат если необходимо
         if (format.getEncoding() != AudioFormat.Encoding.PCM_SIGNED) {
             AudioFormat targetFormat = new AudioFormat(
                     AudioFormat.Encoding.PCM_SIGNED,
@@ -128,14 +106,12 @@ public class AudioAnalyzer {
                     false
             );
             audioStream = AudioSystem.getAudioInputStream(targetFormat, audioStream);
+            openStreams.add(audioStream);
             format = targetFormat;
         }
 
-        // Чтение аудиоданных
         byte[] audioBytes = audioStream.readAllBytes();
-        audioStream.close();
 
-        // Конвертация в массив сэмплов
         double[] samples = convertToSamples(audioBytes, format);
 
         AudioData audioData = new AudioData();
@@ -150,9 +126,6 @@ public class AudioAnalyzer {
         return audioData;
     }
 
-    /**
-     * Конвертация байтов в массив сэмплов
-     */
     private double[] convertToSamples(byte[] audioBytes, AudioFormat format) {
         int sampleSize = format.getSampleSizeInBits() / 8;
         boolean bigEndian = format.isBigEndian();
@@ -164,21 +137,18 @@ public class AudioAnalyzer {
             int sample = 0;
 
             if (sampleSize == 2) {
-                // 16-bit samples
                 if (bigEndian) {
                     sample = ((audioBytes[offset] & 0xFF) << 8) | (audioBytes[offset + 1] & 0xFF);
                 } else {
                     sample = ((audioBytes[offset + 1] & 0xFF) << 8) | (audioBytes[offset] & 0xFF);
                 }
 
-                // Конвертируем в signed
                 if (sample >= 32768) {
                     sample -= 65536;
                 }
 
                 samples[i] = sample / 32768.0;
             } else if (sampleSize == 1) {
-                // 8-bit samples
                 samples[i] = (audioBytes[offset] - 128) / 128.0;
             }
         }
@@ -186,14 +156,9 @@ public class AudioAnalyzer {
         return samples;
     }
 
-    /**
-     * Базовый анализ метрик
-     */
     private void analyzeBasicMetrics(AudioData audioData, EnhancedSpeechAnalysis analysis) {
-        // Длительность
         analysis.setAnalysisDuration((float) audioData.duration);
 
-        // Уровень громкости (RMS)
         double rms = calculateRMS(audioData.samples);
         analysis.setVolumeLevel((float) rms);
 
@@ -201,17 +166,11 @@ public class AudioAnalyzer {
                 String.format("%.2f", audioData.duration), String.format("%.3f", rms));
     }
 
-    /**
-     * Анализ произношения (эмуляция)
-     */
     private void analyzePronunciation(AudioData audioData, EnhancedSpeechAnalysis analysis) {
-        // Эмуляция анализа произношения
-        double pronunciationScore = 70 + Math.random() * 25; // 70-95
+        double pronunciationScore = 70 + Math.random() * 25;
 
-        // Анализ энергии в разных частотных диапазонах
         double[] frequencyBands = analyzeFrequencyBands(audioData.samples, audioData.sampleRate);
 
-        // Проверка на наличие голоса (не шум)
         boolean hasVoice = detectVoicePresence(audioData.samples, audioData.sampleRate);
 
         if (!hasVoice) {
@@ -219,8 +178,7 @@ public class AudioAnalyzer {
             analysis.addError("Голос не обнаружен. Возможно, запись содержит только шум");
         }
 
-        // Проверка частотных характеристик
-        if (frequencyBands[0] > 0.7) { // Слишком много низких частот
+        if (frequencyBands[0] > 0.7) {
             pronunciationScore -= 5;
             analysis.addError("Слишком много низких частот. Возможно, проблемы с микрофоном");
         }
@@ -229,24 +187,17 @@ public class AudioAnalyzer {
         logger.debug("Анализ произношения: оценка={}", String.format("%.1f", pronunciationScore));
     }
 
-    /**
-     * Анализ беглости речи
-     */
     private void analyzeFluency(AudioData audioData, EnhancedSpeechAnalysis analysis) {
         double fluencyScore = 75;
 
-        // 1. Обнаружение пауз
         List<PauseInfo> pauses = detectPauses(audioData.samples, audioData.sampleRate);
         analysis.setPauseCount(pauses.size());
 
-        // 2. Расчет скорости речи (слова в минуту, эмуляция)
         double speakingRate = calculateSpeakingRate(audioData, pauses);
         analysis.setSpeakingRate((float) speakingRate);
 
-        // 3. Анализ ритма
         double rhythmScore = analyzeRhythm(audioData.samples, pauses);
 
-        // 4. Корректировка оценки на основе пауз
         long longPauses = pauses.stream()
                 .filter(p -> p.duration > MAX_FLUENCY_SILENCE)
                 .count();
@@ -256,7 +207,6 @@ public class AudioAnalyzer {
             analysis.addError("Слишком много длинных пауз: " + longPauses);
         }
 
-        // 5. Оптимальная скорость речи
         if (speakingRate < 100) {
             fluencyScore -= 10;
             analysis.addError("Слишком медленная речь");
@@ -265,7 +215,6 @@ public class AudioAnalyzer {
             analysis.addError("Слишком быстрая речь");
         }
 
-        // 6. Учет ритма
         fluencyScore += rhythmScore * 10;
 
         analysis.setFluencyScore(Math.max(0, Math.min(100, fluencyScore)));
@@ -273,23 +222,15 @@ public class AudioAnalyzer {
                 String.format("%.1f", fluencyScore), String.format("%.1f", speakingRate), pauses.size());
     }
 
-    /**
-     * Анализ интонации
-     */
     private void analyzeIntonation(AudioData audioData, EnhancedSpeechAnalysis analysis) {
         double intonationScore = 80;
 
-        // Эмуляция анализа интонации
-        // В реальном приложении: анализ высоты тона (pitch tracking)
-
-        // Разделение на фразы
         List<int[]> phrases = segmentIntoPhrases(audioData.samples, audioData.sampleRate);
 
         if (phrases.size() < 2) {
             intonationScore -= 15;
             analysis.addError("Монотонная речь, недостаточно интонационных изменений");
         } else {
-            // Проверка разнообразия интонации между фразами
             double intonationVariety = calculateIntonationVariety(audioData.samples, phrases);
 
             if (intonationVariety < 0.3) {
@@ -306,9 +247,6 @@ public class AudioAnalyzer {
                 String.format("%.1f", intonationScore), phrases.size());
     }
 
-    /**
-     * Анализ громкости
-     */
     private void analyzeVolume(AudioData audioData, EnhancedSpeechAnalysis analysis) {
         double volumeScore = 85;
         double rms = analysis.getVolumeLevel();
@@ -327,7 +265,6 @@ public class AudioAnalyzer {
             analysis.addWarning("Немного слишком громко");
         }
 
-        // Проверка стабильности громкости
         double volumeStability = calculateVolumeStability(audioData.samples);
         if (volumeStability < 0.6) {
             volumeScore -= 10;
@@ -340,9 +277,6 @@ public class AudioAnalyzer {
                 String.format("%.2f", volumeStability));
     }
 
-    /**
-     * Анализ пауз
-     */
     private void analyzePauses(AudioData audioData, EnhancedSpeechAnalysis analysis) {
         List<PauseInfo> pauses = detectPauses(audioData.samples, audioData.sampleRate);
 
@@ -355,7 +289,6 @@ public class AudioAnalyzer {
         analysis.setTotalPauseDuration((float) totalPauseDuration);
         analysis.setPausePercentage((float) pausePercentage);
 
-        // Анализ распределения пауз
         if (pausePercentage > 40) {
             analysis.addError("Слишком много пауз: " + String.format("%.1f", pausePercentage) + "% времени");
         } else if (pausePercentage < 10) {
@@ -367,9 +300,6 @@ public class AudioAnalyzer {
                 String.format("%.1f", pausePercentage));
     }
 
-    /**
-     * Расчет общей оценки
-     */
     private void calculateOverallScore(EnhancedSpeechAnalysis analysis) {
         float overallScore = (float) (
                 analysis.getPronunciationScore() * 0.35 +
@@ -380,7 +310,6 @@ public class AudioAnalyzer {
 
         analysis.setOverallScore(overallScore);
 
-        // Установка уровня на основе оценки
         if (overallScore >= 90) {
             analysis.setProficiencyLevel("Продвинутый");
         } else if (overallScore >= 75) {
@@ -391,56 +320,45 @@ public class AudioAnalyzer {
             analysis.setProficiencyLevel("Новичок");
         }
 
-        // Устанавливаем демо-значения для других метрик
         analysis.setClarityScore((float)(60 + Math.random() * 35));
         analysis.setConfidenceScore((float)(65 + Math.random() * 30));
         analysis.setGrammarScore((float)(70 + Math.random() * 25));
         analysis.setVocabularyScore((float)(75 + Math.random() * 20));
     }
 
-    /**
-     * Генерация рекомендаций на основе анализа
-     */
     private void generateRecommendations(EnhancedSpeechAnalysis analysis) {
         List<String> recommendations = new ArrayList<>();
 
-        // Рекомендации по произношению
         if (analysis.getPronunciationScore() < 70) {
             recommendations.add("Практикуйте произношение отдельных звуков");
             recommendations.add("Слушайте и повторяйте за носителями языка");
         }
 
-        // Рекомендации по беглости
         if (analysis.getFluencyScore() < 70) {
             recommendations.add("Уменьшите количество пауз между словами");
             recommendations.add("Попробуйте говорить немного быстрее");
         }
 
-        // Рекомендации по интонации
         if (analysis.getIntonationScore() < 75) {
             recommendations.add("Работайте над интонацией в вопросах и утверждениях");
             recommendations.add("Подчеркивайте ключевые слова в предложениях");
         }
 
-        // Рекомендации по громкости
         if (analysis.getVolumeScore() < 75) {
             recommendations.add("Говорите громче и увереннее");
             recommendations.add("Проверьте расстояние до микрофона");
         }
 
-        // Рекомендации по четкости
         if (analysis.getClarityScore() < 70) {
             recommendations.add("Старайтесь говорить более четко и внятно");
             recommendations.add("Обратите внимание на артикуляцию звуков");
         }
 
-        // Рекомендации по уверенности
         if (analysis.getConfidenceScore() < 70) {
             recommendations.add("Говорите более уверенно, не сомневайтесь в себе");
             recommendations.add("Практикуйтесь перед зеркалом");
         }
 
-        // Общие рекомендации
         if (analysis.getOverallScore() < 60) {
             recommendations.add("Регулярно практикуйтесь, хотя бы 15 минут в день");
             recommendations.add("Записывайте себя и анализируйте ошибки");
@@ -449,7 +367,6 @@ public class AudioAnalyzer {
             recommendations.add("Попробуйте более сложные темы для разговора");
         }
 
-        // Добавление рекомендаций в анализ
         recommendations.forEach(analysis::addRecommendation);
 
         logger.debug("Сгенерировано рекомендаций: {}", recommendations.size());
@@ -457,9 +374,6 @@ public class AudioAnalyzer {
 
     // ====================== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ======================
 
-    /**
-     * Расчет RMS (Root Mean Square) - среднеквадратичное значение амплитуды
-     */
     private double calculateRMS(double[] samples) {
         double sum = 0;
         for (double sample : samples) {
@@ -468,14 +382,9 @@ public class AudioAnalyzer {
         return Math.sqrt(sum / samples.length);
     }
 
-    /**
-     * Анализ частотных полос
-     */
     private double[] analyzeFrequencyBands(double[] samples, int sampleRate) {
-        // Простой анализ энергии в трех частотных диапазонах
         double[] bands = new double[3]; // низкие, средние, высокие
 
-        // Применяем простой фильтр (в реальном приложении - FFT)
         for (double sample : samples) {
             double absSample = Math.abs(sample);
             bands[0] += absSample * 0.5; // Низкие частоты
@@ -483,7 +392,6 @@ public class AudioAnalyzer {
             bands[2] += absSample * 0.2; // Высокие частоты
         }
 
-        // Нормализация
         double total = bands[0] + bands[1] + bands[2];
         if (total > 0) {
             for (int i = 0; i < bands.length; i++) {
@@ -494,11 +402,7 @@ public class AudioAnalyzer {
         return bands;
     }
 
-    /**
-     * Обнаружение присутствия голоса
-     */
     private boolean detectVoicePresence(double[] samples, int sampleRate) {
-        // Простой детектор голоса на основе энергии и нулевых переходов
         int windowSize = sampleRate / 100; // 10 мс
         int voiceFrames = 0;
         int totalFrames = samples.length / windowSize;
@@ -507,7 +411,6 @@ public class AudioAnalyzer {
             int start = i * windowSize;
             int end = Math.min(start + windowSize, samples.length);
 
-            // Расчет энергии в окне
             double energy = 0;
             for (int j = start; j < end; j++) {
                 energy += samples[j] * samples[j];
@@ -519,13 +422,9 @@ public class AudioAnalyzer {
             }
         }
 
-        // Если в более чем 30% окон есть голос
         return (double) voiceFrames / totalFrames > 0.3;
     }
 
-    /**
-     * Обнаружение пауз
-     */
     private List<PauseInfo> detectPauses(double[] samples, int sampleRate) {
         List<PauseInfo> pauses = new ArrayList<>();
         int windowSize = sampleRate / 100; // 10 мс
@@ -567,9 +466,6 @@ public class AudioAnalyzer {
         return pauses;
     }
 
-    /**
-     * Расчет скорости речи (слова в минуту)
-     */
     private double calculateSpeakingRate(AudioData audioData, List<PauseInfo> pauses) {
         // Эмуляция: предполагаем среднюю длину слова и вычисляем WPM
         double speakingDuration = audioData.duration;
@@ -585,22 +481,16 @@ public class AudioAnalyzer {
             return 0;
         }
 
-        // Предполагаем 5 букв на слово в среднем
-        // и среднюю скорость произношения
-        double wordsPerMinute = (speakingDuration * 180) / 60; // эмуляция
+        double wordsPerMinute = (speakingDuration * 180) / 60;
 
         return Math.max(60, Math.min(200, wordsPerMinute));
     }
 
-    /**
-     * Анализ ритма речи
-     */
     private double analyzeRhythm(double[] samples, List<PauseInfo> pauses) {
         if (pauses.size() < 2) {
             return 0.5; // нейтральная оценка
         }
 
-        // Расчет регулярности пауз
         double[] pauseDurations = pauses.stream()
                 .mapToDouble(p -> p.duration)
                 .toArray();
@@ -613,15 +503,11 @@ public class AudioAnalyzer {
         }
         variance /= pauseDurations.length;
 
-        // Меньшая вариация = более регулярный ритм
         double rhythmScore = 1.0 / (1.0 + variance);
 
         return Math.min(1.0, rhythmScore);
     }
 
-    /**
-     * Сегментация на фразы
-     */
     private List<int[]> segmentIntoPhrases(double[] samples, int sampleRate) {
         List<int[]> phrases = new ArrayList<>();
         List<PauseInfo> pauses = detectPauses(samples, sampleRate);
@@ -644,9 +530,6 @@ public class AudioAnalyzer {
         return phrases;
     }
 
-    /**
-     * Расчет разнообразия интонации
-     */
     private double calculateIntonationVariety(double[] samples, List<int[]> phrases) {
         if (phrases.size() < 2) {
             return 0;
@@ -669,7 +552,6 @@ public class AudioAnalyzer {
             }
         }
 
-        // Расчет коэффициента вариации
         double mean = Arrays.stream(phraseEnergies).average().orElse(0);
         if (mean == 0) {
             return 0;
@@ -684,9 +566,6 @@ public class AudioAnalyzer {
         return variance / mean;
     }
 
-    /**
-     * Расчет стабильности громкости
-     */
     private double calculateVolumeStability(double[] samples) {
         int windowSize = samples.length / 100; // 100 окон
         if (windowSize < 10) {
@@ -709,7 +588,6 @@ public class AudioAnalyzer {
             }
         }
 
-        // Расчет коэффициента вариации (обратно пропорционален стабильности)
         double mean = Arrays.stream(windowEnergies).average().orElse(0);
         if (mean == 0) {
             return 0;
@@ -723,15 +601,52 @@ public class AudioAnalyzer {
 
         double cv = variance / mean;
 
-        // Конвертация в оценку стабильности (1 = идеальная стабильность)
         return 1.0 / (1.0 + cv * 2);
+    }
+
+    @Override
+    public void close() {
+        if (closed) {
+            return;
+        }
+
+        logger.info("Закрытие AudioAnalyzer...");
+        closed = true;
+
+        for (AudioInputStream stream : openStreams) {
+            try {
+                if (stream != null) {
+                    stream.close();
+                }
+            } catch (IOException e) {
+                logger.warn("Ошибка при закрытии аудиопотока", e);
+            }
+        }
+        openStreams.clear();
+
+        logger.info("AudioAnalyzer закрыт");
+    }
+
+
+    public boolean isClosed() {
+        return closed;
+    }
+
+    @Override
+    protected void finalize() throws Throwable {
+        try {
+            if (!closed) {
+                logger.warn("AudioAnalyzer не был закрыт явно, вызываем close() в finalize()");
+                close();
+            }
+        } finally {
+            super.finalize();
+        }
     }
 
     // ====================== ВСПОМОГАТЕЛЬНЫЕ КЛАССЫ ======================
 
-    /**
-     * Класс для хранения аудиоданных
-     */
+
     private static class AudioData {
         double[] samples;
         int sampleRate;
@@ -739,9 +654,6 @@ public class AudioAnalyzer {
         double duration;
     }
 
-    /**
-     * Информация о паузе
-     */
     private static class PauseInfo {
         int startIndex;
         int endIndex;
@@ -754,9 +666,7 @@ public class AudioAnalyzer {
         }
     }
 
-    /**
-     * Простой FFT для анализа частот (упрощенная версия)
-     */
+
     private static class SimpleFFT {
         public static double[] calculateSpectrum(double[] samples) {
             int n = samples.length;

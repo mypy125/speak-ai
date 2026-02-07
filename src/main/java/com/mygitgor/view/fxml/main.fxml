@@ -15,14 +15,14 @@
 
 
     <!-- Заголовок приложения -->
-<!--    <HBox spacing="10" alignment="CENTER_LEFT" style="-fx-padding: 0 0 10 0;">-->
-<!--        <ImageView fitHeight="60"-->
-<!--                   preserveRatio="true">-->
-<!--            <Image url="@../icons/logo.png"/>-->
-<!--        </ImageView>-->
-<!--        <Region HBox.hgrow="ALWAYS"/>-->
-<!--        <Label fx:id="statusLabel" text="✅ Готов" style="-fx-font-size: 12px; -fx-text-fill: #27ae60;"/>-->
-<!--    </HBox>-->
+    <!--    <HBox spacing="10" alignment="CENTER_LEFT" style="-fx-padding: 0 0 10 0;">-->
+    <!--        <ImageView fitHeight="60"-->
+    <!--                   preserveRatio="true">-->
+    <!--            <Image url="@../icons/logo.png"/>-->
+    <!--        </ImageView>-->
+    <!--        <Region HBox.hgrow="ALWAYS"/>-->
+    <!--        <Label fx:id="statusLabel" text="✅ Готов" style="-fx-font-size: 12px; -fx-text-fill: #27ae60;"/>-->
+    <!--    </HBox>-->
 
     <!-- Основной контейнер -->
     <SplitPane dividerPositions="0.7" VBox.vgrow="ALWAYS">
@@ -32,7 +32,7 @@
               style="-fx-padding: 10;">
             <HBox alignment="CENTER_LEFT" spacing="10">
                 <ImageView fitHeight="40"
-                        preserveRatio="true">
+                           preserveRatio="true">
                     <Image url="@../icons/logo.png"/>
                 </ImageView>
 

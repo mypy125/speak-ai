@@ -68,7 +68,6 @@ public class AudioUtils {
             return false;
         }
 
-        // Проверяем расширение
         String fileName = file.getName().toLowerCase();
         return fileName.endsWith(".wav") || fileName.endsWith(".mp3") ||
                 fileName.endsWith(".ogg") || fileName.endsWith(".flac");

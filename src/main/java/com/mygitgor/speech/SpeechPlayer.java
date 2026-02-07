@@ -1,16 +1,18 @@
 package com.mygitgor.speech;
 
 import javax.sound.sampled.*;
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class SpeechPlayer {
+public class SpeechPlayer implements Closeable {
     private static final Logger logger = LoggerFactory.getLogger(SpeechPlayer.class);
 
     private Clip audioClip;
     private boolean isPlaying;
+    private volatile boolean closed = false;
 
     public SpeechPlayer() {
         this.isPlaying = false;
@@ -80,5 +82,25 @@ public class SpeechPlayer {
             audioClip.close();
             audioClip = null;
         }
+    }
+
+    @Override
+    public void close() {
+        if (closed) {
+            return;
+        }
+
+        closed = true;
+        logger.info("Закрытие SpeechPlayer...");
+
+        if (isPlaying()) {
+            stopAudio();
+        }
+
+        if (audioClip != null) {
+            audioClip.close();
+        }
+
+        logger.info("SpeechPlayer закрыт");
     }
 }

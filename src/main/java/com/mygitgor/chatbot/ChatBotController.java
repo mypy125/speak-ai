@@ -11,6 +11,8 @@ import com.mygitgor.model.EnhancedSpeechAnalysis;
 import com.mygitgor.speech.AudioAnalyzer;
 import com.mygitgor.speech.SpeechPlayer;
 import com.mygitgor.speech.SpeechRecorder;
+import com.mygitgor.speech.SpeechToTextService;
+import com.mygitgor.utils.ResourceManager;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
@@ -21,13 +23,14 @@ import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Closeable;
 import java.io.File;
 import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class ChatBotController implements Initializable {
+public class ChatBotController implements Initializable, AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(ChatBotController.class);
 
     @FXML private TextArea chatArea;
@@ -49,6 +52,15 @@ public class ChatBotController implements Initializable {
     @FXML private Label phonemeLabel;
     @FXML private TextArea detailedAnalysisArea;
 
+    @FXML private VBox speechControlPanel;
+    @FXML private ComboBox<String> languageComboBox;
+    @FXML private ComboBox<String> serviceTypeComboBox;
+    @FXML private Button testSpeechButton;
+    @FXML private Label speechServiceStatusLabel;
+    @FXML private Button testMicrophoneButton;
+    @FXML private Slider microphoneSensitivitySlider;
+    @FXML private Label sensitivityLabel;
+
     private ChatBotService chatBotService;
     private SpeechRecorder speechRecorder;
     private SpeechPlayer speechPlayer;
@@ -59,34 +71,28 @@ public class ChatBotController implements Initializable {
     private Thread recordingTimerThread;
     private boolean isAiServiceAvailable;
 
+    private ResourceManager resourceManager;
+    private volatile boolean closed = false;
+
     @Override
     public void initialize(URL location, ResourceBundle resources) {
         logger.info("Инициализация ChatBotController");
-
-        // Инициализация сервисов
+        resourceManager = new ResourceManager();
         initializeServices();
-
-        // Настройка UI
         setupUI();
-
-        // Загрузка истории
+        setupSpeechRecognitionUI();
         loadConversationHistory();
-
-        // Приветственное сообщение
         showWelcomeMessage();
     }
 
     private void initializeServices() {
         try {
-            // Загружаем конфигурацию
             Properties props = new Properties();
             props.load(getClass().getResourceAsStream("/application.properties"));
 
-            // Создаем AI сервис через фабрику
             AiService aiService = AIServiceFactory.createService(props);
             isAiServiceAvailable = aiService.isAvailable();
 
-            // Логируем информацию о сервисе
             if (aiService instanceof UniversalAIService universalService) {
                 logger.info("✅ {} сервис инициализирован", universalService.getProvider());
                 logger.info("Модель: {}", universalService.getModel());
@@ -94,8 +100,9 @@ public class ChatBotController implements Initializable {
                 logger.warn("🔄 Используется Mock сервис (демо-режим)");
             }
 
-            // Инициализация остальных сервисов
             this.audioAnalyzer = new AudioAnalyzer();
+            logger.info("AudioAnalyzer создан в контроллере");
+
             this.pronunciationTrainer = new PronunciationTrainer();
 
             this.chatBotService = new ChatBotService(
@@ -103,16 +110,279 @@ public class ChatBotController implements Initializable {
                     audioAnalyzer,
                     pronunciationTrainer
             );
+            logger.info("ChatBotService создан с внешним AudioAnalyzer");
 
             this.speechRecorder = new SpeechRecorder();
             this.speechPlayer = new SpeechPlayer();
 
-            // Показываем статус пользователю
+            resourceManager.register(speechPlayer);
+            resourceManager.register(speechRecorder);
+            resourceManager.register(chatBotService);
+            resourceManager.register(audioAnalyzer);
+
+            // Регистрируем AI сервис если он Closeable
+            if (aiService instanceof Closeable) {
+                resourceManager.register((Closeable) aiService);
+            }
+
+            if (pronunciationTrainer instanceof Closeable) {
+                resourceManager.register((Closeable) pronunciationTrainer);
+            }
+
             showServiceStatus(aiService);
+            logger.info("Все сервисы инициализированы и зарегистрированы");
 
         } catch (Exception e) {
             logger.error("Ошибка при инициализации сервисов", e);
+            cleanupResources();
             throw new RuntimeException("Не удалось инициализировать сервисы", e);
+        }
+    }
+
+    private void setupSpeechRecognitionUI() {
+        // Проверяем наличие элементов UI
+        if (serviceTypeComboBox == null || languageComboBox == null) {
+            logger.warn("Элементы управления распознаванием речи не найдены в FXML");
+            return;
+        }
+
+        // Настройка ComboBox с типами сервисов
+        serviceTypeComboBox.getItems().addAll(
+                "MOCK - Тестовый режим",
+                "VOSK - Оффлайн распознавание",
+                "WHISPER - OpenAI Whisper",
+                "GOOGLE - Google Speech API"
+        );
+        serviceTypeComboBox.setValue("MOCK - Тестовый режим");
+
+        // Обработчик изменения выбора типа сервиса
+        serviceTypeComboBox.setOnAction(event -> {
+            String selected = serviceTypeComboBox.getValue();
+            updateSpeechServiceStatus(selected);
+        });
+
+        // Настройка ComboBox с языками
+        languageComboBox.setVisible(false); // Сначала скрываем, покажем после инициализации
+
+        // Загрузка языков в фоновом потоке
+        new Thread(() -> {
+            try {
+                Map<String, String> languages = chatBotService.getSupportedLanguagesWithNames();
+                Platform.runLater(() -> {
+                    if (languageComboBox != null) {
+                        languageComboBox.getItems().clear();
+                        languages.forEach((code, name) -> {
+                            languageComboBox.getItems().add(name + " (" + code + ")");
+                        });
+                        String currentLangName = chatBotService.getCurrentSpeechLanguageName();
+                        String currentLangCode = chatBotService.getCurrentSpeechLanguage();
+                        languageComboBox.setValue(currentLangName + " (" + currentLangCode + ")");
+                        languageComboBox.setVisible(true);
+                    }
+                });
+            } catch (Exception e) {
+                logger.error("Ошибка при загрузке языков", e);
+            }
+        }).start();
+
+        // Обработчик изменения языка
+        languageComboBox.setOnAction(event -> {
+            String selected = languageComboBox.getValue();
+            if (selected != null) {
+                // Извлекаем код языка из строки (формат: "🇷🇺 Русский (ru)")
+                try {
+                    String languageCode = selected.substring(selected.lastIndexOf("(") + 1, selected.lastIndexOf(")"));
+                    chatBotService.switchSpeechLanguage(languageCode);
+                    updateSpeechServiceStatus(serviceTypeComboBox.getValue());
+                } catch (Exception e) {
+                    logger.error("Ошибка при обработке выбора языка", e);
+                }
+            }
+        });
+
+        // Инициализация статуса
+        if (speechServiceStatusLabel != null) {
+            updateSpeechServiceStatus(serviceTypeComboBox.getValue());
+        }
+    }
+
+    private void testSpeechRecognition() {
+        if (closed) {
+            showError("Ошибка", "Приложение закрывается");
+            return;
+        }
+
+        // Создаем тестовый аудиофайл
+        String testAudioPath = "recordings/test_audio.wav";
+        File testFile = new File(testAudioPath);
+
+        if (!testFile.exists()) {
+            showAlert("Тест", "Сначала запишите тестовое аудио");
+            return;
+        }
+
+        new Thread(() -> {
+            try {
+                Platform.runLater(() -> {
+                    speechServiceStatusLabel.setText("🔍 Тестирование...");
+                });
+
+                // Используем текущий SpeechToTextService из ChatBotService
+                SpeechToTextService service = chatBotService.getSpeechToTextService();
+
+                long startTime = System.currentTimeMillis();
+                SpeechToTextService.SpeechRecognitionResult result =
+                        service.transcribe(testAudioPath);
+                long elapsedTime = System.currentTimeMillis() - startTime;
+
+                Platform.runLater(() -> {
+                    String message = String.format(
+                            "Результат теста:\n\n" +
+                                    "Текст: %s\n" +
+                                    "Уверенность: %.1f%%\n" +
+                                    "Время: %d мс\n" +
+                                    "Сервис: %s\n" +
+                                    "Язык: %s",
+                            result.getText(),
+                            result.getConfidence() * 100,
+                            elapsedTime,
+                            result.getServiceInfo(),
+                            chatBotService.getCurrentSpeechLanguageName()
+                    );
+
+                    Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                    alert.setTitle("Тест распознавания речи");
+                    alert.setHeaderText("Результат тестирования");
+                    alert.setContentText(message);
+                    alert.showAndWait();
+
+                    updateSpeechServiceStatus(serviceTypeComboBox.getValue());
+                });
+
+            } catch (Exception e) {
+                logger.error("Ошибка тестирования распознавания", e);
+                Platform.runLater(() -> {
+                    showError("Ошибка теста", "Не удалось протестировать распознавание: " + e.getMessage());
+                    updateSpeechServiceStatus(serviceTypeComboBox.getValue());
+                });
+            }
+        }).start();
+    }
+
+    private void testMicrophone() {
+        if (closed) {
+            showError("Ошибка", "Приложение закрывается");
+            return;
+        }
+
+        new Thread(() -> {
+            try {
+                Platform.runLater(() -> {
+                    testMicrophoneButton.setDisable(true);
+                    speechServiceStatusLabel.setText("🎤 Тестирование микрофона...");
+                });
+
+                // Тестируем микрофон через 3 секунды
+                chatBotService.testMicrophone(3);
+
+                Platform.runLater(() -> {
+                    testMicrophoneButton.setDisable(false);
+                    updateSpeechServiceStatus(serviceTypeComboBox.getValue());
+
+                    // Показываем уведомление
+                    showAlert("Тест микрофона",
+                            "Тестирование микрофона завершено. Проверьте логи в консоли для деталей.");
+                });
+
+            } catch (Exception e) {
+                logger.error("Ошибка тестирования микрофона", e);
+                Platform.runLater(() -> {
+                    showError("Ошибка теста", "Не удалось протестировать микрофон: " + e.getMessage());
+                    testMicrophoneButton.setDisable(false);
+                    updateSpeechServiceStatus(serviceTypeComboBox.getValue());
+                });
+            }
+        }).start();
+    }
+
+    /**
+     * Обновление статуса сервиса распознавания
+     */
+    private void updateSpeechServiceStatus(String serviceInfo) {
+        Platform.runLater(() -> {
+            if (speechServiceStatusLabel == null) return;
+
+            if (serviceInfo.contains("MOCK")) {
+                speechServiceStatusLabel.setText("🔧 Тестовый режим");
+                speechServiceStatusLabel.setStyle("-fx-text-fill: #f39c12;");
+                if (languageComboBox != null) languageComboBox.setDisable(true);
+            } else if (serviceInfo.contains("WHISPER")) {
+                speechServiceStatusLabel.setText("✅ Whisper API (требуется ключ)");
+                speechServiceStatusLabel.setStyle("-fx-text-fill: #3498db;");
+                if (languageComboBox != null) languageComboBox.setDisable(false);
+            } else if (serviceInfo.contains("GOOGLE")) {
+                speechServiceStatusLabel.setText("✅ Google Speech API (требуется ключ)");
+                speechServiceStatusLabel.setStyle("-fx-text-fill: #2ecc71;");
+                if (languageComboBox != null) languageComboBox.setDisable(false);
+            } else if (serviceInfo.contains("VOSK")) {
+                speechServiceStatusLabel.setText("📁 Оффлайн распознавание (требуется модель)");
+                speechServiceStatusLabel.setStyle("-fx-text-fill: #9b59b6;");
+                if (languageComboBox != null) languageComboBox.setDisable(false);
+
+                // Проверяем наличие моделей для Vosk
+                if (languageComboBox != null) {
+                    Map<String, String> languages = chatBotService.getSupportedLanguagesWithNames();
+                    List<String> availableLanguages = new ArrayList<>();
+                    for (Map.Entry<String, String> entry : languages.entrySet()) {
+                        String modelPath = "models/vosk-model-small-" + entry.getKey();
+                        File modelDir = new File(modelPath);
+                        if (modelDir.exists()) {
+                            availableLanguages.add(entry.getValue() + " (" + entry.getKey() + ") - ✅");
+                        } else {
+                            availableLanguages.add(entry.getValue() + " (" + entry.getKey() + ") - ❌");
+                        }
+                    }
+
+                    // Обновляем список языков с отметками доступности
+                    languageComboBox.getItems().clear();
+                    languageComboBox.getItems().addAll(availableLanguages);
+                }
+            }
+        });
+    }
+
+    @Override
+    public void close() {
+        if (closed) {
+            return;
+        }
+
+        closed = true;
+        logger.info("Закрытие ChatBotController...");
+
+        try {
+            // Останавливаем таймер записи
+            stopRecordingTimer();
+
+            // Закрываем все ресурсы через менеджер
+            if (resourceManager != null) {
+                resourceManager.close();
+            }
+
+            logger.info("ChatBotController закрыт");
+
+        } catch (Exception e) {
+            logger.error("Ошибка при закрытии ChatBotController", e);
+        }
+    }
+
+    private void cleanupResources() {
+        if (resourceManager != null) {
+            try {
+                resourceManager.close();
+            } catch (Exception e) {
+                logger.error("Ошибка при очистке ресурсов", e);
+            }
         }
     }
 
@@ -204,6 +474,32 @@ public class ChatBotController implements Initializable {
         analysisProgress.setVisible(false);
         detailedAnalysisArea.setVisible(false);
 
+        // Инициализация слайдера чувствительности (если он есть в FXML)
+        if (microphoneSensitivitySlider != null) {
+            microphoneSensitivitySlider.setMin(0.1);
+            microphoneSensitivitySlider.setMax(1.0);
+            microphoneSensitivitySlider.setValue(0.5);
+            microphoneSensitivitySlider.setBlockIncrement(0.1);
+            microphoneSensitivitySlider.setShowTickLabels(true);
+            microphoneSensitivitySlider.setShowTickMarks(true);
+            microphoneSensitivitySlider.setMajorTickUnit(0.2);
+            microphoneSensitivitySlider.setMinorTickCount(1);
+
+            microphoneSensitivitySlider.valueProperty().addListener((observable, oldValue, newValue) -> {
+                double sensitivity = Math.round(newValue.doubleValue() * 10) / 10.0;
+                if (sensitivityLabel != null) {
+                    sensitivityLabel.setText(String.format("Чувствительность: %.1f", sensitivity));
+                }
+                chatBotService.setMicrophoneSensitivity(sensitivity);
+            });
+        }
+
+        // Начальное значение для метки чувствительности
+        if (sensitivityLabel != null) {
+            sensitivityLabel.setText(String.format("Чувствительность: %.1f",
+                    microphoneSensitivitySlider != null ? microphoneSensitivitySlider.getValue() : 0.5));
+        }
+
         // Настройка стилей
         chatArea.setStyle("-fx-font-family: 'Segoe UI', 'Arial'; -fx-font-size: 14px;");
         inputField.setStyle("-fx-font-family: 'Segoe UI', 'Arial'; -fx-font-size: 14px;");
@@ -216,6 +512,22 @@ public class ChatBotController implements Initializable {
         // Настройка кнопок анализа
         analyzeButton.setOnAction(event -> onAnalyzeAudio());
         pronunciationButton.setOnAction(event -> onPronunciationTraining());
+
+        // Настройка других кнопок
+        recordButton.setOnAction(event -> onStartRecording());
+        stopButton.setOnAction(event -> onStopRecording());
+        sendButton.setOnAction(event -> onSendMessage());
+        clearButton.setOnAction(event -> onClearChat());
+        historyButton.setOnAction(event -> onShowHistory());
+
+        // Настройка кнопок тестирования (если они есть)
+        if (testSpeechButton != null) {
+            testSpeechButton.setOnAction(event -> testSpeechRecognition());
+        }
+
+        if (testMicrophoneButton != null) {
+            testMicrophoneButton.setOnAction(event -> testMicrophone());
+        }
     }
 
     private void showWelcomeMessage() {
@@ -229,6 +541,11 @@ public class ChatBotController implements Initializable {
             2. Я проанализирую вашу речь и грамматику
             3. Получите подробную обратную связь и рекомендации
             
+            **Настройки распознавания речи:**
+            • Выберите язык в выпадающем списке
+            • Отрегулируйте чувствительность микрофона
+            • Протестируйте микрофон перед записью
+            
             **Совет:** Используйте микрофон для записи речи - так я смогу проанализировать ваше произношение!
             
             Давайте начнем обучение! ✨
@@ -239,9 +556,13 @@ public class ChatBotController implements Initializable {
 
     @FXML
     private void onSendMessage() {
+        if (closed) {
+            showError("Ошибка", "Приложение закрывается. Невозможно отправить сообщение.");
+            return;
+        }
+
         String text = inputField.getText().trim();
 
-        // Если нет текста и нет аудио - предупреждение
         if (text.isEmpty() && currentAudioFile == null) {
             showAlert("Внимание", "Введите сообщение или запишите аудио перед отправкой");
             return;
@@ -464,6 +785,11 @@ public class ChatBotController implements Initializable {
 
     @FXML
     private void onStartRecording() {
+        if (closed) {
+            showError("Ошибка", "Приложение закрывается");
+            return;
+        }
+
         try {
             // Генерация имени файла
             currentAudioFile = chatBotService.generateAudioFileName();
@@ -494,6 +820,11 @@ public class ChatBotController implements Initializable {
 
     @FXML
     private void onStopRecording() {
+        if (closed) {
+            showError("Ошибка", "Приложение закрывается");
+            return;
+        }
+
         try {
             // Остановка записи
             File audioFile = speechRecorder.stopRecording(currentAudioFile);
@@ -552,12 +883,22 @@ public class ChatBotController implements Initializable {
 
     @FXML
     private void onAnalyzeAudio() {
+        if (closed) {
+            showError("Ошибка", "Приложение закрывается");
+            return;
+        }
+
         if (currentAudioFile == null) {
             showAlert("Внимание", "Сначала запишите аудио");
             return;
         }
 
         new Thread(() -> {
+            if (closed) {
+                Platform.runLater(() -> showError("Ошибка", "Приложение закрывается"));
+                return;
+            }
+
             Platform.runLater(() -> {
                 analysisProgress.setVisible(true);
                 detailedAnalysisArea.setVisible(true);
@@ -771,6 +1112,13 @@ public class ChatBotController implements Initializable {
     }
 
     @FXML
+    private void toggleSpeechPanel() {
+        boolean isVisible = speechControlPanel.isVisible();
+        speechControlPanel.setVisible(!isVisible);
+        speechControlPanel.setManaged(!isVisible);
+    }
+
+    @FXML
     private void onSettings() {
         showAlert("Настройки", "Настройки будут доступны в следующей версии");
     }
@@ -785,6 +1133,11 @@ public class ChatBotController implements Initializable {
             2. **Запись голоса** - нажмите 🎤 для записи речи
             3. **Анализ речи** - автоматический анализ произношения
             4. **Рекомендации** - персонализированные советы по улучшению
+            
+            **Настройки распознавания речи:**
+            • Выберите язык в выпадающем списке
+            • Отрегулируйте чувствительность микрофона
+            • Протестируйте микрофон перед записью
             
             **Советы:**
             • Записывайте свою речь для анализа произношения
@@ -892,16 +1245,6 @@ public class ChatBotController implements Initializable {
         });
     }
 
-    private void showWarning(String message) {
-        Platform.runLater(() -> {
-            Alert alert = new Alert(Alert.AlertType.WARNING);
-            alert.setTitle("Внимание");
-            alert.setHeaderText(null);
-            alert.setContentText(message);
-            alert.showAndWait();
-        });
-    }
-
     private void showError(String title, String message) {
         Platform.runLater(() -> {
             Alert alert = new Alert(Alert.AlertType.ERROR);
@@ -917,12 +1260,8 @@ public class ChatBotController implements Initializable {
 
         // Обработка закрытия окна
         stage.setOnCloseRequest(event -> {
-            if (speechRecorder != null && speechRecorder.isRecording()) {
-                speechRecorder.stopRecording(currentAudioFile);
-            }
-            if (speechPlayer != null && speechPlayer.isPlaying()) {
-                speechPlayer.stopAudio();
-            }
+            logger.info("Окно приложения закрывается");
+            close(); // Закрываем все ресурсы
             logger.info("Окно приложения закрыто");
         });
     }
@@ -930,11 +1269,16 @@ public class ChatBotController implements Initializable {
     @Override
     protected void finalize() throws Throwable {
         try {
-            if (speechRecorder != null) {
-                speechRecorder.cleanup();
+            if (!closed) {
+                logger.warn("ChatBotController не был закрыт явно, вызываем close() в finalize()");
+                close();
             }
         } finally {
             super.finalize();
         }
+    }
+
+    public boolean isClosed() {
+        return closed;
     }
 }

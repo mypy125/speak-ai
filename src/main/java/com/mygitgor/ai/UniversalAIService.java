@@ -35,8 +35,10 @@ public class UniversalAIService implements AiService {
 
         this.client = new OkHttpClient.Builder()
                 .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(60, TimeUnit.SECONDS)
                 .writeTimeout(30, TimeUnit.SECONDS)
+                .connectionPool(new ConnectionPool(5, 5, TimeUnit.MINUTES))
+                .retryOnConnectionFailure(true)
                 .build();
 
         this.isAvailable = testConnection();
@@ -53,29 +55,28 @@ public class UniversalAIService implements AiService {
             JsonObject request = createRequest(testPrompt);
             request.addProperty("max_tokens", 10);
 
-            Response response = client.newCall(buildHttpRequest(request)).execute();
+            try (Response response = client.newCall(buildHttpRequest(request)).execute()) {
+                if (response.isSuccessful()) {
+                    logger.info("✅ {} API подключен успешно. Модель: {}", getProviderName(), model);
+                    return true;
+                } else {
+                    String errorBody = response.body() != null ? response.body().string() : "";
+                    logger.error("❌ Ошибка подключения к {} API: {} - {}",
+                            getProviderName(), response.code(), response.message());
 
-            if (response.isSuccessful()) {
-                logger.info("✅ {} API подключен успешно. Модель: {}", getProviderName(), model);
-                return true;
-            } else {
-                String errorBody = response.body() != null ? response.body().string() : "";
-                logger.error("❌ Ошибка подключения к {} API: {} - {}",
-                        getProviderName(), response.code(), response.message());
-
-                // Логируем детали ошибки
-                try {
-                    JsonObject errorJson = JsonParser.parseString(errorBody).getAsJsonObject();
-                    if (errorJson.has("error")) {
-                        JsonObject error = errorJson.getAsJsonObject("error");
-                        if (error.has("message")) {
-                            logger.error("Детали ошибки: {}", error.get("message").getAsString());
+                    try {
+                        JsonObject errorJson = JsonParser.parseString(errorBody).getAsJsonObject();
+                        if (errorJson.has("error")) {
+                            JsonObject error = errorJson.getAsJsonObject("error");
+                            if (error.has("message")) {
+                                logger.error("Детали ошибки: {}", error.get("message").getAsString());
+                            }
                         }
+                    } catch (Exception e) {
+                        logger.error("Тело ошибки: {}", errorBody);
                     }
-                } catch (Exception e) {
-                    logger.error("Тело ошибки: {}", errorBody);
+                    return false;
                 }
-                return false;
             }
         } catch (Exception e) {
             logger.error("Ошибка при тестировании подключения к {} API", getProviderName(), e);
@@ -212,8 +213,13 @@ public class UniversalAIService implements AiService {
         try (Response response = client.newCall(httpRequest).execute()) {
             if (!response.isSuccessful()) {
                 String errorBody = response.body() != null ? response.body().string() : "";
+                logger.error("❌ Ошибка {} API ({}): {}", getProviderName(), response.code(), response.message());
+
+                // Обрабатываем ошибку
+                handleAPIError(response.code(), errorBody);
+
                 throw new IOException(String.format("API error %d: %s",
-                        response.code(), errorBody));
+                        response.code(), response.message()));
             }
 
             String responseBody = response.body().string();
@@ -393,6 +399,30 @@ public class UniversalAIService implements AiService {
         analysis.addRecommendation("Практикуйте произношение сложных звуков");
         analysis.addRecommendation("Уделите внимание грамматическим конструкциям");
         analysis.addRecommendation("Расширяйте словарный запас");
+    }
+
+    private void handleAPIError(int code, String errorBody) {
+        if (errorBody == null || errorBody.isEmpty()) {
+            logger.error("API ошибка {} без тела ответа", code);
+            return;
+        }
+
+        try {
+            JsonObject errorJson = JsonParser.parseString(errorBody).getAsJsonObject();
+
+            if (errorJson.has("error")) {
+                JsonObject error = errorJson.getAsJsonObject("error");
+                if (error.has("message")) {
+                    String errorMessage = error.get("message").getAsString();
+                    logger.error("API Error Message: {}", errorMessage);
+                }
+                if (error.has("type")) {
+                    logger.error("Error Type: {}", error.get("type").getAsString());
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Не удалось распарсить тело ошибки: {}", errorBody.substring(0, Math.min(200, errorBody.length())));
+        }
     }
 
     // Геттеры

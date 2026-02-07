@@ -10,18 +10,20 @@ import com.mygitgor.model.SpeechAnalysis;
 import com.mygitgor.model.User;
 import com.mygitgor.repository.DAO.ConversationDao;
 import com.mygitgor.repository.DAO.UserDao;
-import com.mygitgor.repository.DatabaseManager;
 import com.mygitgor.speech.AudioAnalyzer;
 import com.mygitgor.speech.SpeechToTextService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Closeable;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
+import java.util.Properties;
+import java.util.*;
 
-public class ChatBotService {
+public class ChatBotService implements Closeable {
     private static final Logger logger = LoggerFactory.getLogger(ChatBotService.class);
 
     private final AiService aiService;
@@ -32,22 +34,30 @@ public class ChatBotService {
     private final SpeechToTextService speechToTextService;
     private User currentUser;
 
+    private volatile boolean closed = false;
+
     public ChatBotService(AiService aiService, AudioAnalyzer audioAnalyzer,
                           PronunciationTrainer pronunciationTrainer) {
         this.aiService = aiService;
-        this.audioAnalyzer = audioAnalyzer;
+        this.audioAnalyzer = audioAnalyzer; // Сохраняем переданный анализатор
         this.pronunciationTrainer = pronunciationTrainer;
         this.recommendationEngine = new RecommendationEngine();
-        this.conversationDao = new ConversationDao();
+
+        // Инициализация DAO
+        try {
+            this.conversationDao = new ConversationDao();
+        } catch (Exception e) {
+            logger.error("Ошибка инициализации ConversationDao", e);
+            throw new RuntimeException("Не удалось инициализировать ChatBotService", e);
+        }
 
         // Инициализация сервиса распознавания речи
-        this.speechToTextService = new SpeechToTextService(
-                SpeechToTextService.ServiceType.MOCK,
-                "" // В реальном приложении нужно добавить API ключ
-        );
+        this.speechToTextService = createSpeechToTextService();
 
         // Временный пользователь для MVP
         this.currentUser = createDefaultUser();
+
+        logger.info("ChatBotService инициализирован с внешним AudioAnalyzer");
     }
 
     private User createDefaultUser() {
@@ -115,6 +125,7 @@ public class ChatBotService {
                 weeklyPlan = recommendationEngine.generateWeeklyPlan(speechAnalysis);
             }
 
+            // 7. Сохранение в БД
             saveConversation(recognizedText, botResponse, speechAnalysis, audioFilePath);
 
             // 8. Формирование полного ответа
@@ -134,13 +145,64 @@ public class ChatBotService {
         }
     }
 
+    private SpeechToTextService createSpeechToTextService() {
+        try {
+            Properties props = new Properties();
+            props.load(getClass().getResourceAsStream("/application.properties"));
+
+            String serviceTypeStr = props.getProperty("speech.service.type", "MOCK");
+            String apiKey = props.getProperty("speech.api.key", "");
+            String defaultLanguage = props.getProperty("speech.default.language", "en");
+
+            SpeechToTextService.ServiceType serviceType;
+            try {
+                serviceType = SpeechToTextService.ServiceType.valueOf(serviceTypeStr.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                logger.warn("Неизвестный тип сервиса распознавания: {}, используем MOCK", serviceTypeStr);
+                serviceType = SpeechToTextService.ServiceType.MOCK;
+            }
+
+            logger.info("Создан SpeechToTextService типа: {}, язык по умолчанию: {}",
+                    serviceType, defaultLanguage);
+            return new SpeechToTextService(serviceType, apiKey, defaultLanguage);
+
+        } catch (Exception e) {
+            logger.error("Ошибка при создании SpeechToTextService, используем MOCK", e);
+            return new SpeechToTextService(SpeechToTextService.ServiceType.MOCK, "", "en");
+        }
+    }
+
+    public void switchSpeechLanguage(String languageCode) {
+        if (speechToTextService.getServiceType() == SpeechToTextService.ServiceType.VOSK) {
+            speechToTextService.switchLanguage(languageCode);
+            logger.info("Язык распознавания речи изменен на: {}",
+                    speechToTextService.getCurrentLanguageName());
+        } else {
+            logger.warn("Смена языка поддерживается только для Vosk");
+        }
+    }
+
+    public List<String> getSupportedLanguages() {
+        return speechToTextService.getSupportedLanguages();
+    }
+
+    public Map<String, String> getSupportedLanguagesWithNames() {
+        return speechToTextService.getSupportedLanguagesWithNames();
+    }
+
+    public String getCurrentSpeechLanguage() {
+        return speechToTextService.getCurrentLanguage();
+    }
+
+    public String getCurrentSpeechLanguageName() {
+        return speechToTextService.getCurrentLanguageName();
+    }
+
     private void saveConversation(String userMessage, String botResponse,
                                   SpeechAnalysis analysis, String audioPath) {
         try {
-            // Получаем или создаем пользователя
             User defaultUser = ensureDefaultUserExists();
 
-            // Создаем Conversation с объектом User
             Conversation conversation = new Conversation();
             conversation.setUser(defaultUser);
             conversation.setUserMessage(userMessage);
@@ -159,7 +221,6 @@ public class ChatBotService {
                 }
             }
 
-            ConversationDao conversationDao = new ConversationDao();
             conversationDao.createConversation(conversation);
 
             logger.info("Разговор сохранен в БД, ID: {}, для пользователя: {}",
@@ -409,6 +470,97 @@ public class ChatBotService {
 
     public RecommendationEngine getRecommendationEngine() {
         return recommendationEngine;
+    }
+
+    @Override
+    public void close() {
+        if (closed) {
+            return;
+        }
+
+        logger.info("Закрытие ChatBotService...");
+        closed = true;
+
+        try {
+            if (speechToTextService != null) {
+                try {
+                    speechToTextService.close();
+                } catch (Exception e) {
+                    logger.error("Ошибка при закрытии SpeechToTextService", e);
+                }
+            }
+
+            if (pronunciationTrainer != null && pronunciationTrainer instanceof Closeable) {
+                try {
+                    ((Closeable) pronunciationTrainer).close();
+                } catch (Exception e) {
+                    logger.error("Ошибка при закрытии PronunciationTrainer", e);
+                }
+            }
+
+            if (aiService instanceof Closeable) {
+                try {
+                    ((Closeable) aiService).close();
+                } catch (Exception e) {
+                    logger.error("Ошибка при закрытии AI сервиса", e);
+                }
+            }
+
+            logger.info("ChatBotService закрыт");
+
+        } catch (Exception e) {
+            logger.error("Ошибка при закрытии ChatBotService", e);
+        }
+    }
+
+    public boolean isClosed() {
+        return closed;
+    }
+
+    public ChatResponse processUserInputSafe(String text, String audioFilePath) {
+        if (closed) {
+            throw new IllegalStateException("ChatBotService закрыт");
+        }
+        return processUserInput(text, audioFilePath);
+    }
+
+    @Override
+    protected void finalize() throws Throwable {
+        try {
+            if (!closed) {
+                logger.warn("ChatBotService не был закрыт явно, вызываем close() в finalize()");
+                close();
+            }
+        } finally {
+            super.finalize();
+        }
+    }
+
+    public SpeechToTextService getSpeechToTextService() {
+        return speechToTextService;
+    }
+
+    public void testMicrophone(int durationSeconds) {
+        if (speechToTextService != null) {
+            speechToTextService.testMicrophone(durationSeconds);
+        } else {
+            logger.warn("SpeechToTextService не инициализирован для теста микрофона");
+        }
+    }
+
+    public void setMicrophoneSensitivity(double sensitivity) {
+        if (speechToTextService != null) {
+            speechToTextService.setMicrophoneSensitivity(sensitivity);
+        } else {
+            logger.warn("SpeechToTextService не инициализирован для установки чувствительности");
+        }
+    }
+
+    public double getMicrophoneSensitivity() {
+        if (speechToTextService != null) {
+            return speechToTextService.getMicrophoneSensitivity();
+        }
+        return 0.5; // Значение по умолчанию
     }
 
     // Вспомогательный класс для ответа

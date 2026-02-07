@@ -23,11 +23,8 @@ public class App extends Application {
     public void start(Stage stage) throws IOException {
         try {
             logger.info("Запуск приложения SpeakAI...");
-
-            // Создаем необходимые директории
             createApplicationDirectories();
 
-            // Инициализация базы данных
             DatabaseManager.getInstance().initializeDatabase();
             logger.info("База данных инициализирована");
 

@@ -1,112 +1,266 @@
 package com.mygitgor.speech;
 
+
+import org.intellij.lang.annotations.Language;
+import org.vosk.Recognizer;
+import org.vosk.Model;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.Base64;
+import javax.sound.sampled.*;
+import java.io.Closeable;
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
-public class SpeechToTextService {
+public class SpeechToTextService implements Closeable {
     private static final Logger logger = LoggerFactory.getLogger(SpeechToTextService.class);
 
-    // Конфигурация (можно вынести в properties)
-    private static final String WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions";
-    private static final String GOOGLE_SPEECH_URL = "https://speech.googleapis.com/v1/speech:recognize";
-
-    private String apiKey;
     private ServiceType serviceType;
+    private String currentLanguage;
+    private volatile boolean closed = false;
+    private double microphoneSensitivity = 0.5;
+
+    // Для Vosk
+    private AtomicReference<Model> voskModel;
+    private AtomicReference<Recognizer> voskRecognizer;
+    private AudioFormat audioFormat;
+    private ObjectMapper mapper;
+
+    // Мультиязычная поддержка
+    private final Map<String, String> supportedLanguages = new HashMap<>();
+    private final Map<String, String> languageModelPaths = new HashMap<>();
+
+    // Для API сервисов
+    private String apiKey;
 
     public enum ServiceType {
-        WHISPER,    // OpenAI Whisper
-        GOOGLE,     // Google Speech-to-Text
-        VOSK,       // Offline Vosk
-        MOCK        // Для тестов
+        WHISPER,
+        GOOGLE,
+        VOSK,
+        MOCK
     }
 
-    public SpeechToTextService(ServiceType serviceType, String apiKey) {
+    public SpeechToTextService(ServiceType serviceType, String apiKey, String defaultLanguage) {
         this.serviceType = serviceType;
         this.apiKey = apiKey;
-        logger.info("Инициализирован сервис распознавания речи: {}", serviceType);
+        this.currentLanguage = defaultLanguage;
+
+        // Инициализация общих компонентов
+        this.audioFormat = new AudioFormat(16000, 16, 1, true, false);
+        this.mapper = new ObjectMapper();
+        this.voskModel = new AtomicReference<>();
+        this.voskRecognizer = new AtomicReference<>();
+
+        // Инициализация языковой поддержки
+        initializeSupportedLanguages();
+        initializeDefaultModels();
+        checkModelsExistence();
+
+        logger.info("Инициализирован сервис распознавания речи: {}, язык по умолчанию: {}",
+                serviceType, getLanguageName(defaultLanguage));
+
+        // Инициализация Vosk модели если выбран этот тип
+        if (serviceType == ServiceType.VOSK) {
+            initializeVoskModel(currentLanguage);
+        }
     }
 
     /**
-     * Основной метод распознавания речи
+     * Инициализация поддерживаемых языков
+     */
+    private void initializeSupportedLanguages() {
+        supportedLanguages.put("ru", "🇷🇺 Русский");
+        supportedLanguages.put("en", "🇬🇧 Английский");
+        supportedLanguages.put("de", "🇩🇪 Немецкий");
+        supportedLanguages.put("fr", "🇫🇷 Французский");
+        supportedLanguages.put("es", "🇪🇸 Испанский");
+        supportedLanguages.put("it", "🇮🇹 Итальянский");
+        supportedLanguages.put("zh", "🇨🇳 Китайский");
+        supportedLanguages.put("ja", "🇯🇵 Японский");
+
+        logger.info("Поддерживаемые языки: {}", supportedLanguages.keySet());
+    }
+
+    /**
+     * Инициализация путей к моделям
+     */
+    private void initializeDefaultModels() {
+        languageModelPaths.put("ru", "models/vosk-model-small-ru");
+        languageModelPaths.put("en", "models/vosk-model-small-en");
+        languageModelPaths.put("de", "models/vosk-model-small-de");
+        languageModelPaths.put("fr", "models/vosk-model-small-fr");
+        languageModelPaths.put("es", "models/vosk-model-small-es");
+        languageModelPaths.put("it", "models/vosk-model-small-it");
+        languageModelPaths.put("zh", "models/vosk-model-small-zh");
+        languageModelPaths.put("ja", "models/vosk-model-small-ja");
+    }
+
+    /**
+     * Проверка существования моделей
+     */
+    private void checkModelsExistence() {
+        logger.info("Проверка наличия моделей Vosk...");
+
+        for (Map.Entry<String, String> entry : languageModelPaths.entrySet()) {
+            String langCode = entry.getKey();
+            String modelPath = entry.getValue();
+            File modelDir = new File(modelPath);
+
+            if (modelDir.exists()) {
+                logger.info("✅ Модель для языка '{}' найдена: {}",
+                        getLanguageName(langCode), modelPath);
+            } else {
+                logger.warn("⚠️ Модель для языка '{}' не найдена: {}",
+                        getLanguageName(langCode), modelPath);
+            }
+        }
+    }
+
+    /**
+     * Получение имени языка по коду
+     */
+    public String getLanguageName(String languageCode) {
+        return supportedLanguages.getOrDefault(languageCode, languageCode);
+    }
+
+    /**
+     * Получение кода языка по имени
+     */
+    public String getLanguageCode(String languageName) {
+        for (Map.Entry<String, String> entry : supportedLanguages.entrySet()) {
+            if (entry.getValue().equals(languageName)) {
+                return entry.getKey();
+            }
+        }
+        return "ru"; // По умолчанию русский
+    }
+
+    /**
+     * Инициализация Vosk модели для конкретного языка
+     */
+    private void initializeVoskModel(String languageCode) {
+        try {
+            String modelPath = getModelPath(languageCode);
+            logger.info("Загрузка Vosk модели для языка '{}' из: {}",
+                    getLanguageName(languageCode), modelPath);
+
+            // Проверяем существует ли модель
+            File modelDir = new File(modelPath);
+            if (!modelDir.exists()) {
+                logger.error("Vosk модель для языка '{}' не найдена по пути: {}",
+                        getLanguageName(languageCode), modelPath);
+
+                // Пытаемся найти альтернативную модель
+                String fallbackPath = findFallbackModel(languageCode);
+                if (fallbackPath != null) {
+                    modelPath = fallbackPath;
+                    logger.info("Используется альтернативная модель: {}", modelPath);
+                } else {
+                    throw new IOException("Модель для языка '" + getLanguageName(languageCode) +
+                            "' не найдена: " + modelPath);
+                }
+            }
+
+            // Загружаем модель
+            cleanupVoskResources();
+            Model model = new Model(modelPath);
+            Recognizer recognizer = new Recognizer(model, 16000.0f);
+
+            voskModel.set(model);
+            voskRecognizer.set(recognizer);
+
+            logger.info("Vosk модель для языка '{}' загружена успешно",
+                    getLanguageName(languageCode));
+
+        } catch (Exception e) {
+            logger.error("Ошибка инициализации Vosk модели для языка '{}'",
+                    getLanguageName(languageCode), e);
+            throw new RuntimeException("Не удалось загрузить Vosk модель: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Поиск альтернативной модели
+     */
+    private String findFallbackModel(String languageCode) {
+        // Если нет конкретной модели, можно использовать мультиязычную
+        if (languageCode.equals("zh") || languageCode.equals("ja")) {
+            // Для азиатских языков ищем другую модель
+            return null;
+        }
+
+        // Проверяем английскую модель как запасной вариант
+        if (!languageCode.equals("en")) {
+            String englishModel = languageModelPaths.get("en");
+            if (englishModel != null && new File(englishModel).exists()) {
+                logger.warn("Используется английская модель как запасной вариант для языка '{}'",
+                        getLanguageName(languageCode));
+                return englishModel;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Получение пути к модели для языка
+     */
+    private String getModelPath(String languageCode) {
+        // Можно переопределить путь через системное свойство
+        String customPath = System.getProperty("vosk.model.path." + languageCode);
+        if (customPath != null && !customPath.trim().isEmpty()) {
+            return customPath;
+        }
+
+        // Используем путь из конфигурации
+        return languageModelPaths.getOrDefault(languageCode,
+                languageModelPaths.get("ru")); // По умолчанию русская модель
+    }
+
+    /**
+     * Основной метод распознавания речи из файла
      */
     public SpeechRecognitionResult transcribe(String audioFilePath) {
-        logger.info("Начинается распознавание речи из файла: {}", audioFilePath);
+        return transcribe(audioFilePath, this.currentLanguage);
+    }
+
+    /**
+     * Распознавание речи из файла с указанием языка
+     */
+    public SpeechRecognitionResult transcribe(String audioFilePath, String languageCode) {
+        if (closed) {
+            throw new IllegalStateException("SpeechToTextService закрыт");
+        }
+
+        logger.info("Начинается распознавание речи из файла: {}, язык: {}, сервис: {}",
+                audioFilePath, getLanguageName(languageCode), serviceType);
 
         try {
+            // Если язык изменился, переинициализируем модель
+            if (serviceType == ServiceType.VOSK && !languageCode.equals(currentLanguage)) {
+                switchLanguage(languageCode);
+            }
+
             return switch (serviceType) {
                 case WHISPER -> transcribeWithWhisper(audioFilePath);
-                case GOOGLE -> transcribeWithGoogle(audioFilePath);
-                case VOSK -> transcribeWithVosk(audioFilePath);
+                case GOOGLE -> transcribeWithGoogle(audioFilePath, languageCode);
+                case VOSK -> transcribeWithVosk(audioFilePath, languageCode);
                 default -> mockTranscription(audioFilePath);
             };
         } catch (Exception e) {
             logger.error("Ошибка при распознавании речи", e);
-            return new SpeechRecognitionResult("", 0.0, "Ошибка: " + e.getMessage());
+            return new SpeechRecognitionResult("", 0.0,
+                    "Ошибка " + serviceType + ": " + e.getMessage());
         }
     }
 
-    /**
-     * Распознавание с помощью OpenAI Whisper
-     */
-    private SpeechRecognitionResult transcribeWithWhisper(String audioFilePath) throws IOException {
-        // Для MVP - эмуляция
-        // В реальном приложении нужно сделать HTTP запрос к Whisper API
-
-        logger.debug("Используется Whisper API для файла: {}", audioFilePath);
-
-        // Эмуляция запроса
-        String text = simulateTranscription(audioFilePath);
-        double confidence = 0.8 + Math.random() * 0.15;
-
-        return new SpeechRecognitionResult(text, confidence, "Распознано с помощью Whisper");
-    }
-
-    /**
-     * Распознавание с помощью Google Speech-to-Text
-     */
-    private SpeechRecognitionResult transcribeWithGoogle(String audioFilePath) throws IOException {
-        logger.debug("Используется Google Speech API для файла: {}", audioFilePath);
-
-        // Эмуляция
-        String text = simulateTranscription(audioFilePath);
-        double confidence = 0.85 + Math.random() * 0.1;
-
-        return new SpeechRecognitionResult(text, confidence, "Распознано с помощью Google");
-    }
-
-    /**
-     * Распознавание с помощью Vosk (оффлайн)
-     */
-    private SpeechRecognitionResult transcribeWithVosk(String audioFilePath) {
-        logger.debug("Используется Vosk для файла: {}", audioFilePath);
-
-        try {
-            // В реальном приложении:
-            // 1. Загрузить модель Vosk
-            // 2. Обработать аудио через модель
-            // 3. Получить результат
-
-            String text = simulateTranscription(audioFilePath);
-            double confidence = 0.75 + Math.random() * 0.2;
-
-            return new SpeechRecognitionResult(text, confidence, "Распознано с помощью Vosk (оффлайн)");
-
-        } catch (Exception e) {
-            logger.error("Ошибка Vosk распознавания", e);
-            return new SpeechRecognitionResult("", 0.0, "Vosk error: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Мок-распознавание для тестов
-     */
     private SpeechRecognitionResult mockTranscription(String audioFilePath) {
         logger.debug("Используется мок-распознавание для файла: {}", audioFilePath);
 
@@ -117,9 +271,303 @@ public class SpeechToTextService {
         return new SpeechRecognitionResult(text, confidence, "Тестовое распознавание");
     }
 
+    private SpeechRecognitionResult transcribeWithGoogle(String audioFilePath, String languageCode) throws IOException {
+        logger.debug("Используется Google Speech API для файла: {}, язык: {}", audioFilePath, languageCode);
+
+        // Эмуляция
+        String text = simulateTranscription(audioFilePath);
+        double confidence = 0.85 + Math.random() * 0.1;
+
+        return new SpeechRecognitionResult(text, confidence, "Распознано с помощью Google");
+    }
+
+    private SpeechRecognitionResult transcribeWithWhisper(String audioFilePath) throws IOException {
+        logger.debug("Используется Whisper API для файла: {}", audioFilePath);
+
+        // Эмуляция запроса
+        String text = simulateTranscription(audioFilePath);
+        double confidence = 0.8 + Math.random() * 0.15;
+
+        return new SpeechRecognitionResult(text, confidence, "Распознано с помощью Whisper");
+    }
+
     /**
-     * Эмуляция распознавания речи
+     * Распознавание с помощью Vosk (адаптировано из вашего кода)
      */
+    private SpeechRecognitionResult transcribeWithVosk(String audioFilePath, String languageCode)
+            throws IOException {
+        logger.debug("Используется Vosk для файла: {}, язык: {}",
+                audioFilePath, getLanguageName(languageCode));
+
+        if (voskRecognizer.get() == null) {
+            logger.warn("Vosk распознаватель не инициализирован, пытаемся переинициализировать");
+            initializeVoskModel(languageCode);
+        }
+
+        Recognizer recognizer = voskRecognizer.get();
+        if (recognizer == null) {
+            throw new IllegalStateException("Vosk распознаватель не доступен");
+        }
+
+        try {
+            // Читаем аудиофайл
+            AudioInputStream audioStream = AudioSystem.getAudioInputStream(new File(audioFilePath));
+            AudioFormat sourceFormat = audioStream.getFormat();
+
+            // Конвертируем в нужный формат (16kHz, 16-bit, mono)
+            AudioFormat targetFormat = new AudioFormat(
+                    AudioFormat.Encoding.PCM_SIGNED,
+                    16000,
+                    16,
+                    1,
+                    2,
+                    16000,
+                    false
+            );
+
+            if (!sourceFormat.matches(targetFormat)) {
+                audioStream = AudioSystem.getAudioInputStream(targetFormat, audioStream);
+            }
+
+            byte[] buffer = new byte[4096];
+            StringBuilder resultBuilder = new StringBuilder();
+            long startTime = System.currentTimeMillis();
+
+            // Обрабатываем аудио порциями
+            while (true) {
+                int bytesRead = audioStream.read(buffer);
+                if (bytesRead <= 0) break;
+
+                if (recognizer.acceptWaveForm(buffer, bytesRead)) {
+                    String resultJson = recognizer.getResult();
+                    JsonNode node = mapper.readTree(resultJson);
+                    String text = node.get("text").asText().trim();
+
+                    if (!text.isEmpty()) {
+                        resultBuilder.append(text).append(" ");
+                    }
+                }
+            }
+
+            // Получаем финальный результат
+            String finalResult = recognizer.getFinalResult();
+            if (finalResult != null && !finalResult.isEmpty()) {
+                JsonNode finalNode = mapper.readTree(finalResult);
+                String finalText = finalNode.get("text").asText().trim();
+                if (!finalText.isEmpty()) {
+                    resultBuilder.append(finalText);
+                }
+            }
+
+            audioStream.close();
+
+            String recognizedText = resultBuilder.toString().trim();
+            long elapsedTime = System.currentTimeMillis() - startTime;
+
+            // Рассчитываем confidence (эвристика)
+            double confidence = calculateConfidence(recognizedText, languageCode);
+
+            logger.info("Vosk распознавание завершено за {} мс: '{}' (уверенность: {:.1f}%)",
+                    elapsedTime, recognizedText, confidence * 100);
+
+            return new SpeechRecognitionResult(recognizedText, confidence,
+                    "Распознано с помощью Vosk (" + getLanguageName(languageCode) + ")");
+
+        } catch (UnsupportedAudioFileException e) {
+            logger.error("Неподдерживаемый аудиоформат", e);
+            return new SpeechRecognitionResult("", 0.0,
+                    "Неподдерживаемый аудиоформат: " + e.getMessage());
+        }
+    }
+
+    private double calculateConfidence(String text, String languageCode) {
+        if (text == null || text.trim().isEmpty()) {
+            return 0.0;
+        }
+
+        double confidence = 0.7; // Базовый уровень для Vosk
+
+        // Эвристика 1: длина текста
+        int wordCount = text.split("\\s+").length;
+        if (wordCount >= 3) {
+            confidence += 0.1;
+        }
+
+        // Эвристика 2: наличие пунктуации
+        if (text.matches(".*[.!?].*")) {
+            confidence += 0.1;
+        }
+
+        // Эвристика 3: проверка символов языка
+        switch (languageCode) {
+            case "ru":
+                if (text.matches(".*[а-яА-Я].*")) {
+                    confidence += 0.05;
+                }
+                break;
+            case "en":
+                if (text.matches(".*[a-zA-Z].*")) {
+                    confidence += 0.05;
+                }
+                break;
+            case "de":
+            case "fr":
+            case "es":
+            case "it":
+                if (text.matches(".*[a-zA-ZÀ-ÿ].*")) {
+                    confidence += 0.05;
+                }
+                break;
+            case "zh":
+                if (text.matches(".*[\\p{IsHan}].*")) {
+                    confidence += 0.05;
+                }
+                break;
+            case "ja":
+                if (text.matches(".*[\\p{IsHiragana}\\p{IsKatakana}\\p{IsHan}].*")) {
+                    confidence += 0.05;
+                }
+                break;
+        }
+
+        return Math.min(0.95, Math.max(0.1, confidence));
+    }
+
+    /**
+     * Переключение языка
+     */
+    public void switchLanguage(String languageCode) {
+        if (serviceType != ServiceType.VOSK) {
+            logger.warn("Переключение языка доступно только для Vosk");
+            return;
+        }
+
+        if (!supportedLanguages.containsKey(languageCode)) {
+            logger.warn("Язык '{}' не поддерживается", languageCode);
+            return;
+        }
+
+        logger.info("Переключение языка с '{}' на '{}'",
+                getLanguageName(currentLanguage), getLanguageName(languageCode));
+
+        this.currentLanguage = languageCode;
+        initializeVoskModel(languageCode);
+
+        logger.info("Язык успешно переключен на: {}", getLanguageName(languageCode));
+    }
+
+    /**
+     * Получение списка поддерживаемых языков
+     */
+    public List<String> getSupportedLanguages() {
+        return new ArrayList<>(supportedLanguages.keySet());
+    }
+
+    /**
+     * Получение списка языков с именами
+     */
+    public Map<String, String> getSupportedLanguagesWithNames() {
+        return new HashMap<>(supportedLanguages);
+    }
+
+    /**
+     * Получение текущего языка
+     */
+    public String getCurrentLanguage() {
+        return currentLanguage;
+    }
+
+    /**
+     * Получение имени текущего языка
+     */
+    public String getCurrentLanguageName() {
+        return getLanguageName(currentLanguage);
+    }
+
+    /**
+     * Установка чувствительности микрофона
+     */
+    public void setMicrophoneSensitivity(double sensitivity) {
+        this.microphoneSensitivity = Math.max(0.1, Math.min(1.0, sensitivity));
+        logger.info("Чувствительность микрофона установлена: {}", microphoneSensitivity);
+    }
+
+    /**
+     * Получение чувствительности микрофона
+     */
+    public double getMicrophoneSensitivity() {
+        return microphoneSensitivity;
+    }
+
+    /**
+     * Тестирование микрофона
+     */
+    public void testMicrophone(int durationSeconds) {
+        try {
+            DataLine.Info info = new DataLine.Info(TargetDataLine.class, audioFormat);
+
+            if (!AudioSystem.isLineSupported(info)) {
+                logger.warn("Микрофон не поддерживается для теста");
+                return;
+            }
+
+            TargetDataLine microphone = (TargetDataLine) AudioSystem.getLine(info);
+            microphone.open(audioFormat);
+            microphone.start();
+
+            logger.info("Тест микрофона начат (длительность: {} секунд)", durationSeconds);
+
+            byte[] buffer = new byte[4096];
+            long startTime = System.currentTimeMillis();
+            double maxVolume = 0;
+
+            while (System.currentTimeMillis() - startTime < durationSeconds * 1000L) {
+                int bytesRead = microphone.read(buffer, 0, buffer.length);
+                if (bytesRead > 0) {
+                    double volume = calculateVolume(buffer, bytesRead);
+                    maxVolume = Math.max(maxVolume, volume);
+
+                    // Выводим только если громкость превышает порог
+                    if (volume > microphoneSensitivity * 0.5) {
+                        logger.debug("Уровень звука: {:.1f}%", volume * 100);
+                    }
+                }
+            }
+
+            microphone.stop();
+            microphone.close();
+
+            String resultMessage;
+            if (maxVolume > microphoneSensitivity) {
+                resultMessage = String.format("✅ Микрофон работает хорошо. Максимальный уровень: %.1f%%",
+                        maxVolume * 100);
+            } else if (maxVolume > 0.1) {
+                resultMessage = String.format("⚠️ Микрофон работает, но тихо. Максимальный уровень: %.1f%%",
+                        maxVolume * 100);
+            } else {
+                resultMessage = "❌ Микрофон не обнаружен или очень тихий";
+            }
+
+            logger.info("Тест микрофона завершен. {}", resultMessage);
+
+        } catch (Exception e) {
+            logger.error("Ошибка при тесте микрофона", e);
+        }
+    }
+
+    private double calculateVolume(byte[] buffer, int length) {
+        if (length == 0) return 0;
+
+        double sum = 0;
+        for (int i = 0; i < length; i += 2) {
+            short sample = (short) ((buffer[i + 1] << 8) | (buffer[i] & 0xFF));
+            sum += sample * sample;
+        }
+
+        double rms = Math.sqrt(sum / (length / 2));
+        return rms / 32768.0;
+    }
+
     private String simulateTranscription(String audioFilePath) {
         // В реальном приложении здесь будет вызов API
         // Для демонстрации возвращаем фиктивный текст
@@ -144,9 +592,6 @@ public class SpeechToTextService {
         return sampleTexts[index];
     }
 
-    /**
-     * Генерация мок-транскрипции
-     */
     private String generateMockTranscription(String audioFilePath) {
         // Генерация текста на основе имени файла
         String filename = new File(audioFilePath).getName().toLowerCase();
@@ -165,76 +610,51 @@ public class SpeechToTextService {
     }
 
     /**
-     * Конвертация аудио в Base64 для API запросов
+     * Очистка ресурсов Vosk
      */
-    private String audioToBase64(String audioFilePath) throws IOException {
-        byte[] audioBytes = Files.readAllBytes(Paths.get(audioFilePath));
-        return Base64.getEncoder().encodeToString(audioBytes);
-    }
-
-    /**
-     * Создание запроса к Whisper API
-     */
-    private String createWhisperRequest(String base64Audio) {
-        // Формирование JSON запроса для Whisper API
-        return String.format("""
-            {
-                "model": "whisper-1",
-                "file": "data:audio/wav;base64,%s",
-                "language": "en",
-                "response_format": "json"
+    private void cleanupVoskResources() {
+        try {
+            if (voskRecognizer.get() != null) {
+                voskRecognizer.get().close();
+                voskRecognizer.set(null);
             }
-            """, base64Audio);
-    }
-
-    /**
-     * Создание запроса к Google Speech API
-     */
-    private String createGoogleRequest(String base64Audio) {
-        return String.format("""
-            {
-                "config": {
-                    "encoding": "LINEAR16",
-                    "sampleRateHertz": 44100,
-                    "languageCode": "en-US",
-                    "enableAutomaticPunctuation": true
-                },
-                "audio": {
-                    "content": "%s"
-                }
+            if (voskModel.get() != null) {
+                voskModel.get().close();
+                voskModel.set(null);
             }
-            """, base64Audio);
+        } catch (Exception e) {
+            logger.warn("Ошибка при очистке ресурсов Vosk", e);
+        }
     }
 
-    /**
-     * Выполнение HTTP запроса
-     */
-    private String executeHttpRequest(String url, String requestBody, String apiKey) throws IOException {
-        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
-        connection.setRequestMethod("POST");
-        connection.setRequestProperty("Authorization", "Bearer " + apiKey);
-        connection.setRequestProperty("Content-Type", "application/json");
-        connection.setDoOutput(true);
-
-        try (OutputStream os = connection.getOutputStream()) {
-            byte[] input = requestBody.getBytes("utf-8");
-            os.write(input, 0, input.length);
+    @Override
+    public void close() {
+        if (closed) {
+            return;
         }
 
-        int responseCode = connection.getResponseCode();
-        if (responseCode == HttpURLConnection.HTTP_OK) {
-            try (BufferedReader br = new BufferedReader(
-                    new InputStreamReader(connection.getInputStream(), "utf-8"))) {
-                StringBuilder response = new StringBuilder();
-                String responseLine;
-                while ((responseLine = br.readLine()) != null) {
-                    response.append(responseLine.trim());
-                }
-                return response.toString();
-            }
-        } else {
-            throw new IOException("HTTP error: " + responseCode);
+        closed = true;
+        logger.info("Закрытие SpeechToTextService ({})...", serviceType);
+
+        try {
+            // Закрываем Vosk ресурсы
+            cleanupVoskResources();
+
+            logger.info("SpeechToTextService закрыт");
+        } catch (Exception e) {
+            logger.error("Ошибка при закрытии SpeechToTextService", e);
         }
+    }
+
+    public boolean isClosed() {
+        return closed;
+    }
+
+    /**
+     * Получение текущего типа сервиса
+     */
+    public ServiceType getServiceType() {
+        return serviceType;
     }
 
     /**
@@ -269,22 +689,8 @@ public class SpeechToTextService {
 
         @Override
         public String toString() {
-            return String.format("Text: '%s' (Confidence: %.2f%%)",
-                    text, confidence * 100);
+            return String.format("Text: '%s' (Confidence: %.1f%%, Service: %s)",
+                    text, confidence * 100, serviceInfo);
         }
-    }
-
-    /**
-     * Тестирование сервиса
-     */
-    public static void main(String[] args) {
-        // Пример использования
-        SpeechToTextService service = new SpeechToTextService(
-                ServiceType.MOCK,
-                "test-api-key"
-        );
-
-        SpeechRecognitionResult result = service.transcribe("test_audio.wav");
-        System.out.println("Результат распознавания: " + result);
     }
 }

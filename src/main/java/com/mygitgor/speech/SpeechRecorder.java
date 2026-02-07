@@ -1,19 +1,19 @@
 package com.mygitgor.speech;
 
 import javax.sound.sampled.*;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
+import java.io.*;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class SpeechRecorder {
+public class SpeechRecorder implements Closeable {
     private static final Logger logger = LoggerFactory.getLogger(SpeechRecorder.class);
 
     private TargetDataLine targetLine;
     private AudioFormat audioFormat;
     private boolean isRecording;
     private ByteArrayOutputStream byteArrayOutputStream;
+    private volatile boolean closed = false;
 
     public SpeechRecorder() {
         this.audioFormat = getDefaultAudioFormat();
@@ -131,5 +131,26 @@ public class SpeechRecorder {
         }
         isRecording = false;
         logger.debug("Ресурсы записи очищены");
+    }
+
+    @Override
+    public void close() {
+        if (closed) {
+            return;
+        }
+
+        closed = true;
+        logger.info("Закрытие SpeechRecorder...");
+
+        // Останавливаем запись если идет
+        if (isRecording()) {
+            stopRecording(null);
+        }
+
+//        if (microphone != null) {
+//            microphone.close();
+//        }
+
+        logger.info("SpeechRecorder закрыт");
     }
 }

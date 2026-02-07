@@ -10,25 +10,20 @@ public class AIServiceFactory {
         String model = config.getProperty("ai.model", "").trim();
         String customUrl = config.getProperty("ai.custom.url", "").trim();
 
-        // Если ключ не указан, используем мок-сервис
         if (apiKey.isEmpty() || apiKey.equals("your-api-key-here")) {
             return new MockAiService();
         }
 
-        // Определяем провайдера по ключу, если не указан явно
         if (provider.equals("auto")) {
             provider = detectProviderByKey(apiKey);
         }
 
-        // Создаем URL на основе провайдера
         String apiUrl = customUrl.isEmpty() ? getDefaultUrlForProvider(provider) : customUrl;
 
-        // Если модель не указана, используем дефолтную для провайдера
         if (model.isEmpty()) {
             model = getDefaultModelForProvider(provider);
         }
 
-        // Получаем другие параметры
         double temperature = Double.parseDouble(config.getProperty("ai.temperature", "0.7"));
         int maxTokens = Integer.parseInt(config.getProperty("ai.max.tokens", "1500"));
 
