@@ -206,6 +206,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
         }
     }
 
+    @FXML
     private void testSpeechRecognition() {
         if (closed) {
             showError("Ошибка", "Приложение закрывается");
@@ -269,6 +270,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
         }).start();
     }
 
+    @FXML
     private void testMicrophone() {
         if (closed) {
             showError("Ошибка", "Приложение закрывается");

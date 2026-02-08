@@ -1,0 +1,375 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.text.*?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.shape.*?>
+<?import javafx.scene.paint.*?>
+
+<VBox xmlns="http://javafx.com/javafx/17"
+      xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.mygitgor.chatbot.ChatBotController"
+      spacing="15"
+      style="-fx-background-color: #f5f7fa; -fx-padding: 15;"
+      stylesheets="@../styles/main.css">
+
+    <!-- Основной контейнер -->
+    <SplitPane dividerPositions="0.7" VBox.vgrow="ALWAYS">
+
+        <!-- Левая часть: Чат -->
+        <VBox spacing="10" style="-fx-padding: 10;">
+
+            <!-- Заголовок с логотипом и статусом -->
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <ImageView fitHeight="40" preserveRatio="true">
+                    <Image url="@../icons/logo.png"/>
+                </ImageView>
+                <VBox spacing="2">
+                    <Label text="SpeakAI Репетитор"
+                           style="-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #2c3e50;"/>
+                    <HBox spacing="5" alignment="CENTER_LEFT">
+                        <Circle radius="4" fill="#27ae60"/>
+                        <Label fx:id="statusLabel" text="✅ Готов к работе"
+                               style="-fx-font-size: 11px; -fx-text-fill: #666666;"/>
+                    </HBox>
+                </VBox>
+                <Region HBox.hgrow="ALWAYS"/>
+
+                <!-- Кнопки управления (компактные) -->
+                <HBox spacing="5" alignment="CENTER_RIGHT">
+                    <Button text="🎤"
+                            onAction="#toggleSpeechPanel"
+                            style="-fx-background-color: #3498db; -fx-text-fill: white; -fx-background-radius: 15; -fx-padding: 5 8; -fx-min-width: 30;">
+                        <tooltip><Tooltip text="Настройки распознавания"/></tooltip>
+                    </Button>
+                    <Button fx:id="historyButton" text="📜"
+                            onAction="#onShowHistory"
+                            style="-fx-background-color: #bdc3c7; -fx-text-fill: #2c3e50; -fx-background-radius: 15; -fx-padding: 5 8; -fx-min-width: 30;">
+                        <tooltip><Tooltip text="История разговоров"/></tooltip>
+                    </Button>
+                    <Button fx:id="clearButton" text="🗑️"
+                            onAction="#onClearChat"
+                            style="-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-background-radius: 15; -fx-padding: 5 8; -fx-min-width: 30;">
+                        <tooltip><Tooltip text="Очистить чат"/></tooltip>
+                    </Button>
+                </HBox>
+            </HBox>
+
+            <!-- Выпадающая панель распознавания (скрыта по умолчанию) -->
+            <VBox fx:id="speechControlPanel" visible="false" managed="false" spacing="10"
+                  style="-fx-background-color: white; -fx-background-radius: 8; -fx-padding: 15; -fx-border-color: #e0e0e0; -fx-border-radius: 8; -fx-border-width: 1;">
+
+                <HBox spacing="10" alignment="CENTER_LEFT">
+                    <Label text="Настройки распознавания речи"
+                           style="-fx-font-weight: bold; -fx-text-fill: #2c3e50;"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Button text="✕"
+                            onAction="#toggleSpeechPanel"
+                            style="-fx-background-color: transparent; -fx-text-fill: #666666; -fx-font-size: 12px;">
+                        <tooltip><Tooltip text="Скрыть настройки"/></tooltip>
+                    </Button>
+                </HBox>
+
+                <GridPane hgap="10" vgap="8">
+                    <columnConstraints>
+                        <ColumnConstraints halignment="RIGHT" minWidth="80"/>
+                        <ColumnConstraints halignment="LEFT" hgrow="ALWAYS"/>
+                    </columnConstraints>
+
+                    <rowConstraints>
+                        <RowConstraints vgrow="ALWAYS"/>
+                        <RowConstraints vgrow="ALWAYS"/>
+                        <RowConstraints vgrow="ALWAYS"/>
+                    </rowConstraints>
+
+                    <Label text="Сервис:" GridPane.rowIndex="0" GridPane.columnIndex="0"
+                           style="-fx-text-fill: #666666;"/>
+                    <ComboBox fx:id="serviceTypeComboBox" GridPane.rowIndex="0" GridPane.columnIndex="1"
+                              style="-fx-background-color: white; -fx-border-color: #cccccc; -fx-border-radius: 4;"/>
+
+                    <Label text="Язык:" GridPane.rowIndex="1" GridPane.columnIndex="0"
+                           style="-fx-text-fill: #666666;"/>
+                    <ComboBox fx:id="languageComboBox" GridPane.rowIndex="1" GridPane.columnIndex="1"
+                              style="-fx-background-color: white; -fx-border-color: #cccccc; -fx-border-radius: 4;"/>
+
+                    <Label text="Чувствительность:" GridPane.rowIndex="2" GridPane.columnIndex="0"
+                           style="-fx-text-fill: #666666;"/>
+                    <VBox spacing="5" GridPane.rowIndex="2" GridPane.columnIndex="1">
+                        <HBox spacing="10" alignment="CENTER_LEFT">
+                            <Slider fx:id="microphoneSensitivitySlider" prefWidth="150"
+                                    min="0.1" max="1.0" value="0.5"
+                                    style="-fx-background-color: transparent;"/>
+                            <Label fx:id="sensitivityLabel" text="0.5"
+                                   style="-fx-font-weight: bold; -fx-text-fill: #3498db;"/>
+                        </HBox>
+                        <HBox spacing="5">
+                            <Label text="Низкая" style="-fx-font-size: 10px; -fx-text-fill: #999999;"/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Label text="Высокая" style="-fx-font-size: 10px; -fx-text-fill: #999999;"/>
+                        </HBox>
+                    </VBox>
+                </GridPane>
+
+                <HBox spacing="10" alignment="CENTER">
+                    <Button fx:id="testMicrophoneButton" text="🎤 Тест микрофона"
+                            style="-fx-background-color: #3498db; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 4; -fx-padding: 6 12;">
+                        <tooltip><Tooltip text="Тестирование работы микрофона"/></tooltip>
+                    </Button>
+
+                    <Button fx:id="testSpeechButton" text="🔊 Тест распознавания"
+                            style="-fx-background-color: #9b59b6; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 4; -fx-padding: 6 12;">
+                        <tooltip><Tooltip text="Тестирование распознавания речи"/></tooltip>
+                    </Button>
+                </HBox>
+
+                <HBox spacing="10" alignment="CENTER_LEFT"
+                      style="-fx-padding: 8; -fx-background-color: #f8f9fa; -fx-background-radius: 4;">
+                    <ProgressIndicator fx:id="speechServiceIndicator"
+                                       visible="false"
+                                       style="-fx-progress-color: #3498db; -fx-pref-width: 16; -fx-pref-height: 16;"/>
+                    <Label fx:id="speechServiceStatusLabel" text="Готов к работе"
+                           style="-fx-font-size: 12px; -fx-text-fill: #666666;"/>
+                </HBox>
+            </VBox>
+
+            <!-- Область чата -->
+            <VBox spacing="5" VBox.vgrow="ALWAYS"
+                  style="-fx-background-color: white; -fx-background-radius: 8; -fx-padding: 12; -fx-border-color: #e0e0e0; -fx-border-radius: 8;">
+                <HBox spacing="10" alignment="CENTER_LEFT" style="-fx-padding: 0 0 10 0;">
+                    <Label text="💬 Диалог с ИИ-репетитором"
+                           style="-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #2c3e50;"/>
+                </HBox>
+
+                <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS"
+                            style="-fx-background-color: transparent; -fx-border-color: transparent;">
+                    <TextArea fx:id="chatArea" editable="false" wrapText="true"
+                              style="-fx-font-family: 'Segoe UI', sans-serif;
+                                     -fx-font-size: 13px;
+                                     -fx-background-color: transparent;
+                                     -fx-border-color: transparent;"/>
+                </ScrollPane>
+            </VBox>
+
+            <!-- Панель ввода -->
+            <VBox spacing="8"
+                  style="-fx-background-color: #ecf0f1; -fx-background-radius: 8; -fx-padding: 12;">
+                <HBox spacing="5" alignment="CENTER_LEFT">
+                    <Circle radius="6" fill="#3498db"/>
+                    <Label text="Ваше сообщение"
+                           style="-fx-font-size: 12px; -fx-font-weight: 600; -fx-text-fill: #3498db;"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <HBox spacing="5" alignment="CENTER_RIGHT">
+                        <ProgressIndicator fx:id="recordingIndicator" visible="false"
+                                           style="-fx-progress-color: #e74c3c; -fx-pref-width: 16; -fx-pref-height: 16;"/>
+                        <Label fx:id="recordingTimeLabel" text="00:00"
+                               style="-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #e74c3c;"/>
+                    </HBox>
+                </HBox>
+
+                <TextArea fx:id="inputField"
+                          promptText="Напишите сообщение на английском или запишите голос..."
+                          wrapText="true"
+                          prefRowCount="2"
+                          style="-fx-font-family: 'Segoe UI';
+                                 -fx-font-size: 13px;
+                                 -fx-background-color: white;
+                                 -fx-border-color: #bdc3c7;
+                                 -fx-border-radius: 4;
+                                 -fx-background-radius: 4;
+                                 -fx-padding: 8px;"/>
+
+                <HBox spacing="8" alignment="CENTER">
+                    <Button fx:id="recordButton" text="● Запись"
+                            onAction="#onStartRecording"
+                            style="-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 20; -fx-padding: 8 15; -fx-font-size: 12px;">
+                        <graphic>
+                            <Circle radius="4" fill="white"/>
+                        </graphic>
+                    </Button>
+
+                    <Button fx:id="stopButton" text="⏹️ Стоп"
+                            onAction="#onStopRecording"
+                            style="-fx-background-color: #7f8c8d; -fx-text-fill: white; -fx-background-radius: 20; -fx-padding: 8 15; -fx-font-size: 12px;"
+                            disable="true"/>
+
+                    <Region HBox.hgrow="ALWAYS"/>
+
+                    <HBox spacing="5" alignment="CENTER">
+                        <Button fx:id="analyzeButton" text="📊"
+                                onAction="#onAnalyzeAudio"
+                                style="-fx-background-color: #3498db; -fx-text-fill: white; -fx-background-radius: 18; -fx-padding: 8; -fx-min-width: 36; -fx-min-height: 36;"
+                                disable="true">
+                            <tooltip><Tooltip text="Анализ аудио"/></tooltip>
+                        </Button>
+
+                        <Button fx:id="pronunciationButton" text="🗣️"
+                                onAction="#onPronunciationTraining"
+                                style="-fx-background-color: #2ecc71; -fx-text-fill: white; -fx-background-radius: 18; -fx-padding: 8; -fx-min-width: 36; -fx-min-height: 36;"
+                                disable="true">
+                            <tooltip><Tooltip text="Тренажер произношения"/></tooltip>
+                        </Button>
+                    </HBox>
+
+                    <Region HBox.hgrow="ALWAYS"/>
+
+                    <Button fx:id="sendButton" text="Отправить"
+                            onAction="#onSendMessage"
+                            style="-fx-background-color: #27ae60; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 20; -fx-padding: 8 20; -fx-font-size: 12px;">
+                        <graphic>
+                            <Text text="➤" fill="white" style="-fx-font-size: 14px;"/>
+                        </graphic>
+                    </Button>
+                </HBox>
+
+                <ProgressBar fx:id="analysisProgress" visible="false"
+                             style="-fx-accent: #3498db; -fx-pref-height: 4px; -fx-background-radius: 2;"/>
+            </VBox>
+        </VBox>
+
+        <!-- Правая часть: Анализ -->
+        <VBox spacing="10" style="-fx-padding: 10;">
+
+            <!-- Заголовок анализа -->
+            <HBox spacing="10" alignment="CENTER_LEFT"
+                  style="-fx-background-color: white; -fx-background-radius: 8; -fx-padding: 12; -fx-border-color: #e0e0e0; -fx-border-radius: 8;">
+                <StackPane>
+                    <Circle radius="16" fill="#3498db"/>
+                    <Text text="📊" fill="white" style="-fx-font-size: 12px;"/>
+                </StackPane>
+                <VBox spacing="2">
+                    <Label text="Анализ речи"
+                           style="-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #2c3e50;"/>
+                    <Label text="Оценка вашего произношения"
+                           style="-fx-font-size: 11px; -fx-text-fill: #666666;"/>
+                </VBox>
+                <Region HBox.hgrow="ALWAYS"/>
+                <Label fx:id="phonemeLabel" text=""
+                       style="-fx-font-size: 10px;
+                              -fx-padding: 3 8;
+                              -fx-background-color: #fff9db;
+                              -fx-background-radius: 12;
+                              -fx-text-fill: #8a6d3b;"/>
+            </HBox>
+
+            <!-- Вкладки анализа -->
+            <TabPane tabClosingPolicy="UNAVAILABLE" VBox.vgrow="ALWAYS"
+                     style="-fx-background-color: transparent;">
+                <Tab text="📋 Кратко">
+                    <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS"
+                                style="-fx-background-color: transparent;">
+                        <TextArea fx:id="analysisArea"
+                                  editable="false"
+                                  wrapText="true"
+                                  style="-fx-font-family: 'Segoe UI', sans-serif;
+                                         -fx-font-size: 12px;
+                                         -fx-background-color: transparent;
+                                         -fx-border-color: transparent;"/>
+                    </ScrollPane>
+                </Tab>
+
+                <Tab text="📈 Детально">
+                    <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS"
+                                style="-fx-background-color: transparent;">
+                        <TextArea fx:id="detailedAnalysisArea"
+                                  editable="false"
+                                  wrapText="true"
+                                  style="-fx-font-family: 'Consolas', monospace;
+                                         -fx-font-size: 11px;
+                                         -fx-background-color: transparent;
+                                         -fx-border-color: transparent;"/>
+                    </ScrollPane>
+                </Tab>
+
+                <Tab text="💡 Советы">
+                    <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS"
+                                style="-fx-background-color: transparent;">
+                        <TextArea fx:id="recommendationsArea"
+                                  editable="false"
+                                  wrapText="true"
+                                  style="-fx-font-family: 'Segoe UI', sans-serif;
+                                         -fx-font-size: 12px;
+                                         -fx-background-color: transparent;
+                                         -fx-border-color: transparent;"/>
+                    </ScrollPane>
+                </Tab>
+            </TabPane>
+
+            <!-- Статистика и быстрые действия -->
+            <VBox spacing="8"
+                  style="-fx-background-color: white; -fx-background-radius: 8; -fx-padding: 12; -fx-border-color: #e0e0e0; -fx-border-radius: 8;">
+                <Label text="📊 Статистика сессии"
+                       style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #2c3e50;"/>
+
+                <GridPane hgap="10" vgap="5">
+                    <columnConstraints>
+                        <ColumnConstraints halignment="LEFT" hgrow="SOMETIMES"/>
+                        <ColumnConstraints halignment="RIGHT" hgrow="SOMETIMES"/>
+                    </columnConstraints>
+
+                    <Label text="Сообщения:" GridPane.rowIndex="0" GridPane.columnIndex="0"
+                           style="-fx-font-size: 11px; -fx-text-fill: #666666;"/>
+                    <Label fx:id="messagesCountLabel" text="0" GridPane.rowIndex="0" GridPane.columnIndex="1"
+                           style="-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #3498db;"/>
+
+                    <Label text="Анализы:" GridPane.rowIndex="1" GridPane.columnIndex="0"
+                           style="-fx-font-size: 11px; -fx-text-fill: #666666;"/>
+                    <Label fx:id="analysisCountLabel" text="0" GridPane.rowIndex="1" GridPane.columnIndex="1"
+                           style="-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #27ae60;"/>
+
+                    <Label text="Записи:" GridPane.rowIndex="2" GridPane.columnIndex="0"
+                           style="-fx-font-size: 11px; -fx-text-fill: #666666;"/>
+                    <Label fx:id="recordingsCountLabel" text="0" GridPane.rowIndex="2" GridPane.columnIndex="1"
+                           style="-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #f39c12;"/>
+                </GridPane>
+
+                <Separator style="-fx-padding: 5 0;"/>
+
+                <HBox spacing="8" alignment="CENTER">
+                    <Button text="⚙️"
+                            onAction="#onSettings"
+                            style="-fx-background-color: #bdc3c7; -fx-text-fill: #2c3e50; -fx-background-radius: 16; -fx-padding: 6; -fx-min-width: 32; -fx-min-height: 32;">
+                        <tooltip><Tooltip text="Настройки"/></tooltip>
+                    </Button>
+
+                    <Button text="❓"
+                            onAction="#onHelp"
+                            style="-fx-background-color: #f39c12; -fx-text-fill: white; -fx-background-radius: 16; -fx-padding: 6; -fx-min-width: 32; -fx-min-height: 32;">
+                        <tooltip><Tooltip text="Помощь"/></tooltip>
+                    </Button>
+
+                    <Region HBox.hgrow="ALWAYS"/>
+
+                    <VBox spacing="2" alignment="CENTER_RIGHT">
+                        <Label text="💡 Совет дня"
+                               style="-fx-font-size: 10px; -fx-text-fill: #666666;"/>
+                        <Label text="Регулярная практика = прогресс"
+                               style="-fx-font-size: 9px; -fx-text-fill: #95a5a6;"/>
+                    </VBox>
+                </HBox>
+            </VBox>
+        </VBox>
+    </SplitPane>
+
+    <!-- Нижний колонтитул -->
+    <!--    <HBox spacing="8" alignment="CENTER_LEFT"-->
+    <!--          style="-fx-padding: 8 0 0 0;-->
+    <!--                 -fx-border-color: #dfe6e9;-->
+    <!--                 -fx-border-width: 1 0 0 0;">-->
+    <!--        <HBox spacing="5" alignment="CENTER_LEFT">-->
+    <!--            <Circle radius="3" fill="#3498db"/>-->
+    <!--            <Label text="SpeakAI v1.2"-->
+    <!--                   style="-fx-font-size: 10px; -fx-text-fill: #3498db; -fx-font-weight: bold;"/>-->
+    <!--        </HBox>-->
+    <!--        <Region HBox.hgrow="ALWAYS"/>-->
+    <!--        <Label text="© 2024 SpeakAI. Все права защищены."-->
+    <!--               style="-fx-font-size: 9px; -fx-text-fill: #95a5a6;"/>-->
+    <!--        <Region HBox.hgrow="ALWAYS"/>-->
+    <!--        <HBox spacing="3" alignment="CENTER_RIGHT">-->
+    <!--            <Circle radius="2" fill="#27ae60"/>-->
+    <!--            <Label text="Онлайн"-->
+    <!--                   style="-fx-font-size: 9px; -fx-text-fill: #27ae60;"/>-->
+    <!--        </HBox>-->
+    <!--    </HBox>-->
+</VBox>
