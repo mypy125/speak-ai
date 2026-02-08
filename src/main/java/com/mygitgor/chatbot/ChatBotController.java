@@ -9,17 +9,18 @@ import com.mygitgor.analysis.RecommendationEngine;
 import com.mygitgor.model.Conversation;
 import com.mygitgor.model.EnhancedSpeechAnalysis;
 import com.mygitgor.model.SpeechAnalysis;
-import com.mygitgor.speech.AudioAnalyzer;
-import com.mygitgor.speech.SpeechPlayer;
-import com.mygitgor.speech.SpeechRecorder;
-import com.mygitgor.speech.SpeechToTextService;
+import com.mygitgor.speech.*;
+import com.mygitgor.utils.CloseableExecutorWrapper;
 import com.mygitgor.utils.ResourceManager;
 import javafx.application.Platform;
+import javafx.beans.value.ChangeListener;
+import javafx.beans.value.ObservableValue;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Parent;
 import javafx.scene.control.*;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.*;
@@ -35,6 +36,8 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class ChatBotController implements Initializable, AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(ChatBotController.class);
@@ -95,6 +98,12 @@ public class ChatBotController implements Initializable, AutoCloseable {
     @FXML private VBox chatMessagesContainer;
 
     // ========================================
+    // FXML UI Elements - Response Mode
+    // ========================================
+    @FXML private ToggleGroup responseModeToggleGroup;
+    @FXML private Button playResponseButton;
+
+    // ========================================
     // Services
     // ========================================
     private ChatBotService chatBotService;
@@ -103,6 +112,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
     private AudioAnalyzer audioAnalyzer;
     private PronunciationTrainer pronunciationTrainer;
     private ResourceManager resourceManager;
+    private TextToSpeechService textToSpeechService;
 
     // ========================================
     // State
@@ -112,6 +122,12 @@ public class ChatBotController implements Initializable, AutoCloseable {
     private Thread recordingTimerThread;
     private boolean isAiServiceAvailable;
     private volatile boolean closed = false;
+    private String lastBotResponse;
+    private ResponseMode currentResponseMode = ResponseMode.TEXT;
+
+    // Executor для фоновых задач озвучки
+    private ExecutorService speechExecutor;
+    private CloseableExecutorWrapper speechExecutorWrapper;
 
     // ========================================
     // Statistics
@@ -120,15 +136,27 @@ public class ChatBotController implements Initializable, AutoCloseable {
     private int analysisCount = 0;
     private int recordingsCount = 0;
 
+    // ========================================
+    // Response Mode Enum
+    // ========================================
+    public enum ResponseMode {
+        TEXT,
+        VOICE
+    }
+
     @Override
     public void initialize(URL location, ResourceBundle resources) {
         logger.info("Инициализация ChatBotController");
         resourceManager = new ResourceManager();
+        speechExecutor = Executors.newSingleThreadExecutor();
+        // Обертка для ExecutorService
+        CloseableExecutorWrapper speechExecutorWrapper = new CloseableExecutorWrapper(speechExecutor);
 
         try {
-            initializeServices();
+            initializeServices(speechExecutorWrapper);  // Передаем обертку
             setupUI();
             setupSpeechRecognitionUI();
+            setupResponseModeToggle();
             initializeStatistics();
             loadConversationHistory();
             showWelcomeMessage();
@@ -140,11 +168,11 @@ public class ChatBotController implements Initializable, AutoCloseable {
         }
     }
 
-    // ========================================
-    // Initialization Methods
-    // ========================================
+// ========================================
+// Initialization Methods
+// ========================================
 
-    private void initializeServices() {
+    private void initializeServices(CloseableExecutorWrapper speechExecutorWrapper) {
         try {
             Properties props = new Properties();
             props.load(getClass().getResourceAsStream("/application.properties"));
@@ -167,6 +195,10 @@ public class ChatBotController implements Initializable, AutoCloseable {
             this.pronunciationTrainer = new PronunciationTrainer();
             logger.info("PronunciationTrainer создан");
 
+            // Создаем сервис преобразования текста в речь
+            this.textToSpeechService = new TextToSpeechService();
+            logger.info("TextToSpeechService создан");
+
             // Создаем главный сервис
             this.chatBotService = new ChatBotService(
                     aiService,
@@ -184,6 +216,8 @@ public class ChatBotController implements Initializable, AutoCloseable {
             resourceManager.register(speechRecorder);
             resourceManager.register(chatBotService);
             resourceManager.register(audioAnalyzer);
+            resourceManager.register(textToSpeechService);
+            resourceManager.register(speechExecutorWrapper);
 
             if (aiService instanceof Closeable) {
                 resourceManager.register((Closeable) aiService);
@@ -201,6 +235,66 @@ public class ChatBotController implements Initializable, AutoCloseable {
             cleanupResources();
             throw new RuntimeException("Не удалось инициализировать сервисы", e);
         }
+    }
+
+    private void setupResponseModeToggle() {
+        if (responseModeToggleGroup != null) {
+            // Назначаем обработчик изменения режима
+            responseModeToggleGroup.selectedToggleProperty().addListener((observable, oldValue, newValue) -> {
+                if (newValue != null) {
+                    String mode = (String) newValue.getUserData();
+                    currentResponseMode = ResponseMode.valueOf(mode);
+                    logger.info("Режим ответа изменен на: {}", currentResponseMode);
+
+                    // Показываем/скрываем кнопку проигрывания
+                    updatePlayResponseButtonVisibility();
+
+                    // Показываем уведомление о смене режима
+                    Platform.runLater(() -> {
+                        if (statusLabel != null) {
+                            String modeText = currentResponseMode == ResponseMode.VOICE ?
+                                    "🔊 Голосовой ответ" : "📝 Текстовый ответ";
+                            statusLabel.setText("Режим: " + modeText);
+
+                            // Через 3 секунды возвращаем обычный статус
+                            new Thread(() -> {
+                                try {
+                                    Thread.sleep(3000);
+                                    Platform.runLater(() -> updateStatusLabel());
+                                } catch (InterruptedException e) {
+                                    Thread.currentThread().interrupt();
+                                }
+                            }).start();
+                        }
+                    });
+                }
+            });
+
+            // Устанавливаем начальный режим
+            currentResponseMode = ResponseMode.TEXT;
+
+            // Инициализируем видимость кнопки проигрывания
+            updatePlayResponseButtonVisibility();
+        }
+    }
+
+    private void updatePlayResponseButtonVisibility() {
+        Platform.runLater(() -> {
+            if (playResponseButton != null) {
+                // Показываем кнопку только в голосовом режиме и когда есть ответ для озвучки
+                boolean shouldShow = currentResponseMode == ResponseMode.VOICE &&
+                        lastBotResponse != null && !lastBotResponse.isEmpty();
+                playResponseButton.setVisible(shouldShow);
+                playResponseButton.setManaged(shouldShow);
+
+                // Обновляем состояние кнопки
+                if (shouldShow) {
+                    playResponseButton.setDisable(false);
+                    playResponseButton.setText("▶️");
+                    playResponseButton.setTooltip(new Tooltip("Прослушать ответ"));
+                }
+            }
+        });
     }
 
     private void setupUI() {
@@ -231,6 +325,13 @@ public class ChatBotController implements Initializable, AutoCloseable {
         if (detailedAnalysisArea != null) detailedAnalysisArea.setVisible(false);
         if (phonemeLabel != null) phonemeLabel.setVisible(false);
 
+        // Настройка кнопки проигрывания ответа
+        if (playResponseButton != null) {
+            playResponseButton.setVisible(false);
+            playResponseButton.setManaged(false);
+            playResponseButton.setTooltip(new Tooltip("Прослушать ответ"));
+        }
+
         // Инициализация слайдера чувствительности
         setupMicrophoneSensitivitySlider();
 
@@ -242,7 +343,52 @@ public class ChatBotController implements Initializable, AutoCloseable {
             chatMessagesContainer.setStyle("-fx-background-color: #fafafa;");
         }
 
+        // Настройка стилей для переключателей режима
+        setupResponseModeStyles();
+
         logger.info("UI элементы настроены");
+    }
+
+    private void setupResponseModeStyles() {
+        Platform.runLater(() -> {
+            if (responseModeToggleGroup != null) {
+                responseModeToggleGroup.getToggles().forEach(toggle -> {
+                    if (toggle instanceof ToggleButton toggleButton) {
+                        toggleButton.setStyle(
+                                "-fx-background-color: #f0f0f0; " +
+                                        "-fx-border-color: #ccc; " +
+                                        "-fx-border-radius: 5; " +
+                                        "-fx-background-radius: 5; " +
+                                        "-fx-padding: 5 10; " +
+                                        "-fx-font-size: 12px;"
+                        );
+
+                        toggleButton.selectedProperty().addListener((obs, oldVal, newVal) -> {
+                            if (newVal) {
+                                toggleButton.setStyle(
+                                        "-fx-background-color: #3498db; " +
+                                                "-fx-text-fill: white; " +
+                                                "-fx-border-color: #2980b9; " +
+                                                "-fx-border-radius: 5; " +
+                                                "-fx-background-radius: 5; " +
+                                                "-fx-padding: 5 10; " +
+                                                "-fx-font-size: 12px;"
+                                );
+                            } else {
+                                toggleButton.setStyle(
+                                        "-fx-background-color: #f0f0f0; " +
+                                                "-fx-border-color: #ccc; " +
+                                                "-fx-border-radius: 5; " +
+                                                "-fx-background-radius: 5; " +
+                                                "-fx-padding: 5 10; " +
+                                                "-fx-font-size: 12px;"
+                                );
+                            }
+                        });
+                    }
+                });
+            }
+        });
     }
 
     private void setupMicrophoneSensitivitySlider() {
@@ -363,6 +509,10 @@ public class ChatBotController implements Initializable, AutoCloseable {
             • Отрегулируйте чувствительность микрофона
             • Протестируйте микрофон перед записью
             
+            Режимы ответа:
+            • 📝 Текстовый - получайте ответ в виде текста
+            • 🔊 Голосовой - ответ будет озвучен (требуется TTS)
+            
             Совет: Используйте микрофон для записи речи - так я смогу проанализировать ваше произношение!
             
             Давайте начнем обучение! ✨
@@ -409,7 +559,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
         // Обработка в фоновом потоке
         new Thread(() -> {
             try {
-                ChatBotService.ChatResponse response = chatBotService.processUserInput(text, currentAudioFile);
+                // Указываем режим ответа при обработке
+                ChatBotService.ChatResponse response = chatBotService.processUserInput(
+                        text, currentAudioFile, currentResponseMode);
 
                 Platform.runLater(() -> processResponse(response));
 
@@ -424,8 +576,41 @@ public class ChatBotController implements Initializable, AutoCloseable {
     }
 
     private void processResponse(ChatBotService.ChatResponse response) {
-        // Добавляем ответ бота
+        // Сохраняем ответ бота для возможной озвучки
+        lastBotResponse = response.getFullResponse();
+
+        // Добавляем ответ бота в чат
         addAIMessage(response.getFullResponse());
+
+        // Если выбран голосовой режим - автоматически озвучиваем
+        if (currentResponseMode == ResponseMode.VOICE && textToSpeechService != null) {
+            speechExecutor.submit(() -> {
+                try {
+                    // Небольшая задержка перед озвучкой
+                    Thread.sleep(500);
+
+                    Platform.runLater(() -> {
+                        if (statusLabel != null) {
+                            statusLabel.setText("🔊 Озвучка ответа...");
+                        }
+                    });
+
+                    textToSpeechService.speak(response.getFullResponse());
+
+                    Platform.runLater(() -> {
+                        if (statusLabel != null) {
+                            updateStatusLabel();
+                        }
+                    });
+
+                } catch (Exception e) {
+                    logger.warn("Не удалось озвучить ответ", e);
+                    Platform.runLater(() -> {
+                        showAlert("Внимание", "Не удалось озвучить ответ. Проверьте настройки TTS.");
+                    });
+                }
+            });
+        }
 
         // Обновляем области анализа
         if (response.getSpeechAnalysis() != null) {
@@ -440,6 +625,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
             if (detailedAnalysisArea != null) detailedAnalysisArea.setVisible(false);
         }
 
+        // Обновляем видимость кнопки проигрывания
+        updatePlayResponseButtonVisibility();
+
         // Скрываем индикатор загрузки
         showLoadingIndicator(false);
 
@@ -451,6 +639,60 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 statusLabel.setText("✅ Сообщение обработано");
             }
         }
+    }
+
+    @FXML
+    private void onPlayResponse() {
+        if (closed) {
+            showError("Ошибка", "Приложение закрывается");
+            return;
+        }
+
+        if (lastBotResponse == null || lastBotResponse.isEmpty()) {
+            showAlert("Внимание", "Нет ответа для озвучки");
+            return;
+        }
+
+        speechExecutor.submit(() -> {
+            try {
+                Platform.runLater(() -> {
+                    if (playResponseButton != null) {
+                        playResponseButton.setDisable(true);
+                        playResponseButton.setText("🔊...");
+                    }
+                    if (statusLabel != null) {
+                        statusLabel.setText("🔊 Озвучка ответа...");
+                    }
+                });
+
+                // Преобразуем текст в речь и проигрываем
+                textToSpeechService.speak(lastBotResponse);
+
+                Platform.runLater(() -> {
+                    if (playResponseButton != null) {
+                        playResponseButton.setDisable(false);
+                        playResponseButton.setText("▶️");
+                    }
+                    if (statusLabel != null) {
+                        updateStatusLabel();
+                    }
+                });
+
+            } catch (Exception e) {
+                logger.error("Ошибка при озвучке ответа", e);
+                Platform.runLater(() -> {
+                    showError("Ошибка озвучки",
+                            "Не удалось озвучить ответ: " + e.getMessage());
+                    if (playResponseButton != null) {
+                        playResponseButton.setDisable(false);
+                        playResponseButton.setText("▶️");
+                    }
+                    if (statusLabel != null) {
+                        updateStatusLabel();
+                    }
+                });
+            }
+        });
     }
 
     private void processAnalysisResponse(ChatBotService.ChatResponse response) {
@@ -929,6 +1171,10 @@ public class ChatBotController implements Initializable, AutoCloseable {
             if (recommendationsArea != null) recommendationsArea.clear();
             if (detailedAnalysisArea != null) detailedAnalysisArea.clear();
 
+            // Очищаем последний ответ
+            lastBotResponse = null;
+            updatePlayResponseButtonVisibility();
+
             chatBotService.clearHistory();
 
             // Сбрасываем статистику
@@ -1111,6 +1357,11 @@ public class ChatBotController implements Initializable, AutoCloseable {
             2. Запись голоса - нажмите 🎤 для записи речи
             3. Анализ речи - автоматический анализ произношения
             4. Рекомендации - персонализированные советы по улучшению
+            
+            Режимы ответа:
+            • 📝 Текстовый - получайте ответ в виде текста
+            • 🔊 Голосовой - ответ будет озвучен (требуется TTS)
+            • Кнопка "▶️" - повторно прослушать последний ответ
             
             Настройки распознавания речи:
             • Выберите язык в выпадающем списке
@@ -1372,6 +1623,10 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 resourceManager.close();
             }
 
+            if (speechExecutor != null && !speechExecutor.isShutdown()) {
+                speechExecutor.shutdownNow();
+            }
+
             logger.info("ChatBotController закрыт");
 
         } catch (Exception e) {
@@ -1386,6 +1641,10 @@ public class ChatBotController implements Initializable, AutoCloseable {
             } catch (Exception e) {
                 logger.error("Ошибка при очистке ресурсов", e);
             }
+        }
+
+        if (speechExecutor != null && !speechExecutor.isShutdown()) {
+            speechExecutor.shutdownNow();
         }
     }
 
@@ -1486,9 +1745,8 @@ public class ChatBotController implements Initializable, AutoCloseable {
             messageContainer.getChildren().addAll(messageContent, userAvatar);
             chatMessagesContainer.getChildren().add(messageContainer);
 
-            // Прокрутка вниз
-            ScrollPane scrollPane = (ScrollPane) chatMessagesContainer.getParent();
-            scrollPane.setVvalue(1.0);
+            // Безопасная прокрутка вниз
+            safeScrollToBottom();
         });
     }
 
@@ -1561,10 +1819,49 @@ public class ChatBotController implements Initializable, AutoCloseable {
             messageContainer.getChildren().addAll(aiAvatar, messageContent);
             chatMessagesContainer.getChildren().add(messageContainer);
 
-            // Прокрутка вниз
-            ScrollPane scrollPane = (ScrollPane) chatMessagesContainer.getParent();
-            scrollPane.setVvalue(1.0);
+            // Безопасная прокрутка вниз
+            safeScrollToBottom();
         });
+    }
+
+    private void safeScrollToBottom() {
+        // Ищем родительский ScrollPane безопасным способом
+        Parent parent = chatMessagesContainer.getParent();
+
+        // Проходим по родителям, пока не найдем ScrollPane
+        while (parent != null && !(parent instanceof ScrollPane)) {
+            parent = parent.getParent();
+        }
+
+        if (parent instanceof ScrollPane scrollPane) {
+            // Небольшая задержка для гарантии, что сообщение отрендерено
+            new Thread(() -> {
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                Platform.runLater(() -> {
+                    scrollPane.setVvalue(1.0);
+                });
+            }).start();
+        } else {
+            // Альтернативный способ: добавляем слушатель на изменение высоты
+            chatMessagesContainer.heightProperty().addListener(new ChangeListener<Number>() {
+                @Override
+                public void changed(ObservableValue<? extends Number> observable, Number oldValue, Number newValue) {
+                    Parent p = chatMessagesContainer.getParent();
+                    while (p != null && !(p instanceof ScrollPane)) {
+                        p = p.getParent();
+                    }
+                    if (p instanceof ScrollPane sp) {
+                        sp.setVvalue(1.0);
+                        // Удаляем слушатель после использования
+                        chatMessagesContainer.heightProperty().removeListener(this);
+                    }
+                }
+            });
+        }
     }
 
     // Метод для добавления разделителя времени
@@ -1728,5 +2025,21 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 });
             }
         }).start();
+    }
+
+    // ========================================
+    // Getter Methods
+    // ========================================
+
+    public ResponseMode getCurrentResponseMode() {
+        return currentResponseMode;
+    }
+
+    public String getLastBotResponse() {
+        return lastBotResponse;
+    }
+
+    public TextToSpeechService getTextToSpeechService() {
+        return textToSpeechService;
     }
 }

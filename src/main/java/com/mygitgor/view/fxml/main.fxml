@@ -133,7 +133,8 @@
                 </HBox>
 
                 <!-- НОВЫЙ контейнер для сообщений -->
-                <ScrollPane fitToWidth="true"
+                <ScrollPane fx:id="chatScrollPane"
+                            fitToWidth="true"
                             style="-fx-background-color: transparent; -fx-border-color: transparent;"
                             hbarPolicy="NEVER" vbarPolicy="AS_NEEDED"
                             VBox.vgrow="ALWAYS">
@@ -141,6 +142,30 @@
                           spacing="12"
                           style="-fx-padding: 10;"/>
                 </ScrollPane>
+                <HBox spacing="10" alignment="CENTER_LEFT" style="-fx-padding: 10 0 0 0;">
+                    <Label text="Режим ответа:" style="-fx-font-size: 12px; -fx-text-fill: #666;"/>
+
+                    <ToggleButton text="📝 Текст"
+                                  fx:id="textToggle"
+                                  userData="TEXT"
+                                  toggleGroup="$responseModeToggleGroup"
+                                  selected="true"
+                                  style="-fx-font-size: 12px;"/>
+
+                    <ToggleButton text="🔊 Голос"
+                                  fx:id="voiceToggle"
+                                  userData="VOICE"
+                                  toggleGroup="$responseModeToggleGroup"
+                                  style="-fx-font-size: 12px;"/>
+
+                    <Button fx:id="playResponseButton"
+                            text="▶️"
+                            style="-fx-font-size: 12px;"
+                            onAction="#onPlayResponse"
+                            visible="false"
+                            managed="false"/>
+                </HBox>
+
             </VBox>
 
             <!-- Панель ввода -->

@@ -13,6 +13,7 @@ import com.mygitgor.repository.DAO.UserDao;
 import com.mygitgor.speech.AudioAnalyzer;
 import com.mygitgor.speech.SpeechRecorder;
 import com.mygitgor.speech.SpeechToTextService;
+import com.mygitgor.speech.TextToSpeechService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,6 +23,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.Properties;
+import java.util.*;
 import java.util.*;
 
 public class ChatBotService implements Closeable {
@@ -33,6 +35,7 @@ public class ChatBotService implements Closeable {
     private final PronunciationTrainer pronunciationTrainer;
     private final RecommendationEngine recommendationEngine;
     private final SpeechToTextService speechToTextService;
+    private final TextToSpeechService textToSpeechService; // Добавлен TTS сервис
     private User currentUser;
 
     private volatile boolean closed = false;
@@ -40,9 +43,13 @@ public class ChatBotService implements Closeable {
     public ChatBotService(AiService aiService, AudioAnalyzer audioAnalyzer,
                           PronunciationTrainer pronunciationTrainer) {
         this.aiService = aiService;
-        this.audioAnalyzer = audioAnalyzer; // Сохраняем переданный анализатор
+        this.audioAnalyzer = audioAnalyzer;
         this.pronunciationTrainer = pronunciationTrainer;
         this.recommendationEngine = new RecommendationEngine();
+
+        // Создаем TTS сервис
+        this.textToSpeechService = new TextToSpeechService();
+        logger.info("TextToSpeechService создан в ChatBotService");
 
         // Инициализация DAO
         try {
@@ -58,7 +65,7 @@ public class ChatBotService implements Closeable {
         // Временный пользователь для MVP
         this.currentUser = createDefaultUser();
 
-        logger.info("ChatBotService инициализирован с внешним AudioAnalyzer");
+        logger.info("ChatBotService инициализирован с AudioAnalyzer и TextToSpeechService");
     }
 
     private User createDefaultUser() {
@@ -73,9 +80,13 @@ public class ChatBotService implements Closeable {
     }
 
     public ChatResponse processUserInput(String text, String audioFilePath) {
+        return processUserInput(text, audioFilePath, null);
+    }
+
+    public ChatResponse processUserInput(String text, String audioFilePath, ChatBotController.ResponseMode responseMode) {
         try {
-            logger.info("Обработка пользовательского ввода. Текст: {}, Аудио: {}",
-                    text, audioFilePath);
+            logger.info("Обработка пользовательского ввода. Текст: {}, Аудио: {}, Режим: {}",
+                    text, audioFilePath, responseMode != null ? responseMode : "TEXT (по умолчанию)");
 
             String recognizedText = text;
             EnhancedSpeechAnalysis speechAnalysis = null;
@@ -131,7 +142,21 @@ public class ChatBotService implements Closeable {
 
             // 8. Формирование полного ответа
             String fullResponse = formatResponse(botResponse, textAnalysis,
-                    speechAnalysis, personalizedRecommendations, weeklyPlan);
+                    speechAnalysis, personalizedRecommendations, weeklyPlan, responseMode);
+
+            // 9. Если требуется озвучка - запускаем в фоновом режиме
+            if (responseMode == ChatBotController.ResponseMode.VOICE && textToSpeechService != null) {
+                // Запускаем озвучку в отдельном потоке, чтобы не блокировать ответ
+                new Thread(() -> {
+                    try {
+                        // Небольшая задержка для пользователя
+                        Thread.sleep(300);
+                        speakResponse(fullResponse);
+                    } catch (Exception e) {
+                        logger.warn("Не удалось запустить озвучку ответа: {}", e.getMessage());
+                    }
+                }).start();
+            }
 
             return new ChatResponse(fullResponse, speechAnalysis,
                     personalizedRecommendations, weeklyPlan);
@@ -144,6 +169,65 @@ public class ChatBotService implements Closeable {
                     null, null, null
             );
         }
+    }
+
+    private void speakResponse(String response) {
+        try {
+            if (textToSpeechService != null && !closed) {
+                logger.info("Начало озвучки ответа...");
+
+                // Очищаем текст для озвучки
+                String cleanText = cleanTextForSpeech(response);
+
+                if (cleanText != null && !cleanText.trim().isEmpty()) {
+                    textToSpeechService.speak(cleanText);
+                    logger.info("Озвучка ответа завершена");
+                } else {
+                    logger.warn("Текст для озвучки пуст или null");
+                }
+            } else {
+                logger.warn("TTS сервис недоступен или ChatBotService закрыт");
+            }
+        } catch (Exception e) {
+            logger.error("Ошибка при озвучке ответа: {}", e.getMessage(), e);
+        }
+    }
+
+    private String cleanTextForSpeech(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            return "";
+        }
+
+        // Убираем markdown форматирование, эмодзи и лишние символы
+        String cleanText = text
+                // Убираем заголовки
+                .replaceAll("#+\\s*", "")
+                // Убираем жирный текст
+                .replaceAll("\\*\\*", "")
+                // Убираем курсив
+                .replaceAll("\\*", "")
+                // Убираем код
+                .replaceAll("`", "")
+                // Убираем ссылки
+                .replaceAll("\\[.*?\\]\\(.*?\\)", "")
+                // Убираем HTML теги
+                .replaceAll("<[^>]*>", "")
+                // Убираем эмодзи
+                .replaceAll("[🤖🎤📝📊🗣️✅⚠️🔴🔊▶️🏆🎉👍💪📚🔧]", "")
+                // Заменяем множественные переносы на точку
+                .replaceAll("\\n{2,}", ". ")
+                // Заменяем одиночные переносы на пробел
+                .replaceAll("\\n", " ")
+                // Убираем лишние пробелы
+                .replaceAll("\\s+", " ")
+                .trim();
+
+        // Убираем метку "Ответ озвучен" если она есть
+        if (cleanText.startsWith("🔊 Ответ озвучен")) {
+            cleanText = cleanText.substring(cleanText.indexOf("\n\n") + 2);
+        }
+
+        return cleanText;
     }
 
     private SpeechToTextService createSpeechToTextService() {
@@ -239,22 +323,30 @@ public class ChatBotService implements Closeable {
 
         try {
             UserDao userDao = new UserDao();
-            User user = userDao.getUserById(1);
+
+            // Сначала проверяем, есть ли пользователь в базе
+            User user = userDao.getUserByEmail("demo@speakai.com");
 
             if (user == null) {
-                user = userDao.getUserByEmail("demo@speakai.com");
-
-                if (user == null) {
-                    user = createDefaultUser();
-                    userDao.createUser(user);
-                    logger.info("Создан пользователь по умолчанию в ensureDefaultUserExists");
+                // Создаем нового пользователя
+                user = createDefaultUser();
+                User createdUser = userDao.createUser(user); // Метод возвращает User, а не int
+                if (createdUser != null) {
+                    user = createdUser;
+                    logger.info("Создан новый пользователь с ID: {}", user.getId());
+                } else {
+                    logger.warn("Не удалось создать пользователя, используется временный объект");
                 }
+            } else {
+                logger.info("Найден существующий пользователь с ID: {}", user.getId());
             }
+
             currentUser = user;
             return user;
 
         } catch (Exception e) {
             logger.error("Ошибка при проверке/создании пользователя", e);
+            // В случае ошибки возвращаем пользователя без сохранения в БД
             return createDefaultUser();
         }
     }
@@ -262,8 +354,14 @@ public class ChatBotService implements Closeable {
     private String formatResponse(String botResponse, String textAnalysis,
                                   SpeechAnalysis speechAnalysis,
                                   List<RecommendationEngine.PersonalizedRecommendation> personalizedRecommendations,
-                                  RecommendationEngine.WeeklyLearningPlan weeklyPlan) {
+                                  RecommendationEngine.WeeklyLearningPlan weeklyPlan,
+                                  ChatBotController.ResponseMode responseMode) {
         StringBuilder response = new StringBuilder();
+
+        // Добавляем метку режима в ответ
+        if (responseMode == ChatBotController.ResponseMode.VOICE) {
+            response.append("🔊 **Ответ озвучен**\n\n");
+        }
 
         // Ответ бота
         response.append("## 🤖 AI Репетитор:\n\n");
@@ -402,7 +500,30 @@ public class ChatBotService implements Closeable {
             response.append("*Совет: Запишите свою речь и проанализируйте произношение!*");
         }
 
+        // Добавляем подсказку о режиме
+        if (responseMode == ChatBotController.ResponseMode.VOICE) {
+            response.append("\n\n---\n");
+            response.append("ℹ️ *Этот ответ был озвучен. Вы можете переключиться на текстовый режим в настройках.*");
+        }
+
         return response.toString();
+    }
+
+    // Метод для озвучки любого текста (используется контроллером)
+    public void speakText(String text) {
+        if (textToSpeechService != null && !closed) {
+            try {
+                String cleanText = cleanTextForSpeech(text);
+                if (!cleanText.trim().isEmpty()) {
+                    textToSpeechService.speak(cleanText);
+                }
+            } catch (Exception e) {
+                logger.error("Ошибка при озвучке текста: {}", e.getMessage(), e);
+                throw new RuntimeException("Ошибка озвучки: " + e.getMessage(), e);
+            }
+        } else {
+            throw new IllegalStateException("TTS сервис недоступен");
+        }
     }
 
     // Метод для получения персонализированных рекомендаций отдельно
@@ -472,6 +593,10 @@ public class ChatBotService implements Closeable {
         return recommendationEngine;
     }
 
+    public TextToSpeechService getTextToSpeechService() {
+        return textToSpeechService;
+    }
+
     @Override
     public void close() {
         if (closed) {
@@ -487,6 +612,14 @@ public class ChatBotService implements Closeable {
                     speechToTextService.close();
                 } catch (Exception e) {
                     logger.error("Ошибка при закрытии SpeechToTextService", e);
+                }
+            }
+
+            if (textToSpeechService != null) {
+                try {
+                    textToSpeechService.close();
+                } catch (Exception e) {
+                    logger.error("Ошибка при закрытии TextToSpeechService", e);
                 }
             }
 
@@ -637,7 +770,6 @@ public class ChatBotService implements Closeable {
             }
         }
     }
-
 
     // Вспомогательный класс для ответа
     public static class ChatResponse {
