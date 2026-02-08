@@ -131,12 +131,16 @@
                 <HBox spacing="10" alignment="CENTER_LEFT" style="-fx-padding: 0 0 10 0;">
                     <Label text="💬 Диалог с ИИ-репетитором" styleClass="label-title"/>
                 </HBox>
-                <TextArea fx:id="chatArea" editable="false" wrapText="true"
-                          VBox.vgrow="ALWAYS"
-                          style="-fx-font-family: 'Segoe UI', sans-serif;
-                     -fx-font-size: 13px;
-                     -fx-background-color: transparent;
-                     -fx-border-color: transparent;"/>
+
+                <!-- НОВЫЙ контейнер для сообщений -->
+                <ScrollPane fitToWidth="true"
+                            style="-fx-background-color: transparent; -fx-border-color: transparent;"
+                            hbarPolicy="NEVER" vbarPolicy="AS_NEEDED"
+                            VBox.vgrow="ALWAYS">
+                    <VBox fx:id="chatMessagesContainer"
+                          spacing="12"
+                          style="-fx-padding: 10;"/>
+                </ScrollPane>
             </VBox>
 
             <!-- Панель ввода -->
@@ -154,10 +158,21 @@
                     </HBox>
                 </HBox>
 
-                <TextArea fx:id="inputField"
-                          promptText="Напишите сообщение на английском или запишите голос..."
-                          wrapText="true"
-                          prefRowCount="2"/>
+                <HBox spacing="5" alignment="CENTER">
+                    <TextArea fx:id="inputField"
+                              promptText="Напишите сообщение на английском или запишите голос..."
+                              wrapText="true"
+                              prefRowCount="2"
+                              HBox.hgrow="ALWAYS"
+                              style="-fx-font-size: 13px;"/>
+
+                    <Button fx:id="microphoneButton" text="🎤"
+                            onAction="#onMicrophoneRecognition"
+                            styleClass="button-round,button-info"
+                            style="-fx-margin: 0 0 0 5;">
+                        <tooltip><Tooltip text="Распознавание речи в текст"/></tooltip>
+                    </Button>
+                </HBox>
 
                 <HBox spacing="8" alignment="CENTER">
                     <Button fx:id="recordButton" text="● Запись"

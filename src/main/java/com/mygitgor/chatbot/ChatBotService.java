@@ -11,6 +11,7 @@ import com.mygitgor.model.User;
 import com.mygitgor.repository.DAO.ConversationDao;
 import com.mygitgor.repository.DAO.UserDao;
 import com.mygitgor.speech.AudioAnalyzer;
+import com.mygitgor.speech.SpeechRecorder;
 import com.mygitgor.speech.SpeechToTextService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -439,7 +440,6 @@ public class ChatBotService implements Closeable {
         SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd_HHmmss");
         String timestamp = sdf.format(new Date());
 
-        // Создаем директорию если не существует
         File recordingsDir = new File("recordings");
         if (!recordingsDir.exists()) {
             recordingsDir.mkdirs();
@@ -562,6 +562,82 @@ public class ChatBotService implements Closeable {
         }
         return 0.5; // Значение по умолчанию
     }
+
+    public String recognizeSpeechInRealTime() {
+        SpeechRecorder recorder = null;
+
+        try {
+            logger.info("Начало распознавания речи в реальном времени...");
+
+            // Генерируем имя временного файла
+            String tempFilePath = generateAudioFileName();
+            logger.info("Временный аудиофайл: {}", tempFilePath);
+
+            // Создаем новый рекордер для этой сессии
+            recorder = new SpeechRecorder();
+
+            // Начинаем запись
+            recorder.startRecording();
+            logger.info("Запись начата... Говорите...");
+
+            // Ждем 3 секунды для записи речи
+            Thread.sleep(3000);
+
+            // Останавливаем запись
+            File audioFile = recorder.stopRecording(tempFilePath);
+
+            if (audioFile != null && audioFile.exists()) {
+                long fileSize = audioFile.length();
+                logger.info("Запись завершена. Размер файла: {} байт", fileSize);
+
+                // Проверяем, что файл не пустой
+                if (fileSize > 44) { // WAV файл должен быть больше заголовка
+                    // Распознаем речь - используем getAbsolutePath() у File
+                    SpeechToTextService.SpeechRecognitionResult result =
+                            speechToTextService.transcribe(audioFile.getAbsolutePath());
+
+                    String recognizedText = result.getText();
+                    logger.info("Распознанный текст: {}, уверенность: {:.1f}%",
+                            recognizedText, result.getConfidence() * 100);
+
+                    // Удаляем временный файл
+                    try {
+                        if (audioFile.delete()) {
+                            logger.debug("Временный файл удален: {}", tempFilePath);
+                        }
+                    } catch (Exception e) {
+                        logger.warn("Не удалось удалить временный файл: {}", e.getMessage());
+                    }
+
+                    return recognizedText;
+                } else {
+                    logger.warn("Аудиофайл слишком мал или пустой: {} байт", fileSize);
+                    return "";
+                }
+            } else {
+                logger.warn("Аудиофайл не был создан");
+                return "";
+            }
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Распознавание речи прервано", e);
+            throw new RuntimeException("Распознавание речи прервано", e);
+        } catch (Exception e) {
+            logger.error("Ошибка при распознавании речи в реальном времени", e);
+            throw new RuntimeException("Ошибка распознавания речи: " + e.getMessage(), e);
+        } finally {
+            // Закрываем рекордер
+            if (recorder != null) {
+                try {
+                    recorder.close();
+                } catch (Exception e) {
+                    logger.warn("Ошибка при закрытии рекордера: {}", e.getMessage());
+                }
+            }
+        }
+    }
+
 
     // Вспомогательный класс для ответа
     public static class ChatResponse {

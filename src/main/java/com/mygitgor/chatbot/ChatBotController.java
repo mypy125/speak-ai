@@ -15,11 +15,14 @@ import com.mygitgor.speech.SpeechRecorder;
 import com.mygitgor.speech.SpeechToTextService;
 import com.mygitgor.utils.ResourceManager;
 import javafx.application.Platform;
+import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.control.*;
 import javafx.scene.input.KeyCode;
-import javafx.scene.layout.VBox;
+import javafx.scene.layout.*;
 import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,10 +31,10 @@ import java.io.Closeable;
 import java.io.File;
 import java.net.URL;
 import java.text.SimpleDateFormat;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
-import javafx.scene.control.*;
-import java.util.*;
 
 public class ChatBotController implements Initializable, AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(ChatBotController.class);
@@ -39,7 +42,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
     // ========================================
     // FXML UI Elements - Chat Area
     // ========================================
-    @FXML private TextArea chatArea;
     @FXML private TextArea inputField;
     @FXML private Button sendButton;
     @FXML private Button clearButton;
@@ -52,6 +54,8 @@ public class ChatBotController implements Initializable, AutoCloseable {
     @FXML private Button stopButton;
     @FXML private ProgressIndicator recordingIndicator;
     @FXML private Label recordingTimeLabel;
+    @FXML private Button microphoneButton;
+    @FXML private Label microphoneStatusLabel;
 
     // ========================================
     // FXML UI Elements - Analysis
@@ -88,6 +92,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
     // FXML UI Elements - Container
     // ========================================
     @FXML private VBox mainContainer;
+    @FXML private VBox chatMessagesContainer;
 
     // ========================================
     // Services
@@ -232,6 +237,11 @@ public class ChatBotController implements Initializable, AutoCloseable {
         // Обновление статуса
         updateStatusLabel();
 
+        // Инициализация контейнера для сообщений
+        if (chatMessagesContainer != null) {
+            chatMessagesContainer.setStyle("-fx-background-color: #fafafa;");
+        }
+
         logger.info("UI элементы настроены");
     }
 
@@ -335,6 +345,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
     }
 
     private void showWelcomeMessage() {
+        // Добавляем разделитель времени
+        addTimeDivider("Сегодня");
+
         String welcomeMessage = """
             🌟 Добро пожаловать в SpeakAI!
             
@@ -355,7 +368,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
             Давайте начнем обучение! ✨
             """;
 
-        appendToChat("Бот", welcomeMessage);
+        addAIMessage(welcomeMessage);
     }
 
     // ========================================
@@ -378,9 +391,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
         // Добавляем сообщение пользователя в чат
         if (!text.isEmpty()) {
-            appendToChat("Вы", text);
+            addUserMessage(text);
         } else if (currentAudioFile != null) {
-            appendToChat("Вы", "🎤 [Аудиосообщение]");
+            addUserMessage("🎤 [Аудиосообщение]");
         }
 
         // Очищаем поле ввода
@@ -412,7 +425,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
     private void processResponse(ChatBotService.ChatResponse response) {
         // Добавляем ответ бота
-        appendToChat("Бот", response.getFullResponse());
+        addAIMessage(response.getFullResponse());
 
         // Обновляем области анализа
         if (response.getSpeechAnalysis() != null) {
@@ -425,11 +438,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
             if (pronunciationButton != null) pronunciationButton.setDisable(true);
             if (phonemeLabel != null) phonemeLabel.setVisible(false);
             if (detailedAnalysisArea != null) detailedAnalysisArea.setVisible(false);
-        }
-
-        // Прокрутка вниз
-        if (chatArea != null) {
-            chatArea.positionCaret(chatArea.getLength());
         }
 
         // Скрываем индикатор загрузки
@@ -911,7 +919,12 @@ public class ChatBotController implements Initializable, AutoCloseable {
         alert.setContentText("Это действие нельзя отменить.");
 
         if (alert.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
-            if (chatArea != null) chatArea.clear();
+            // Очищаем контейнер сообщений
+            if (chatMessagesContainer != null) {
+                chatMessagesContainer.getChildren().clear();
+            }
+
+            // Очищаем аналитические области
             if (analysisArea != null) analysisArea.clear();
             if (recommendationsArea != null) recommendationsArea.clear();
             if (detailedAnalysisArea != null) detailedAnalysisArea.clear();
@@ -924,7 +937,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
             recordingsCount = 0;
             updateStatistics();
 
+            // Показываем приветственное сообщение
             showWelcomeMessage();
+
             logger.info("История чата очищена");
         }
     }
@@ -1151,21 +1166,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 updateStatusLabel();
                 if (sendButton != null) sendButton.setDisable(false);
             }
-        });
-    }
-
-    private void appendToChat(String sender, String message) {
-        if (chatArea == null) return;
-
-        SimpleDateFormat sdf = new SimpleDateFormat("HH:mm");
-        String timestamp = sdf.format(new Date());
-
-        String formattedMessage = String.format("\n[%s] %s:\n%s\n",
-                timestamp, sender, message);
-
-        Platform.runLater(() -> {
-            chatArea.appendText(formattedMessage);
-            chatArea.positionCaret(chatArea.getLength());
         });
     }
 
@@ -1403,5 +1403,330 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
     public boolean isClosed() {
         return closed;
+    }
+
+    // ========================================
+    // Chat Message Methods
+    // ========================================
+
+    private void addUserMessage(String text) {
+        Platform.runLater(() -> {
+            HBox messageContainer = new HBox();
+            messageContainer.setSpacing(8);
+            messageContainer.setAlignment(Pos.TOP_RIGHT);
+            messageContainer.setStyle("-fx-padding: 0 0 5 0;");
+
+            // Контейнер сообщения
+            VBox messageContent = new VBox();
+            messageContent.setAlignment(Pos.TOP_RIGHT);
+            messageContent.setSpacing(3);
+
+            // Текст сообщения
+            VBox messageBubble = new VBox();
+            messageBubble.setStyle(
+                    "-fx-background-color: linear-gradient(to bottom, #3498db, #2980b9); " +
+                            "-fx-background-radius: 12 12 4 12; " +
+                            "-fx-padding: 12 16; " +
+                            "-fx-effect: dropshadow(gaussian, rgba(52, 152, 219, 0.2), 4, 0, 0, 2);"
+            );
+            messageBubble.setMaxWidth(400);
+
+            Label messageText = new Label(text);
+            messageText.setStyle(
+                    "-fx-text-fill: white; " +
+                            "-fx-font-size: 13px; " +
+                            "-fx-font-family: 'Segoe UI', sans-serif; " +
+                            "-fx-wrap-text: true;"
+            );
+            messageText.setWrapText(true);
+            messageText.setMaxWidth(380);
+
+            messageBubble.getChildren().add(messageText);
+
+            // Время и статус
+            HBox messageInfo = new HBox();
+            messageInfo.setAlignment(Pos.CENTER_RIGHT);
+            messageInfo.setSpacing(8);
+
+            Label timeLabel = new Label(LocalTime.now().format(DateTimeFormatter.ofPattern("h:mm a")));
+            timeLabel.setStyle(
+                    "-fx-text-fill: #7f8c8d; " +
+                            "-fx-font-size: 11px; " +
+                            "-fx-font-style: italic;"
+            );
+
+            Label statusLabel = new Label("✔");
+            statusLabel.setStyle(
+                    "-fx-text-fill: #27ae60; " +
+                            "-fx-font-size: 11px;"
+            );
+
+            messageInfo.getChildren().addAll(timeLabel, statusLabel);
+            messageContent.getChildren().addAll(messageBubble, messageInfo);
+
+            // Аватар пользователя
+            StackPane userAvatar = new StackPane();
+            userAvatar.setPrefSize(32, 32);
+            userAvatar.setMinSize(32, 32);
+            userAvatar.setMaxSize(32, 32);
+            userAvatar.setStyle(
+                    "-fx-background-color: #27ae60; " +
+                            "-fx-background-radius: 50%; " +
+                            "-fx-alignment: center;"
+            );
+
+            Label userAvatarLabel = new Label("U");
+            userAvatarLabel.setStyle(
+                    "-fx-text-fill: white; " +
+                            "-fx-font-size: 14px; " +
+                            "-fx-font-weight: bold;"
+            );
+            userAvatar.getChildren().add(userAvatarLabel);
+
+            messageContainer.getChildren().addAll(messageContent, userAvatar);
+            chatMessagesContainer.getChildren().add(messageContainer);
+
+            // Прокрутка вниз
+            ScrollPane scrollPane = (ScrollPane) chatMessagesContainer.getParent();
+            scrollPane.setVvalue(1.0);
+        });
+    }
+
+    // Метод для добавления сообщения ИИ
+    private void addAIMessage(String text) {
+        Platform.runLater(() -> {
+            HBox messageContainer = new HBox();
+            messageContainer.setSpacing(8);
+            messageContainer.setAlignment(Pos.TOP_LEFT);
+            messageContainer.setStyle("-fx-padding: 0 0 5 0;");
+
+            // Аватар ИИ
+            StackPane aiAvatar = new StackPane();
+            aiAvatar.setPrefSize(32, 32);
+            aiAvatar.setMinSize(32, 32);
+            aiAvatar.setMaxSize(32, 32);
+            aiAvatar.setStyle(
+                    "-fx-background-color: #3498db; " +
+                            "-fx-background-radius: 50%; " +
+                            "-fx-alignment: center;"
+            );
+
+            Label aiAvatarLabel = new Label("AI");
+            aiAvatarLabel.setStyle(
+                    "-fx-text-fill: white; " +
+                            "-fx-font-size: 14px; " +
+                            "-fx-font-weight: bold;"
+            );
+            aiAvatar.getChildren().add(aiAvatarLabel);
+
+            // Контейнер сообщения
+            VBox messageContent = new VBox();
+            messageContent.setAlignment(Pos.TOP_LEFT);
+            messageContent.setSpacing(3);
+
+            // Текст сообщения
+            VBox messageBubble = new VBox();
+            messageBubble.setStyle(
+                    "-fx-background-color: linear-gradient(to bottom, #f8f9fa, #ecf0f1); " +
+                            "-fx-background-radius: 12 12 12 4; " +
+                            "-fx-border-color: #e0e0e0; " +
+                            "-fx-border-width: 1; " +
+                            "-fx-border-radius: 12 12 12 4; " +
+                            "-fx-padding: 12 16; " +
+                            "-fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.05), 3, 0, 0, 1);"
+            );
+            messageBubble.setMaxWidth(400);
+
+            Label messageText = new Label(text);
+            messageText.setStyle(
+                    "-fx-text-fill: #2c3e50; " +
+                            "-fx-font-size: 13px; " +
+                            "-fx-font-family: 'Segoe UI', sans-serif; " +
+                            "-fx-wrap-text: true;"
+            );
+            messageText.setWrapText(true);
+            messageText.setMaxWidth(380);
+
+            messageBubble.getChildren().add(messageText);
+
+            // Время
+            Label timeLabel = new Label(LocalTime.now().format(DateTimeFormatter.ofPattern("h:mm a")));
+            timeLabel.setStyle(
+                    "-fx-text-fill: #7f8c8d; " +
+                            "-fx-font-size: 11px; " +
+                            "-fx-font-style: italic;"
+            );
+
+            messageContent.getChildren().addAll(messageBubble, timeLabel);
+            messageContainer.getChildren().addAll(aiAvatar, messageContent);
+            chatMessagesContainer.getChildren().add(messageContainer);
+
+            // Прокрутка вниз
+            ScrollPane scrollPane = (ScrollPane) chatMessagesContainer.getParent();
+            scrollPane.setVvalue(1.0);
+        });
+    }
+
+    // Метод для добавления разделителя времени
+    private void addTimeDivider(String timeText) {
+        Platform.runLater(() -> {
+            HBox timeDivider = new HBox();
+            timeDivider.setAlignment(Pos.CENTER);
+            timeDivider.setSpacing(10);
+            timeDivider.setPadding(new Insets(5, 0, 5, 0));
+
+            Region line1 = new Region();
+            line1.setPrefHeight(1);
+            line1.setMinHeight(1);
+            line1.setMaxHeight(1);
+            line1.setStyle("-fx-background-color: #e0e0e0;");
+            HBox.setHgrow(line1, Priority.ALWAYS);
+
+            Label label = new Label(timeText);
+            label.setStyle(
+                    "-fx-text-fill: #95a5a6; " +
+                            "-fx-font-size: 11px; " +
+                            "-fx-background-color: white; " +
+                            "-fx-padding: 0 10;"
+            );
+
+            Region line2 = new Region();
+            line2.setPrefHeight(1);
+            line2.setMinHeight(1);
+            line2.setMaxHeight(1);
+            line2.setStyle("-fx-background-color: #e0e0e0;");
+            HBox.setHgrow(line2, Priority.ALWAYS);
+
+            timeDivider.getChildren().addAll(line1, label, line2);
+            chatMessagesContainer.getChildren().add(timeDivider);
+        });
+    }
+
+
+    @FXML
+    private void onMicrophoneRecognition(ActionEvent actionEvent) {
+        if (closed) {
+            showError("Ошибка", "Приложение закрывается");
+            return;
+        }
+
+        // Показываем статус
+        Platform.runLater(() -> {
+            if (microphoneButton != null) {
+                microphoneButton.setDisable(true);
+                microphoneButton.setText("🔴");
+                microphoneButton.setStyle("-fx-background-color: #e74c3c;");
+            }
+
+            if (microphoneStatusLabel != null) {
+                microphoneStatusLabel.setText("Говорите...");
+                microphoneStatusLabel.setStyle("-fx-text-fill: #e74c3c;");
+            }
+
+            if (statusLabel != null) {
+                statusLabel.setText("🎤 Распознавание речи...");
+            }
+        });
+
+        new Thread(() -> {
+            try {
+                // Вызываем метод распознавания речи
+                String recognizedText = chatBotService.recognizeSpeechInRealTime();
+
+                Platform.runLater(() -> {
+                    // Обновляем статус
+                    if (microphoneStatusLabel != null) {
+                        if (recognizedText != null && !recognizedText.trim().isEmpty()) {
+                            microphoneStatusLabel.setText("✓ Распознано");
+                            microphoneStatusLabel.setStyle("-fx-text-fill: #27ae60;");
+                        } else {
+                            microphoneStatusLabel.setText("✗ Не распознано");
+                            microphoneStatusLabel.setStyle("-fx-text-fill: #e74c3c;");
+                        }
+                    }
+
+                    // Вставляем распознанный текст
+                    if (inputField != null && recognizedText != null && !recognizedText.trim().isEmpty()) {
+                        String currentText = inputField.getText();
+                        if (!currentText.isEmpty()) {
+                            // Добавляем пробел если в конце нет знака препинания
+                            if (!currentText.matches(".*[.!?\\s]$")) {
+                                currentText += " ";
+                            }
+                            inputField.setText(currentText + recognizedText);
+                        } else {
+                            inputField.setText(recognizedText);
+                        }
+                    }
+
+                    // Восстанавливаем кнопку
+                    if (microphoneButton != null) {
+                        microphoneButton.setDisable(false);
+                        microphoneButton.setText("🎤");
+                        microphoneButton.setStyle("");
+                    }
+
+                    if (statusLabel != null) {
+                        updateStatusLabel();
+                    }
+
+                    // Через 2 секунды сбрасываем статус лейбл
+                    if (microphoneStatusLabel != null) {
+                        new Thread(() -> {
+                            try {
+                                Thread.sleep(2000);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                            Platform.runLater(() -> {
+                                if (microphoneStatusLabel != null) {
+                                    microphoneStatusLabel.setText("");
+                                }
+                            });
+                        }).start();
+                    }
+                });
+
+            } catch (Exception e) {
+                logger.error("Ошибка при распознавании речи", e);
+                Platform.runLater(() -> {
+                    // Обновляем статус ошибки
+                    if (microphoneStatusLabel != null) {
+                        microphoneStatusLabel.setText("Ошибка");
+                        microphoneStatusLabel.setStyle("-fx-text-fill: #e74c3c;");
+                    }
+
+                    showError("Ошибка распознавания",
+                            "Не удалось распознать речь: " + e.getMessage());
+
+                    // Восстанавливаем кнопку
+                    if (microphoneButton != null) {
+                        microphoneButton.setDisable(false);
+                        microphoneButton.setText("🎤");
+                        microphoneButton.setStyle("");
+                    }
+
+                    if (statusLabel != null) {
+                        updateStatusLabel();
+                    }
+
+                    // Через 3 секунды сбрасываем статус лейбл
+                    if (microphoneStatusLabel != null) {
+                        new Thread(() -> {
+                            try {
+                                Thread.sleep(3000);
+                            } catch (InterruptedException ex) {
+                                Thread.currentThread().interrupt();
+                            }
+                            Platform.runLater(() -> {
+                                if (microphoneStatusLabel != null) {
+                                    microphoneStatusLabel.setText("");
+                                }
+                            });
+                        }).start();
+                    }
+                });
+            }
+        }).start();
     }
 }
