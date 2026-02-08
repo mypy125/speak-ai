@@ -496,6 +496,9 @@
     -fx-background-color: #9b59b6;
 }
 
+/* ===================================
+   SPECIAL EFFECTS
+   =================================== */
 
 .glow-effect {
     -fx-effect: dropshadow(gaussian, rgba(52, 152, 219, 0.6), 10, 0, 0, 0);
@@ -508,6 +511,10 @@
 .shadow-effect-hover:hover {
     -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.3), 12, 0, 0, 4);
 }
+
+/* ===================================
+   ANIMATIONS
+   =================================== */
 
 .fade-in {
     -fx-opacity: 0;
@@ -523,6 +530,10 @@
     -fx-scale-y: 1.05;
     -fx-transition: all 0.2s;
 }
+
+/* ===================================
+   STATUS INDICATORS
+   =================================== */
 
 .status-online {
     -fx-fill: #27ae60;

@@ -39,19 +39,19 @@
 
                 <!-- Кнопки управления (компактные) -->
                 <HBox spacing="5" alignment="CENTER_RIGHT">
-                    <Button text="🎤"
+                    <Button text="⚙️ Speech"
                             onAction="#toggleSpeechPanel"
-                            styleClass="button-round,button-primary">
+                            style="-fx-font-weight: bold; -fx-font-size: 13; -fx-text-fill: #2c3e50;">
                         <tooltip><Tooltip text="Настройки распознавания"/></tooltip>
                     </Button>
-                    <Button fx:id="historyButton" text="📜"
+                    <Button fx:id="historyButton" text="📋 History"
                             onAction="#onShowHistory"
-                            styleClass="button-round,button-secondary">
+                            style="-fx-font-weight: bold; -fx-font-size: 13; -fx-text-fill: #2c3e50;">
                         <tooltip><Tooltip text="История разговоров"/></tooltip>
                     </Button>
-                    <Button fx:id="clearButton" text="🗑️"
+                    <Button fx:id="clearButton" text="🗑️ Clear"
                             onAction="#onClearChat"
-                            styleClass="button-round,button-danger">
+                            style="-fx-font-weight: bold; -fx-font-size: 13; -fx-text-fill: #2c3e50;">
                         <tooltip><Tooltip text="Очистить чат"/></tooltip>
                     </Button>
                 </HBox>
@@ -131,15 +131,12 @@
                 <HBox spacing="10" alignment="CENTER_LEFT" style="-fx-padding: 0 0 10 0;">
                     <Label text="💬 Диалог с ИИ-репетитором" styleClass="label-title"/>
                 </HBox>
-
-                <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS"
-                            style="-fx-background-color: transparent; -fx-border-color: transparent;">
-                    <TextArea fx:id="chatArea" editable="false" wrapText="true"
-                              style="-fx-font-family: 'Segoe UI', sans-serif;
-                                     -fx-font-size: 13px;
-                                     -fx-background-color: transparent;
-                                     -fx-border-color: transparent;"/>
-                </ScrollPane>
+                <TextArea fx:id="chatArea" editable="false" wrapText="true"
+                          VBox.vgrow="ALWAYS"
+                          style="-fx-font-family: 'Segoe UI', sans-serif;
+                     -fx-font-size: 13px;
+                     -fx-background-color: transparent;
+                     -fx-border-color: transparent;"/>
             </VBox>
 
             <!-- Панель ввода -->
@@ -228,45 +225,45 @@
             <!-- Вкладки анализа -->
             <TabPane tabClosingPolicy="UNAVAILABLE" VBox.vgrow="ALWAYS">
                 <Tab text="📋 Кратко">
-                    <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS"
-                                style="-fx-background-color: transparent;">
+                    <VBox VBox.vgrow="ALWAYS">
                         <TextArea fx:id="analysisArea"
                                   editable="false"
                                   wrapText="true"
+                                  VBox.vgrow="ALWAYS"
                                   style="-fx-font-family: 'Segoe UI', sans-serif;
-                                         -fx-font-size: 12px;
-                                         -fx-background-color: transparent;
-                                         -fx-border-color: transparent;
-                                         -fx-padding: 12;"/>
-                    </ScrollPane>
+                             -fx-font-size: 12px;
+                             -fx-background-color: transparent;
+                             -fx-border-color: transparent;
+                             -fx-padding: 12;"/>
+                    </VBox>
                 </Tab>
 
                 <Tab text="📈 Детально">
-                    <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS"
-                                style="-fx-background-color: transparent;">
+                    <VBox VBox.vgrow="ALWAYS">
                         <TextArea fx:id="detailedAnalysisArea"
                                   editable="false"
                                   wrapText="true"
+                                  VBox.vgrow="ALWAYS"
                                   style="-fx-font-family: 'Consolas', monospace;
-                                         -fx-font-size: 11px;
-                                         -fx-background-color: transparent;
-                                         -fx-border-color: transparent;
-                                         -fx-padding: 12;"/>
-                    </ScrollPane>
+                             -fx-font-size: 11px;
+                             -fx-background-color: transparent;
+                             -fx-border-color: transparent;
+                             -fx-padding: 12;"/>
+                    </VBox>
                 </Tab>
 
                 <Tab text="💡 Советы">
-                    <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS"
-                                style="-fx-background-color: transparent;">
+                    <VBox VBox.vgrow="ALWAYS">
                         <TextArea fx:id="recommendationsArea"
                                   editable="false"
                                   wrapText="true"
+                                  VBox.vgrow="ALWAYS"
                                   style="-fx-font-family: 'Segoe UI', sans-serif;
-                                         -fx-font-size: 12px;
-                                         -fx-background-color: transparent;
-                                         -fx-border-color: transparent;
-                                         -fx-padding: 12;"/>
-                    </ScrollPane>
+                             -fx-font-size: 12px;
+                             -fx-background-color: transparent;
+                             -fx-border-color: transparent;
+                             -fx-padding: 12;"/>
+                    </VBox>
                 </Tab>
             </TabPane>
 
