@@ -1,6 +1,5 @@
 package com.mygitgor.chatbot;
 
-import com.j256.ormlite.support.ConnectionSource;
 import com.mygitgor.ai.AiService;
 import com.mygitgor.analysis.PronunciationTrainer;
 import com.mygitgor.analysis.RecommendationEngine;
@@ -10,10 +9,10 @@ import com.mygitgor.model.SpeechAnalysis;
 import com.mygitgor.model.User;
 import com.mygitgor.repository.DAO.ConversationDao;
 import com.mygitgor.repository.DAO.UserDao;
-import com.mygitgor.speech.AudioAnalyzer;
-import com.mygitgor.speech.SpeechRecorder;
-import com.mygitgor.speech.SpeechToTextService;
-import com.mygitgor.speech.TextToSpeechService;
+import com.mygitgor.speech.*;
+import com.mygitgor.speech.tovoice.DemoTextToSpeechService;
+import com.mygitgor.speech.tovoice.TextToSpeechFactory;
+import com.mygitgor.speech.tovoice.TextToSpeechService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,7 +22,6 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.Properties;
-import java.util.*;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
@@ -48,16 +46,31 @@ public class ChatBotService implements AutoCloseable {
         this.pronunciationTrainer = pronunciationTrainer;
         this.recommendationEngine = new RecommendationEngine();
 
-        // Создаем TTS сервис
-        this.textToSpeechService = new TextToSpeechService();
-        logger.info("TextToSpeechService создан в ChatBotService");
+        // Временная переменная для TTS сервиса
+        TextToSpeechService ttsService;
 
-        // Проверяем доступность TTS
-        if (textToSpeechService.isTTSAvailable()) {
-            logger.info("✅ Системный TTS доступен");
-        } else {
-            logger.warn("⚠️ Системный TTS не найден, будет использован демо-режим");
+        // Инициализация TTS сервиса через фабрику
+        try {
+            Properties props = new Properties();
+            props.load(getClass().getResourceAsStream("/application.properties"));
+
+            ttsService = TextToSpeechFactory.createService(props);
+            logger.info("TTS Service создан: {}", ttsService.getClass().getSimpleName());
+
+            // Проверяем доступность TTS
+            if (ttsService.isAvailable()) {
+                logger.info("✅ TTS сервис доступен");
+            } else {
+                logger.warn("⚠️ TTS сервис работает в ограниченном режиме");
+            }
+
+        } catch (Exception e) {
+            logger.error("Ошибка при создании TTS сервиса, используем демо-режим", e);
+            ttsService = new DemoTextToSpeechService();
         }
+
+        // Присваиваем финальному полю
+        this.textToSpeechService = ttsService;
 
         // Инициализация DAO
         try {
@@ -73,7 +86,8 @@ public class ChatBotService implements AutoCloseable {
         // Временный пользователь для MVP
         this.currentUser = createDefaultUser();
 
-        logger.info("ChatBotService инициализирован с AudioAnalyzer и TextToSpeechService");
+        logger.info("ChatBotService инициализирован с AudioAnalyzer и {}",
+                textToSpeechService.getClass().getSimpleName());
     }
 
     private User createDefaultUser() {
@@ -596,7 +610,7 @@ public class ChatBotService implements AutoCloseable {
     }
 
     public boolean isTTSAvailable() {
-        return textToSpeechService != null && textToSpeechService.isTTSAvailable();
+        return textToSpeechService != null && textToSpeechService.isAvailable();
     }
 
     public String getTTSStatus() {
@@ -604,7 +618,7 @@ public class ChatBotService implements AutoCloseable {
             return "TTS сервис не инициализирован";
         }
 
-        if (textToSpeechService.isTTSAvailable()) {
+        if (textToSpeechService.isAvailable()) {
             return "✅ Системный TTS доступен";
         } else {
             return "⚠️ TTS работает в демо-режиме";
@@ -704,7 +718,7 @@ public class ChatBotService implements AutoCloseable {
                 try {
                     textToSpeechService.close();
                 } catch (Exception e) {
-                    logger.error("Ошибка при закрытии TextToSpeechService", e);
+                    logger.error("Ошибка при закрытии DemoTextToSpeechService", e);
                 }
             }
 

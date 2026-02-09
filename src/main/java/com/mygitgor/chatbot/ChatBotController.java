@@ -10,6 +10,7 @@ import com.mygitgor.model.Conversation;
 import com.mygitgor.model.EnhancedSpeechAnalysis;
 import com.mygitgor.model.SpeechAnalysis;
 import com.mygitgor.speech.*;
+import com.mygitgor.speech.tovoice.DemoTextToSpeechService;
 import com.mygitgor.utils.ResourceManager;
 import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
@@ -112,12 +113,12 @@ public class ChatBotController implements Initializable, AutoCloseable {
     private AudioAnalyzer audioAnalyzer;
     private PronunciationTrainer pronunciationTrainer;
     private ResourceManager resourceManager;
-    private TextToSpeechService textToSpeechService;
+    private DemoTextToSpeechService textToSpeechService;
 
     // Добавьте после других полей состояния
     private CompletableFuture<Void> currentSpeechFuture;
     private boolean isPlayingSpeech = false;
-    private TextToSpeechService.SpeechStateListener speechStateListener;
+    private DemoTextToSpeechService.SpeechStateListener speechStateListener;
 
     // ========================================
     // State
@@ -198,8 +199,8 @@ public class ChatBotController implements Initializable, AutoCloseable {
             logger.info("PronunciationTrainer создан");
 
             // Создаем сервис преобразования текста в речь
-            this.textToSpeechService = new TextToSpeechService();
-            logger.info("TextToSpeechService создан");
+            this.textToSpeechService = new DemoTextToSpeechService();
+            logger.info("DemoTextToSpeechService создан");
 
             // Настраиваем слушатель состояния TTS
             setupTextToSpeechListener();
@@ -243,9 +244,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
     }
 
     private void setupTextToSpeechListener() {
-        speechStateListener = new TextToSpeechService.SpeechStateListener() {
+        speechStateListener = new DemoTextToSpeechService.SpeechStateListener() {
             @Override
-            public void onSpeechStateChanged(TextToSpeechService.SpeechState state) {
+            public void onSpeechStateChanged(DemoTextToSpeechService.SpeechState state) {
                 Platform.runLater(() -> {
                     switch (state) {
                         case IDLE:
@@ -2168,7 +2169,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
         return lastBotResponse;
     }
 
-    public TextToSpeechService getTextToSpeechService() {
+    public DemoTextToSpeechService getTextToSpeechService() {
         return textToSpeechService;
     }
 }

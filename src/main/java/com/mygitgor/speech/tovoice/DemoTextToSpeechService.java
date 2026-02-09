@@ -1,4 +1,4 @@
-package com.mygitgor.speech;
+package com.mygitgor.speech.tovoice;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,8 +13,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-public class TextToSpeechService implements AutoCloseable {
-    private static final Logger logger = LoggerFactory.getLogger(TextToSpeechService.class);
+public class DemoTextToSpeechService implements TextToSpeechService {
+    private static final Logger logger = LoggerFactory.getLogger(DemoTextToSpeechService.class);
 
     private volatile boolean closed = false;
     private volatile boolean speaking = false;
@@ -42,8 +42,8 @@ public class TextToSpeechService implements AutoCloseable {
         void onSpeechError(String error);
     }
 
-    public TextToSpeechService() {
-        logger.info("Инициализация TextToSpeechService");
+    public DemoTextToSpeechService() {
+        logger.info("Инициализация DemoTextToSpeechService");
         this.executorService = Executors.newSingleThreadExecutor(r -> {
             Thread thread = new Thread(r, "TTS-Thread");
             thread.setDaemon(true);
@@ -431,7 +431,7 @@ public class TextToSpeechService implements AutoCloseable {
      */
     public CompletableFuture<Void> speakAsync(String text) {
         if (closed) {
-            throw new IllegalStateException("TextToSpeechService закрыт");
+            throw new IllegalStateException("DemoTextToSpeechService закрыт");
         }
 
         if (text == null || text.trim().isEmpty()) {
@@ -458,7 +458,7 @@ public class TextToSpeechService implements AutoCloseable {
      */
     public void speak(String text) {
         if (closed) {
-            throw new IllegalStateException("TextToSpeechService закрыт");
+            throw new IllegalStateException("DemoTextToSpeechService закрыт");
         }
 
         if (text == null || text.trim().isEmpty()) {
@@ -586,6 +586,11 @@ public class TextToSpeechService implements AutoCloseable {
         }
     }
 
+    @Override
+    public boolean isAvailable() {
+        return false;
+    }
+
     private void startErrorMonitor(Process process) {
         executorService.submit(() -> {
             try (BufferedReader errorReader = new BufferedReader(
@@ -655,7 +660,7 @@ public class TextToSpeechService implements AutoCloseable {
             return;
         }
 
-        logger.info("Закрытие TextToSpeechService...");
+        logger.info("Закрытие DemoTextToSpeechService...");
         closed = true;
 
         // Останавливаем текущую озвучку
@@ -674,7 +679,7 @@ public class TextToSpeechService implements AutoCloseable {
             }
         }
 
-        logger.info("TextToSpeechService закрыт");
+        logger.info("DemoTextToSpeechService закрыт");
     }
 
     public boolean isClosed() {

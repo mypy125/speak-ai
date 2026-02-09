@@ -42,10 +42,25 @@
             <version>2.10.1</version>
         </dependency>
 
+        <!-- Официальная библиотека OpenAI Java -->
         <dependency>
             <groupId>com.openai</groupId>
             <artifactId>openai-java</artifactId>
             <version>0.41.0</version>
+        </dependency>
+
+        <!-- Или Theokanning OpenAI (альтернатива) -->
+        <dependency>
+            <groupId>com.theokanning.openai-gpt3-java</groupId>
+            <artifactId>service</artifactId>
+            <version>0.18.2</version>
+        </dependency>
+
+        <!-- Для работы с аудио -->
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>32.1.3-jre</version>
         </dependency>
 
         <dependency>
