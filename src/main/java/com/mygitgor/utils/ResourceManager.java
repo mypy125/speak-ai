@@ -71,6 +71,45 @@ public class ResourceManager implements AutoCloseable {
         }
     }
 
+    public void unregister(AutoCloseable resource) {
+        if (resource == null) return;
+
+        synchronized (resources) {
+            if (resources.remove(resource)) {
+                logger.debug("Ресурс отменен: {}", resource.getClass().getSimpleName());
+            }
+        }
+    }
+
+    /**
+     * Отмена регистрации ExecutorService
+     */
+    public void unregisterExecutor(ExecutorService executor) {
+        if (executor == null) return;
+
+        synchronized (executors) {
+            if (executors.remove(executor)) {
+                logger.debug("ExecutorService отменен");
+            }
+        }
+    }
+
+    /**
+     * Универсальный метод отмены регистрации
+     */
+    public void unregister(Object resource) {
+        if (resource == null) return;
+
+        if (resource instanceof AutoCloseable) {
+            unregister((AutoCloseable) resource);
+        } else if (resource instanceof ExecutorService) {
+            unregisterExecutor((ExecutorService) resource);
+        } else {
+            logger.warn("Неизвестный тип ресурса для отмены: {}",
+                    resource.getClass().getName());
+        }
+    }
+
     /**
      * Закрытие всех ресурсов
      */

@@ -10,8 +10,6 @@ import com.mygitgor.model.User;
 import com.mygitgor.repository.DAO.ConversationDao;
 import com.mygitgor.repository.DAO.UserDao;
 import com.mygitgor.speech.*;
-import com.mygitgor.speech.tovoice.DemoTextToSpeechService;
-import com.mygitgor.speech.tovoice.TextToSpeechFactory;
 import com.mygitgor.speech.tovoice.TextToSpeechService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,43 +32,21 @@ public class ChatBotService implements AutoCloseable {
     private final PronunciationTrainer pronunciationTrainer;
     private final RecommendationEngine recommendationEngine;
     private final SpeechToTextService speechToTextService;
-    private final TextToSpeechService textToSpeechService; // Добавлен TTS сервис
+    private TextToSpeechService textToSpeechService; // Добавлен TTS сервис
     private User currentUser;
 
     private volatile boolean closed = false;
 
     public ChatBotService(AiService aiService, AudioAnalyzer audioAnalyzer,
-                          PronunciationTrainer pronunciationTrainer) {
+                          PronunciationTrainer pronunciationTrainer,
+                          TextToSpeechService textToSpeechService) { // Добавляем параметр
         this.aiService = aiService;
         this.audioAnalyzer = audioAnalyzer;
         this.pronunciationTrainer = pronunciationTrainer;
+        this.textToSpeechService = textToSpeechService; // Используем переданный сервис
+
+        // Остальная инициализация...
         this.recommendationEngine = new RecommendationEngine();
-
-        // Временная переменная для TTS сервиса
-        TextToSpeechService ttsService;
-
-        // Инициализация TTS сервиса через фабрику
-        try {
-            Properties props = new Properties();
-            props.load(getClass().getResourceAsStream("/application.properties"));
-
-            ttsService = TextToSpeechFactory.createService(props);
-            logger.info("TTS Service создан: {}", ttsService.getClass().getSimpleName());
-
-            // Проверяем доступность TTS
-            if (ttsService.isAvailable()) {
-                logger.info("✅ TTS сервис доступен");
-            } else {
-                logger.warn("⚠️ TTS сервис работает в ограниченном режиме");
-            }
-
-        } catch (Exception e) {
-            logger.error("Ошибка при создании TTS сервиса, используем демо-режим", e);
-            ttsService = new DemoTextToSpeechService();
-        }
-
-        // Присваиваем финальному полю
-        this.textToSpeechService = ttsService;
 
         // Инициализация DAO
         try {
@@ -88,6 +64,35 @@ public class ChatBotService implements AutoCloseable {
 
         logger.info("ChatBotService инициализирован с AudioAnalyzer и {}",
                 textToSpeechService.getClass().getSimpleName());
+    }
+
+    public void setTextToSpeechService(TextToSpeechService newService) {
+        if (newService == null) {
+            throw new IllegalArgumentException("TTS сервис не может быть null");
+        }
+
+        // Закрываем старый сервис, если он существует и это не тот же самый объект
+        if (textToSpeechService != null && textToSpeechService != newService) {
+            try {
+                textToSpeechService.close();
+                logger.info("Старый TTS сервис закрыт: {}",
+                        textToSpeechService.getClass().getSimpleName());
+            } catch (Exception e) {
+                logger.error("Ошибка при закрытии старого TTS сервиса", e);
+            }
+        }
+
+        // Устанавливаем новый сервис
+        textToSpeechService = newService;
+        logger.info("TTS сервис обновлен: {}",
+                textToSpeechService.getClass().getSimpleName());
+
+        // Проверяем доступность нового сервиса
+        if (textToSpeechService.isAvailable()) {
+            logger.info("✅ Новый TTS сервис доступен");
+        } else {
+            logger.warn("⚠️ Новый TTS сервис работает в ограниченном режиме");
+        }
     }
 
     private User createDefaultUser() {
