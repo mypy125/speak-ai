@@ -2,10 +2,9 @@
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
-<?import javafx.scene.text.*?>
-<?import javafx.scene.shape.*?>
+<?import javafx.scene.shape.Circle?>
 
-<?import java.lang.String?>
+<?import java.net.URL?>
 <VBox xmlns="http://javafx.com/javafx/17"
       xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.mygitgor.chatbot.ChatBotController"
@@ -13,8 +12,12 @@
       style="-fx-background-color: #f5f7fa; -fx-padding: 15;">
 
     <stylesheets>
-        <String fx:value="@../styles/main.css"/>
+        <URL value="@../styles/main.css"/>
     </stylesheets>
+
+    <fx:define>
+        <ToggleGroup fx:id="responseModeToggleGroup"/>
+    </fx:define>
 
     <!-- Основной контейнер -->
     <SplitPane dividerPositions="0.7" VBox.vgrow="ALWAYS">
@@ -132,7 +135,7 @@
                     <Label text="💬 Диалог с ИИ-репетитором" styleClass="label-title"/>
                 </HBox>
 
-                <!-- НОВЫЙ контейнер для сообщений -->
+                <!-- Контейнер для сообщений -->
                 <ScrollPane fx:id="chatScrollPane"
                             fitToWidth="true"
                             style="-fx-background-color: transparent; -fx-border-color: transparent;"
@@ -142,6 +145,8 @@
                           spacing="12"
                           style="-fx-padding: 10;"/>
                 </ScrollPane>
+
+                <!-- ToggleGroup и режимы ответа -->
                 <HBox spacing="10" alignment="CENTER_LEFT" style="-fx-padding: 10 0 0 0;">
                     <Label text="Режим ответа:" style="-fx-font-size: 12px; -fx-text-fill: #666;"/>
 
@@ -165,7 +170,6 @@
                             visible="false"
                             managed="false"/>
                 </HBox>
-
             </VBox>
 
             <!-- Панель ввода -->
@@ -251,7 +255,7 @@
             <HBox spacing="10" alignment="CENTER_LEFT" styleClass="card">
                 <StackPane>
                     <Circle radius="16" fill="#3498db"/>
-                    <Text text="📊" fill="white" style="-fx-font-size: 12px;"/>
+                    <Label text="📊" style="-fx-text-fill: white; -fx-font-size: 12px;"/>
                 </StackPane>
                 <VBox spacing="2">
                     <Label text="Анализ речи" styleClass="label-title"/>

@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.*;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 
 public class ChatBotService implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(ChatBotService.class);
@@ -50,6 +51,13 @@ public class ChatBotService implements AutoCloseable {
         // Создаем TTS сервис
         this.textToSpeechService = new TextToSpeechService();
         logger.info("TextToSpeechService создан в ChatBotService");
+
+        // Проверяем доступность TTS
+        if (textToSpeechService.isTTSAvailable()) {
+            logger.info("✅ Системный TTS доступен");
+        } else {
+            logger.warn("⚠️ Системный TTS не найден, будет использован демо-режим");
+        }
 
         // Инициализация DAO
         try {
@@ -180,8 +188,18 @@ public class ChatBotService implements AutoCloseable {
                 String cleanText = cleanTextForSpeech(response);
 
                 if (cleanText != null && !cleanText.trim().isEmpty()) {
-                    textToSpeechService.speak(cleanText);
-                    logger.info("Озвучка ответа завершена");
+                    // Используем асинхронную озвучку и обрабатываем исключения
+                    CompletableFuture<Void> speechFuture = textToSpeechService.speakAsync(cleanText);
+
+                    speechFuture.thenRun(() -> {
+                        logger.info("✅ Озвучка ответа завершена");
+                    }).exceptionally(throwable -> {
+                        // Логируем ошибку, но не показываем пользователю
+                        logger.warn("Не удалось озвучить ответ: {}", throwable.getMessage());
+                        return null;
+                    });
+
+                    logger.info("Озвучка ответа запущена асинхронно");
                 } else {
                     logger.warn("Текст для озвучки пуст или null");
                 }
@@ -189,7 +207,8 @@ public class ChatBotService implements AutoCloseable {
                 logger.warn("TTS сервис недоступен или ChatBotService закрыт");
             }
         } catch (Exception e) {
-            logger.error("Ошибка при озвучке ответа: {}", e.getMessage(), e);
+            logger.error("Ошибка при запуске озвучки ответа: {}", e.getMessage(), e);
+            // Не бросаем исключение дальше
         }
     }
 
@@ -212,8 +231,8 @@ public class ChatBotService implements AutoCloseable {
                 .replaceAll("\\[.*?\\]\\(.*?\\)", "")
                 // Убираем HTML теги
                 .replaceAll("<[^>]*>", "")
-                // Убираем эмодзи
-                .replaceAll("[🤖🎤📝📊🗣️✅⚠️🔴🔊▶️🏆🎉👍💪📚🔧]", "")
+                // Убираем эмодзи и специальные символы
+                .replaceAll("[🤖🎤📝📊🗣️✅⚠️🔴🔊▶️🏆🎉👍💪📚🔧❤️✨🌟🔥💡🎯📅❌ℹ️]", "")
                 // Заменяем множественные переносы на точку
                 .replaceAll("\\n{2,}", ". ")
                 // Заменяем одиночные переносы на пробел
@@ -224,7 +243,18 @@ public class ChatBotService implements AutoCloseable {
 
         // Убираем метку "Ответ озвучен" если она есть
         if (cleanText.startsWith("🔊 Ответ озвучен")) {
-            cleanText = cleanText.substring(cleanText.indexOf("\n\n") + 2);
+            int idx = cleanText.indexOf("\n\n");
+            if (idx > 0) {
+                cleanText = cleanText.substring(idx + 2);
+            } else {
+                cleanText = cleanText.replace("🔊 Ответ озвучен", "");
+            }
+        }
+
+        // Ограничиваем длину текста для TTS (чтобы не было слишком долго)
+        int maxLength = 2000;
+        if (cleanText.length() > maxLength) {
+            cleanText = cleanText.substring(0, maxLength) + "... [текст сокращен]";
         }
 
         return cleanText;
@@ -510,19 +540,74 @@ public class ChatBotService implements AutoCloseable {
     }
 
     // Метод для озвучки любого текста (используется контроллером)
+    public CompletableFuture<Void> speakTextAsync(String text) {
+        if (textToSpeechService != null && !closed) {
+            try {
+                String cleanText = cleanTextForSpeech(text);
+                if (!cleanText.trim().isEmpty()) {
+                    return textToSpeechService.speakAsync(cleanText);
+                } else {
+                    logger.warn("Пустой текст для озвучки");
+                    return CompletableFuture.completedFuture(null);
+                }
+            } catch (Exception e) {
+                logger.error("Ошибка при подготовке текста для озвучки: {}", e.getMessage(), e);
+                CompletableFuture<Void> future = new CompletableFuture<>();
+                future.completeExceptionally(new RuntimeException("Ошибка подготовки текста: " + e.getMessage(), e));
+                return future;
+            }
+        } else {
+            throw new IllegalStateException("TTS сервис недоступен");
+        }
+    }
+
+    // Синхронная версия для обратной совместимости
     public void speakText(String text) {
         if (textToSpeechService != null && !closed) {
             try {
                 String cleanText = cleanTextForSpeech(text);
                 if (!cleanText.trim().isEmpty()) {
                     textToSpeechService.speak(cleanText);
+                } else {
+                    logger.warn("Пустой текст для озвучки");
                 }
             } catch (Exception e) {
                 logger.error("Ошибка при озвучке текста: {}", e.getMessage(), e);
-                throw new RuntimeException("Ошибка озвучки: " + e.getMessage(), e);
+                // В демо-режиме не бросаем исключение
+                if (!(e instanceof IllegalStateException)) {
+                    throw new RuntimeException("Ошибка озвучки: " + e.getMessage(), e);
+                }
             }
         } else {
             throw new IllegalStateException("TTS сервис недоступен");
+        }
+    }
+
+    // Метод для остановки текущей озвучки
+    public void stopSpeaking() {
+        if (textToSpeechService != null) {
+            try {
+                textToSpeechService.stopSpeaking();
+                logger.info("Озвучка остановлена");
+            } catch (Exception e) {
+                logger.error("Ошибка при остановке озвучки", e);
+            }
+        }
+    }
+
+    public boolean isTTSAvailable() {
+        return textToSpeechService != null && textToSpeechService.isTTSAvailable();
+    }
+
+    public String getTTSStatus() {
+        if (textToSpeechService == null) {
+            return "TTS сервис не инициализирован";
+        }
+
+        if (textToSpeechService.isTTSAvailable()) {
+            return "✅ Системный TTS доступен";
+        } else {
+            return "⚠️ TTS работает в демо-режиме";
         }
     }
 

@@ -34,6 +34,7 @@ import java.text.SimpleDateFormat;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -112,6 +113,11 @@ public class ChatBotController implements Initializable, AutoCloseable {
     private PronunciationTrainer pronunciationTrainer;
     private ResourceManager resourceManager;
     private TextToSpeechService textToSpeechService;
+
+    // Добавьте после других полей состояния
+    private CompletableFuture<Void> currentSpeechFuture;
+    private boolean isPlayingSpeech = false;
+    private TextToSpeechService.SpeechStateListener speechStateListener;
 
     // ========================================
     // State
@@ -195,6 +201,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
             this.textToSpeechService = new TextToSpeechService();
             logger.info("TextToSpeechService создан");
 
+            // Настраиваем слушатель состояния TTS
+            setupTextToSpeechListener();
+
             // Создаем главный сервис
             this.chatBotService = new ChatBotService(
                     aiService,
@@ -231,6 +240,74 @@ public class ChatBotController implements Initializable, AutoCloseable {
             cleanupResources();
             throw new RuntimeException("Не удалось инициализировать сервисы", e);
         }
+    }
+
+    private void setupTextToSpeechListener() {
+        speechStateListener = new TextToSpeechService.SpeechStateListener() {
+            @Override
+            public void onSpeechStateChanged(TextToSpeechService.SpeechState state) {
+                Platform.runLater(() -> {
+                    switch (state) {
+                        case IDLE:
+                            isPlayingSpeech = false;
+                            updatePlayResponseButtonState(false);
+                            if (statusLabel != null) {
+                                statusLabel.setText("✅ Озвучка завершена");
+                            }
+                            break;
+
+                        case SPEAKING:
+                            isPlayingSpeech = true;
+                            updatePlayResponseButtonState(true);
+                            if (statusLabel != null) {
+                                statusLabel.setText("🔊 Озвучка...");
+                            }
+                            break;
+
+                        case DEMO_MODE:
+                            isPlayingSpeech = true;
+                            updatePlayResponseButtonState(true);
+                            if (statusLabel != null) {
+                                statusLabel.setText("🔊 Демо-озвучка...");
+                            }
+                            logger.info("TTS работает в демо-режиме");
+                            break;
+
+                        case STOPPED:
+                            isPlayingSpeech = false;
+                            updatePlayResponseButtonState(false);
+                            if (statusLabel != null) {
+                                statusLabel.setText("⏹️ Озвучка остановлена");
+                            }
+                            break;
+
+                        case ERROR:
+                            isPlayingSpeech = false;
+                            updatePlayResponseButtonState(false);
+                            // Не показываем ошибку пользователю для демо-режима
+                            if (statusLabel != null) {
+                                statusLabel.setText("⚠️ Ошибка озвучки");
+                            }
+                            break;
+                    }
+                });
+            }
+
+            @Override
+            public void onSpeechProgress(double progress) {
+                // Можно обновлять прогресс-бар
+            }
+
+            @Override
+            public void onSpeechError(String error) {
+                Platform.runLater(() -> {
+                    logger.warn("Ошибка TTS: {}", error);
+                    // Не показываем ошибку пользователю, просто логируем
+                });
+            }
+        };
+
+        textToSpeechService.addStateListener(speechStateListener);
     }
 
     private void setupResponseModeToggle() {
@@ -286,11 +363,24 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 // Обновляем состояние кнопки
                 if (shouldShow) {
                     playResponseButton.setDisable(false);
-                    playResponseButton.setText("▶️");
-                    playResponseButton.setTooltip(new Tooltip("Прослушать ответ"));
+                    updatePlayResponseButtonState(isPlayingSpeech);
                 }
             }
         });
+    }
+
+    private void updatePlayResponseButtonState(boolean isSpeaking) {
+        if (playResponseButton == null) return;
+
+        if (isSpeaking) {
+            playResponseButton.setText("⏸️ Остановить");
+            playResponseButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white;");
+            playResponseButton.setTooltip(new Tooltip("Остановить озвучку"));
+        } else {
+            playResponseButton.setText("▶️");
+            playResponseButton.setStyle("");
+            playResponseButton.setTooltip(new Tooltip("Прослушать ответ"));
+        }
     }
 
     private void setupUI() {
@@ -579,32 +669,36 @@ public class ChatBotController implements Initializable, AutoCloseable {
         addAIMessage(response.getFullResponse());
 
         // Если выбран голосовой режим - автоматически озвучиваем
-        if (currentResponseMode == ResponseMode.VOICE && textToSpeechService != null) {
-            speechExecutor.submit(() -> {
-                try {
-                    // Небольшая задержка перед озвучкой
-                    Thread.sleep(500);
+        if (currentResponseMode == ResponseMode.VOICE && chatBotService != null) {
+            // Используем асинхронный метод
+            CompletableFuture<Void> speechFuture = chatBotService.speakTextAsync(response.getFullResponse());
 
-                    Platform.runLater(() -> {
-                        if (statusLabel != null) {
-                            statusLabel.setText("🔊 Озвучка ответа...");
-                        }
-                    });
-
-                    textToSpeechService.speak(response.getFullResponse());
-
-                    Platform.runLater(() -> {
-                        if (statusLabel != null) {
-                            updateStatusLabel();
-                        }
-                    });
-
-                } catch (Exception e) {
-                    logger.warn("Не удалось озвучить ответ", e);
-                    Platform.runLater(() -> {
-                        showAlert("Внимание", "Не удалось озвучить ответ. Проверьте настройки TTS.");
-                    });
-                }
+            // Обрабатываем результат
+            speechFuture.thenRun(() -> {
+                Platform.runLater(() -> {
+                    logger.info("✅ Ответ озвучен");
+                    if (statusLabel != null) {
+                        statusLabel.setText("✅ Ответ озвучен");
+                        // Через 3 секунды возвращаем обычный статус
+                        new Thread(() -> {
+                            try {
+                                Thread.sleep(3000);
+                                Platform.runLater(() -> updateStatusLabel());
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }).start();
+                    }
+                });
+            }).exceptionally(throwable -> {
+                Platform.runLater(() -> {
+                    // Не показываем ошибку пользователю в демо-режиме
+                    logger.warn("❌ Ошибка при озвучке ответа: {}", throwable.getMessage());
+                    if (statusLabel != null) {
+                        statusLabel.setText("⚠️ Ошибка озвучки");
+                    }
+                });
+                return null;
             });
         }
 
@@ -649,45 +743,35 @@ public class ChatBotController implements Initializable, AutoCloseable {
             return;
         }
 
-        speechExecutor.submit(() -> {
-            try {
-                Platform.runLater(() -> {
-                    if (playResponseButton != null) {
-                        playResponseButton.setDisable(true);
-                        playResponseButton.setText("🔊...");
-                    }
-                    if (statusLabel != null) {
-                        statusLabel.setText("🔊 Озвучка ответа...");
-                    }
-                });
+        if (isPlayingSpeech) {
+            // Останавливаем текущую озвучку
+            textToSpeechService.stopSpeaking();
+            isPlayingSpeech = false;
+            updatePlayResponseButtonState(false);
+            return;
+        }
 
-                // Преобразуем текст в речь и проигрываем
-                textToSpeechService.speak(lastBotResponse);
+        // Останавливаем предыдущую озвучку если она есть
+        if (currentSpeechFuture != null && !currentSpeechFuture.isDone()) {
+            currentSpeechFuture.cancel(true);
+        }
 
-                Platform.runLater(() -> {
-                    if (playResponseButton != null) {
-                        playResponseButton.setDisable(false);
-                        playResponseButton.setText("▶️");
-                    }
-                    if (statusLabel != null) {
-                        updateStatusLabel();
-                    }
-                });
+        // Запускаем новую озвучку
+        currentSpeechFuture = textToSpeechService.speakAsync(lastBotResponse);
 
-            } catch (Exception e) {
-                logger.error("Ошибка при озвучке ответа", e);
+        currentSpeechFuture.thenRun(() -> {
+            Platform.runLater(() -> {
+                logger.info("✅ Ответ озвучен по запросу");
+            });
+        }).exceptionally(throwable -> {
+            if (!(throwable instanceof java.util.concurrent.CancellationException)) {
                 Platform.runLater(() -> {
-                    showError("Ошибка озвучки",
-                            "Не удалось озвучить ответ: " + e.getMessage());
-                    if (playResponseButton != null) {
-                        playResponseButton.setDisable(false);
-                        playResponseButton.setText("▶️");
-                    }
-                    if (statusLabel != null) {
-                        updateStatusLabel();
-                    }
+                    logger.error("❌ Ошибка при озвучке ответа", throwable);
+                    showAlert("Ошибка озвучки",
+                            "Не удалось озвучить ответ: " + throwable.getMessage());
                 });
             }
+            return null;
         });
     }
 
@@ -860,6 +944,16 @@ public class ChatBotController implements Initializable, AutoCloseable {
     // ========================================
     // Event Handlers - Recording
     // ========================================
+
+    @FXML
+    private void onStopSpeaking() {
+        if (chatBotService != null) {
+            chatBotService.stopSpeaking();
+            if (statusLabel != null) {
+                statusLabel.setText("⏹️ Озвучка остановлена");
+            }
+        }
+    }
 
     @FXML
     private void onStartRecording() {
@@ -1613,6 +1707,16 @@ public class ChatBotController implements Initializable, AutoCloseable {
         logger.info("Закрытие ChatBotController...");
 
         try {
+            // Останавливаем озвучку если она идет
+            if (textToSpeechService != null) {
+                textToSpeechService.stopSpeaking();
+            }
+
+            // Отменяем будущие задачи озвучки
+            if (currentSpeechFuture != null && !currentSpeechFuture.isDone()) {
+                currentSpeechFuture.cancel(true);
+            }
+
             stopRecordingTimer();
 
             if (resourceManager != null) {
@@ -1658,6 +1762,35 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
     public boolean isClosed() {
         return closed;
+    }
+
+    @FXML
+    private void onTestTTS() {
+        if (textToSpeechService == null) {
+            showError("Ошибка", "TTS сервис не инициализирован");
+            return;
+        }
+
+        boolean isAvailable = textToSpeechService.isTTSAvailable();
+
+        String message;
+        if (isAvailable) {
+            message = "✅ Системный TTS доступен\n\nТестовая фраза будет озвучена...";
+        } else {
+            message = "⚠️ Системный TTS не найден\n\nБудет использован демо-режим (вывод в консоль)";
+        }
+
+        showAlert("Тест TTS", message);
+
+        // Проигрываем тестовую фразу
+        textToSpeechService.speakAsync("This is a test of the text to speech system.")
+                .thenRun(() -> Platform.runLater(() ->
+                        showAlert("Тест завершен", "✅ Тест TTS успешно завершен")))
+                .exceptionally(throwable -> {
+                    Platform.runLater(() ->
+                            showError("Ошибка теста", "Не удалось выполнить тест: " + throwable.getMessage()));
+                    return null;
+                });
     }
 
     // ========================================
