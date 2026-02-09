@@ -13,7 +13,7 @@ import com.mygitgor.speech.*;
 import com.mygitgor.speech.tovoice.type.DemoTextToSpeechService;
 import com.mygitgor.speech.tovoice.type.GroqTextToSpeechService;
 import com.mygitgor.speech.tovoice.type.OpenAITextToSpeechService;
-import com.mygitgor.speech.tovoice.type.TextToSpeechFactory;
+import com.mygitgor.speech.tovoice.TextToSpeechFactory;
 import com.mygitgor.speech.tovoice.TextToSpeechService;
 import com.mygitgor.utils.ResourceManager;
 import javafx.application.Platform;
