@@ -1,5 +1,6 @@
-package com.mygitgor.speech.tovoice;
+package com.mygitgor.speech.tovoice.type;
 
+import com.mygitgor.speech.tovoice.TextToSpeechService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,7 +20,7 @@ public class TextToSpeechFactory {
                 if (apiKey != null && !apiKey.trim().isEmpty() &&
                         !apiKey.equals("your-openai-api-key-here")) {
                     try {
-                        OpenAITextToSpeechService service = new OpenAITextToSpeechService(apiKey);
+                        GroqTextToSpeechService service = new GroqTextToSpeechService(apiKey);
                         if (service.isAvailable()) {
                             logger.info("✅ OpenAI TTS Service создан");
                             return service;

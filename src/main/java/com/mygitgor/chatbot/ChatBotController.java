@@ -10,9 +10,10 @@ import com.mygitgor.model.Conversation;
 import com.mygitgor.model.EnhancedSpeechAnalysis;
 import com.mygitgor.model.SpeechAnalysis;
 import com.mygitgor.speech.*;
-import com.mygitgor.speech.tovoice.DemoTextToSpeechService;
-import com.mygitgor.speech.tovoice.OpenAITextToSpeechService;
-import com.mygitgor.speech.tovoice.TextToSpeechFactory;
+import com.mygitgor.speech.tovoice.type.DemoTextToSpeechService;
+import com.mygitgor.speech.tovoice.type.GroqTextToSpeechService;
+import com.mygitgor.speech.tovoice.type.OpenAITextToSpeechService;
+import com.mygitgor.speech.tovoice.type.TextToSpeechFactory;
 import com.mygitgor.speech.tovoice.TextToSpeechService;
 import com.mygitgor.utils.ResourceManager;
 import javafx.application.Platform;
@@ -326,6 +327,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 if (textToSpeechService instanceof DemoTextToSpeechService) {
                     ttsModeLabel.setText("Демо TTS");
                     ttsModeLabel.setTooltip(new Tooltip("Текст выводится в консоль"));
+                } else if (textToSpeechService instanceof GroqTextToSpeechService) {
+                    ttsModeLabel.setText("GroqAI TTS");
+                    ttsModeLabel.setTooltip(new Tooltip("Используется Groq API для озвучки"));
                 } else if (textToSpeechService instanceof OpenAITextToSpeechService) {
                     ttsModeLabel.setText("OpenAI TTS");
                     ttsModeLabel.setTooltip(new Tooltip("Используется OpenAI API для озвучки"));
@@ -343,8 +347,43 @@ public class ChatBotController implements Initializable, AutoCloseable {
             }
 
             if (openaiVoiceSettings != null) {
-                openaiVoiceSettings.setVisible(textToSpeechService instanceof OpenAITextToSpeechService);
-                openaiVoiceSettings.setManaged(textToSpeechService instanceof OpenAITextToSpeechService);
+                // Проблема здесь! Проверяем тип сервиса правильно
+                boolean isOpenAIOrGroq = textToSpeechService instanceof OpenAITextToSpeechService ||
+                        textToSpeechService instanceof GroqTextToSpeechService;
+
+                openaiVoiceSettings.setVisible(isOpenAIOrGroq);
+                openaiVoiceSettings.setManaged(isOpenAIOrGroq);
+
+                // Заполняем голоса только для OpenAITextToSpeechService
+                if (isOpenAIOrGroq && voiceComboBox != null) {
+                    voiceComboBox.getItems().clear();
+
+                    // Для OpenAI TTS
+                    if (textToSpeechService instanceof OpenAITextToSpeechService openaiService) {
+                        Map<String, String> voices = openaiService.getAvailableVoices();
+                        if (!voices.isEmpty()) {
+                            voices.forEach((key, description) -> {
+                                voiceComboBox.getItems().add(description);
+                            });
+                            voiceComboBox.setValue("Alloy - нейтральный голос");
+                        }
+                    }
+                    // Для Groq TTS (если у него есть метод getAvailableVoices)
+                    else if (textToSpeechService instanceof GroqTextToSpeechService groqService) {
+                        // Если у GroqTextToSpeechService есть метод getAvailableVoices
+                        try {
+                            Map<String, String> voices = groqService.getAvailableVoices();
+                            if (voices != null && !voices.isEmpty()) {
+                                voices.forEach((key, description) -> {
+                                    voiceComboBox.getItems().add(description);
+                                });
+                                voiceComboBox.setValue(voiceComboBox.getItems().get(0));
+                            }
+                        } catch (Exception e) {
+                            logger.debug("Groq TTS не поддерживает выбор голоса: {}", e.getMessage());
+                        }
+                    }
+                }
             }
 
             // Обновляем информацию в текстовом поле
@@ -361,16 +400,12 @@ public class ChatBotController implements Initializable, AutoCloseable {
                             "• Требуется интернет соединение и API ключ\n" +
                             "• Поддерживает разные голоса и скорость\n" +
                             "• Генерирует натуральное звучание речи");
-
-                    // Заполняем голоса для OpenAI TTS
-                    Map<String, String> voices = ((OpenAITextToSpeechService) textToSpeechService).getAvailableVoices();
-                    if (voiceComboBox != null && !voices.isEmpty()) {
-                        voiceComboBox.getItems().clear();
-                        voices.forEach((key, description) -> {
-                            voiceComboBox.getItems().add(description);
-                        });
-                        voiceComboBox.setValue("Alloy - нейтральный голос");
-                    }
+                } else if (textToSpeechService instanceof GroqTextToSpeechService) {
+                    ttsInfoTextArea.setText("GroqAI TTS:\n" +
+                            "• Использует API GroqAI для генерации речи\n" +
+                            "• Требуется интернет соединение и API ключ\n" +
+                            "• Поддерживает разные голоса и скорость\n" +
+                            "• Генерирует натуральное звучание речи");
                 } else {
                     ttsInfoTextArea.setText("Текущий режим: " +
                             textToSpeechService.getClass().getSimpleName());
