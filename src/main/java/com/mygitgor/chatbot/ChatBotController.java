@@ -185,7 +185,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
             setupUI();
             setupSpeechRecognitionUI();
             setupResponseModeToggle();
-            setupTTSControls(); // Добавлена настройка TTS контролов
+            setupTTSControls();
             initializeStatistics();
             loadConversationHistory();
             showWelcomeMessage();
