@@ -6,7 +6,7 @@ import java.io.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class SpeechRecorder implements Closeable {
+public class SpeechRecorder implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(SpeechRecorder.class);
 
     private TargetDataLine targetLine;

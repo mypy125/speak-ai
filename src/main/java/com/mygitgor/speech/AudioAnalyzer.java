@@ -12,7 +12,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-public class AudioAnalyzer implements Closeable {
+public class AudioAnalyzer implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(AudioAnalyzer.class);
 
     private static final int SAMPLE_RATE = 44100;

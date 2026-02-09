@@ -6,7 +6,7 @@ import org.slf4j.LoggerFactory;
 import java.io.Closeable;
 import java.io.IOException;
 
-public class TextToSpeechService implements Closeable {
+public class TextToSpeechService implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(TextToSpeechService.class);
 
     private volatile boolean closed = false;

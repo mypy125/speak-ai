@@ -26,7 +26,7 @@ import java.util.Properties;
 import java.util.*;
 import java.util.*;
 
-public class ChatBotService implements Closeable {
+public class ChatBotService implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(ChatBotService.class);
 
     private final AiService aiService;

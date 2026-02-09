@@ -10,7 +10,6 @@ import com.mygitgor.model.Conversation;
 import com.mygitgor.model.EnhancedSpeechAnalysis;
 import com.mygitgor.model.SpeechAnalysis;
 import com.mygitgor.speech.*;
-import com.mygitgor.utils.CloseableExecutorWrapper;
 import com.mygitgor.utils.ResourceManager;
 import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
@@ -127,7 +126,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
     // Executor для фоновых задач озвучки
     private ExecutorService speechExecutor;
-    private CloseableExecutorWrapper speechExecutorWrapper;
 
     // ========================================
     // Statistics
@@ -149,11 +147,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
         logger.info("Инициализация ChatBotController");
         resourceManager = new ResourceManager();
         speechExecutor = Executors.newSingleThreadExecutor();
-        // Обертка для ExecutorService
-        CloseableExecutorWrapper speechExecutorWrapper = new CloseableExecutorWrapper(speechExecutor);
 
         try {
-            initializeServices(speechExecutorWrapper);  // Передаем обертку
+            initializeServices();
             setupUI();
             setupSpeechRecognitionUI();
             setupResponseModeToggle();
@@ -172,7 +168,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
 // Initialization Methods
 // ========================================
 
-    private void initializeServices(CloseableExecutorWrapper speechExecutorWrapper) {
+    private void initializeServices() {
         try {
             Properties props = new Properties();
             props.load(getClass().getResourceAsStream("/application.properties"));
@@ -217,7 +213,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
             resourceManager.register(chatBotService);
             resourceManager.register(audioAnalyzer);
             resourceManager.register(textToSpeechService);
-            resourceManager.register(speechExecutorWrapper);
+            resourceManager.register(speechExecutor);
 
             if (aiService instanceof Closeable) {
                 resourceManager.register((Closeable) aiService);

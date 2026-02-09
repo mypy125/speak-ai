@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class SpeechToTextService implements Closeable {
+public class SpeechToTextService implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(SpeechToTextService.class);
 
     private ServiceType serviceType;

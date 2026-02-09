@@ -6,11 +6,14 @@ import org.slf4j.LoggerFactory;
 import java.io.Closeable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
-public class ResourceManager implements Closeable {
+public class ResourceManager implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(ResourceManager.class);
 
-    private final List<Closeable> resources = new ArrayList<>();
+    private final List<AutoCloseable> resources = new ArrayList<>();
+    private final List<ExecutorService> executors = new ArrayList<>();
     private volatile boolean closed = false;
 
     public ResourceManager() {
@@ -20,7 +23,7 @@ public class ResourceManager implements Closeable {
     /**
      * Регистрация ресурса
      */
-    public void register(Closeable resource) {
+    public void register(AutoCloseable resource) {
         if (resource == null) return;
 
         if (!closed) {
@@ -39,6 +42,35 @@ public class ResourceManager implements Closeable {
         }
     }
 
+    public void registerExecutor(ExecutorService executor) {
+        if (executor == null) return;
+
+        if (!closed) {
+            synchronized (executors) {
+                executors.add(executor);
+                logger.debug("ExecutorService зарегистрирован");
+            }
+        } else {
+            logger.warn("ExecutorService зарегистрирован после закрытия менеджера");
+            shutdownExecutor(executor);
+        }
+    }
+
+
+    public void register(Object resource) {
+        if (resource == null) return;
+
+        if (resource instanceof AutoCloseable) {
+            register((AutoCloseable) resource);
+        } else if (resource instanceof ExecutorService) {
+            registerExecutor((ExecutorService) resource);
+        } else if (resource instanceof Closeable) {
+            register((Closeable) resource);
+        } else {
+            logger.warn("Неизвестный тип ресурса: {}", resource.getClass().getName());
+        }
+    }
+
     /**
      * Закрытие всех ресурсов
      */
@@ -50,8 +82,48 @@ public class ResourceManager implements Closeable {
 
         closed = true;
         logger.info("Закрытие ResourceManager...");
+        shutdownAllExecutors();
+        closeAllResources();
 
-        List<Closeable> resourcesCopy;
+        logger.info("ResourceManager закрыт");
+    }
+
+    private void shutdownAllExecutors() {
+        List<ExecutorService> executorsCopy;
+        synchronized (executors) {
+            executorsCopy = new ArrayList<>(executors);
+            executors.clear();
+        }
+
+        for (int i = executorsCopy.size() - 1; i >= 0; i--) {
+            ExecutorService executor = executorsCopy.get(i);
+            if (executor != null) {
+                shutdownExecutor(executor);
+            }
+        }
+    }
+
+    private void shutdownExecutor(ExecutorService executor) {
+        try {
+            executor.shutdown();
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+                if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                    logger.error("ExecutorService не завершился");
+                }
+            }
+            logger.debug("ExecutorService закрыт");
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+            logger.warn("Закрытие ExecutorService прервано", e);
+        } catch (Exception e) {
+            logger.error("Ошибка при закрытии ExecutorService", e);
+        }
+    }
+
+    private void closeAllResources() {
+        List<AutoCloseable> resourcesCopy;
         synchronized (resources) {
             resourcesCopy = new ArrayList<>(resources);
             resources.clear();
@@ -59,7 +131,7 @@ public class ResourceManager implements Closeable {
 
         // Закрываем в обратном порядке (LIFO)
         for (int i = resourcesCopy.size() - 1; i >= 0; i--) {
-            Closeable resource = resourcesCopy.get(i);
+            AutoCloseable resource = resourcesCopy.get(i);
             if (resource != null) {
                 try {
                     resource.close();
@@ -70,8 +142,10 @@ public class ResourceManager implements Closeable {
                 }
             }
         }
+    }
 
-        logger.info("ResourceManager закрыт. Закрыто ресурсов: {}", resourcesCopy.size());
+    public void register(Closeable resource) {
+        register((AutoCloseable) resource);
     }
 
     public boolean isClosed() {
