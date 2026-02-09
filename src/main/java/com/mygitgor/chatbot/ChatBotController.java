@@ -27,6 +27,8 @@ import javafx.scene.Parent;
 import javafx.scene.control.*;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.*;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.Circle;
 import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -100,13 +102,32 @@ public class ChatBotController implements Initializable, AutoCloseable {
     // ========================================
     @FXML private VBox mainContainer;
     @FXML private VBox chatMessagesContainer;
+    @FXML private ScrollPane chatScrollPane; // Добавлен ScrollPane из FXML
 
     // ========================================
     // FXML UI Elements - Response Mode
     // ========================================
     @FXML private ToggleGroup responseModeToggleGroup;
     @FXML private Button playResponseButton;
+    @FXML private ToggleButton textToggle; // Добавлен из FXML
+    @FXML private ToggleButton voiceToggle; // Добавлен из FXML
+
+    // ========================================
+    // FXML UI Elements - TTS Panel
+    // ========================================
+    @FXML private VBox ttsControlPanel;
     @FXML private Label ttsModeLabel;
+    @FXML private Circle ttsStatusIndicator;
+    @FXML private Label ttsStatusLabel;
+    @FXML private TextArea ttsInfoTextArea;
+    @FXML private VBox openaiVoiceSettings;
+    @FXML private ComboBox<String> voiceComboBox;
+    @FXML private Label voiceDescriptionLabel;
+    @FXML private Slider speechSpeedSlider;
+    @FXML private Label speedLabel;
+    @FXML private VBox demoSettings;
+    @FXML private Slider typingSpeedSlider;
+    @FXML private Label typingSpeedLabel;
 
     // ========================================
     // Services
@@ -164,6 +185,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
             setupUI();
             setupSpeechRecognitionUI();
             setupResponseModeToggle();
+            setupTTSControls(); // Добавлена настройка TTS контролов
             initializeStatistics();
             loadConversationHistory();
             showWelcomeMessage();
@@ -228,20 +250,10 @@ public class ChatBotController implements Initializable, AutoCloseable {
             logger.info("ChatBotService создан с TTS сервисом: {}",
                     textToSpeechService.getClass().getSimpleName());
 
+            // Обновляем UI для TTS
             Platform.runLater(() -> {
-                if (ttsModeLabel != null) {
-                    if (textToSpeechService instanceof DemoTextToSpeechService) {
-                        ttsModeLabel.setText("Демо TTS");
-                        ttsModeLabel.setTooltip(new Tooltip("Текст выводится в консоль"));
-                    } else if (textToSpeechService instanceof OpenAITextToSpeechService) {
-                        ttsModeLabel.setText("OpenAI TTS");
-                        ttsModeLabel.setTooltip(new Tooltip("Используется OpenAI API для озвучки"));
-                    } else {
-                        ttsModeLabel.setText("TTS Активен");
-                        ttsModeLabel.setTooltip(new Tooltip(
-                                textToSpeechService.getClass().getSimpleName()));
-                    }
-                }
+                updateTTSStatus();
+                updateTTSControlsUI();
             });
 
             // Создаем компоненты для работы с аудио
@@ -272,6 +284,99 @@ public class ChatBotController implements Initializable, AutoCloseable {
             cleanupResources();
             throw new RuntimeException("Не удалось инициализировать сервисы", e);
         }
+    }
+
+    private void setupTTSControls() {
+        // Настройка слайдера скорости речи для OpenAI
+        if (speechSpeedSlider != null && speedLabel != null) {
+            speechSpeedSlider.valueProperty().addListener((observable, oldValue, newValue) -> {
+                double speed = Math.round(newValue.doubleValue() * 10) / 10.0;
+                speedLabel.setText(String.format("%.1fx", speed));
+            });
+        }
+
+        // Настройка слайдера скорости печати для демо-режима
+        if (typingSpeedSlider != null && typingSpeedLabel != null) {
+            typingSpeedSlider.valueProperty().addListener((observable, oldValue, newValue) -> {
+                int speed = newValue.intValue();
+                typingSpeedLabel.setText(speed + " мс/слово");
+
+                // Обновляем скорость в демо-режиме если он активен
+                if (textToSpeechService instanceof DemoTextToSpeechService demoService) {
+                    // Здесь можно добавить метод setTypingSpeed в DemoTextToSpeechService
+                    // demoService.setTypingSpeed(speed);
+                }
+            });
+        }
+
+        // Настройка выбора голоса для OpenAI
+        if (voiceComboBox != null && voiceDescriptionLabel != null) {
+            voiceComboBox.setOnAction(event -> {
+                String selected = voiceComboBox.getValue();
+                if (selected != null) {
+                    voiceDescriptionLabel.setText("Выбран: " + selected);
+                }
+            });
+        }
+    }
+
+    private void updateTTSControlsUI() {
+        Platform.runLater(() -> {
+            if (ttsModeLabel != null) {
+                if (textToSpeechService instanceof DemoTextToSpeechService) {
+                    ttsModeLabel.setText("Демо TTS");
+                    ttsModeLabel.setTooltip(new Tooltip("Текст выводится в консоль"));
+                } else if (textToSpeechService instanceof OpenAITextToSpeechService) {
+                    ttsModeLabel.setText("OpenAI TTS");
+                    ttsModeLabel.setTooltip(new Tooltip("Используется OpenAI API для озвучки"));
+                } else {
+                    ttsModeLabel.setText("TTS Активен");
+                    ttsModeLabel.setTooltip(new Tooltip(
+                            textToSpeechService.getClass().getSimpleName()));
+                }
+            }
+
+            // Показываем соответствующие настройки в зависимости от типа TTS
+            if (demoSettings != null) {
+                demoSettings.setVisible(textToSpeechService instanceof DemoTextToSpeechService);
+                demoSettings.setManaged(textToSpeechService instanceof DemoTextToSpeechService);
+            }
+
+            if (openaiVoiceSettings != null) {
+                openaiVoiceSettings.setVisible(textToSpeechService instanceof OpenAITextToSpeechService);
+                openaiVoiceSettings.setManaged(textToSpeechService instanceof OpenAITextToSpeechService);
+            }
+
+            // Обновляем информацию в текстовом поле
+            if (ttsInfoTextArea != null) {
+                if (textToSpeechService instanceof DemoTextToSpeechService) {
+                    ttsInfoTextArea.setText("Демо-режим TTS:\n" +
+                            "• Текст выводится в консоль с имитацией речи\n" +
+                            "• Не требует интернет соединения\n" +
+                            "• Отлично подходит для тестирования\n" +
+                            "• Можно настроить скорость вывода текста");
+                } else if (textToSpeechService instanceof OpenAITextToSpeechService) {
+                    ttsInfoTextArea.setText("OpenAI TTS:\n" +
+                            "• Использует API OpenAI для генерации речи\n" +
+                            "• Требуется интернет соединение и API ключ\n" +
+                            "• Поддерживает разные голоса и скорость\n" +
+                            "• Генерирует натуральное звучание речи");
+
+                    // Заполняем голоса для OpenAI TTS
+                    Map<String, String> voices = ((OpenAITextToSpeechService) textToSpeechService).getAvailableVoices();
+                    if (voiceComboBox != null && !voices.isEmpty()) {
+                        voiceComboBox.getItems().clear();
+                        voices.forEach((key, description) -> {
+                            voiceComboBox.getItems().add(description);
+                        });
+                        voiceComboBox.setValue("Alloy - нейтральный голос");
+                    }
+                } else {
+                    ttsInfoTextArea.setText("Текущий режим: " +
+                            textToSpeechService.getClass().getSimpleName());
+                }
+            }
+        });
     }
 
     private void setupTextToSpeechListener(DemoTextToSpeechService demoService) {
@@ -378,6 +483,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
             });
 
             // Устанавливаем начальный режим
+            if (textToggle != null) {
+                textToggle.setSelected(true);
+            }
             currentResponseMode = ResponseMode.TEXT;
 
             // Инициализируем видимость кнопки проигрывания
@@ -739,7 +847,10 @@ public class ChatBotController implements Initializable, AutoCloseable {
                     if (statusLabel != null) {
                         statusLabel.setText("⚠️ Ошибка озвучки");
                     }
-                    showAlert("Ошибка озвучки", "Не удалось озвучить ответ: " + throwable.getMessage());
+                    if (!(throwable.getCause() instanceof IllegalStateException)) {
+                        showAlert("Ошибка озвучки", "Не удалось озвучить ответ: " +
+                                throwable.getMessage());
+                    }
                 });
                 return null;
             });
@@ -817,6 +928,169 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 }
             });
             return null;
+        });
+    }
+
+    // ========================================
+    // Event Handlers - TTS Panel
+    // ========================================
+
+    @FXML
+    private void toggleTTSPanel() {
+        if (ttsControlPanel == null) return;
+
+        boolean isVisible = ttsControlPanel.isVisible();
+        ttsControlPanel.setVisible(!isVisible);
+        ttsControlPanel.setManaged(!isVisible);
+
+        // Если показываем панель TTS, скрываем панель распознавания речи
+        if (!isVisible && speechControlPanel != null && speechControlPanel.isVisible()) {
+            speechControlPanel.setVisible(false);
+            speechControlPanel.setManaged(false);
+        }
+    }
+
+    @FXML
+    private void onTestTTS() {
+        if (textToSpeechService == null) {
+            showError("Ошибка", "TTS сервис не инициализирован");
+            return;
+        }
+
+        boolean isAvailable = textToSpeechService.isAvailable();
+
+        String message;
+        if (isAvailable) {
+            message = String.format("✅ %s доступен\n\nТестовая фраза будет озвучена...",
+                    textToSpeechService.getClass().getSimpleName());
+        } else {
+            message = String.format("⚠️ %s не работает\n\nПроверьте настройки и попробуйте снова",
+                    textToSpeechService.getClass().getSimpleName());
+        }
+
+        showAlert("Тест TTS", message);
+
+        // Проигрываем тестовую фразу
+        textToSpeechService.speakAsync("This is a test of the text to speech system.")
+                .thenRun(() -> Platform.runLater(() ->
+                        showAlert("Тест завершен",
+                                String.format("✅ Тест %s успешно завершен",
+                                        textToSpeechService.getClass().getSimpleName()))))
+                .exceptionally(throwable -> {
+                    Platform.runLater(() ->
+                            showError("Ошибка теста", "Не удалось выполнить тест: " + throwable.getMessage()));
+                    return null;
+                });
+    }
+
+    private void updateTTSStatus() {
+        Platform.runLater(() -> {
+            if (textToSpeechService != null && ttsStatusIndicator != null && ttsStatusLabel != null) {
+                boolean isAvailable = textToSpeechService.isAvailable();
+
+                if (isAvailable) {
+                    ttsStatusIndicator.setFill(Color.LIMEGREEN);
+                    ttsStatusLabel.setText("Доступен");
+                    ttsStatusLabel.setStyle("-fx-text-fill: #27ae60;");
+                } else {
+                    ttsStatusIndicator.setFill(Color.ORANGERED);
+                    ttsStatusLabel.setText("Недоступен");
+                    ttsStatusLabel.setStyle("-fx-text-fill: #e74c3c;");
+                }
+            }
+        });
+    }
+
+    @FXML
+    private void onSwitchTTSMode() {
+        if (closed) {
+            showError("Ошибка", "Приложение закрывается");
+            return;
+        }
+
+        try {
+            // Загружаем текущие настройки
+            Properties props = new Properties();
+            props.load(getClass().getResourceAsStream("/application.properties"));
+
+            String currentTTSMode = props.getProperty("tts.type", "DEMO").toUpperCase();
+            String newTTSMode = "DEMO".equals(currentTTSMode) ? "OPENAI" : "DEMO";
+
+            // Обновляем свойства в памяти
+            props.setProperty("tts.type", newTTSMode);
+
+            // Создаем новый TTS сервис через фабрику
+            TextToSpeechService newTTS = TextToSpeechFactory.createService(props);
+
+            // Отменяем регистрацию старого сервиса в ResourceManager
+            if (textToSpeechService != null) {
+                resourceManager.unregister(textToSpeechService);
+            }
+
+            // Устанавливаем новый сервис в ChatBotService
+            if (chatBotService != null) {
+                chatBotService.setTextToSpeechService(newTTS);
+            }
+
+            // Устанавливаем новый сервис в контроллере
+            textToSpeechService = newTTS;
+
+            // Регистрируем новый сервис в ResourceManager
+            resourceManager.register(newTTS);
+
+            // Если это демо-режим, настраиваем слушатель
+            if (newTTS instanceof DemoTextToSpeechService) {
+                setupTextToSpeechListener((DemoTextToSpeechService) newTTS);
+            } else {
+                // Если это не демо-режим, очищаем слушатель
+                speechStateListener = null;
+            }
+
+            // Обновляем UI
+            updateTTSModeUI(newTTSMode);
+            updateTTSControlsUI();
+            updateTTSStatus();
+
+            logger.info("TTS режим переключен с {} на {}", currentTTSMode, newTTSMode);
+
+        } catch (Exception e) {
+            logger.error("Ошибка при переключении TTS режима", e);
+            showError("Ошибка", "Не удалось переключить режим TTS: " + e.getMessage());
+        }
+    }
+
+    private void updateTTSModeUI(String newTTSMode) {
+        Platform.runLater(() -> {
+            String modeName = "DEMO".equals(newTTSMode) ? "Демо TTS" : "OpenAI TTS";
+            String modeDescription = "DEMO".equals(newTTSMode)
+                    ? "Текст выводится в консоль"
+                    : "Используется OpenAI API для озвучки";
+
+            if (ttsModeLabel != null) {
+                ttsModeLabel.setText(modeName);
+                ttsModeLabel.setTooltip(new Tooltip(modeDescription));
+            }
+
+            showAlert("Режим TTS изменен",
+                    String.format("✅ Переключено на %s\n\n%s",
+                            modeName,
+                            textToSpeechService.isAvailable()
+                                    ? "✅ Сервис доступен"
+                                    : "⚠️ Сервис недоступен"));
+
+            // Обновляем статус в главном лейбле
+            if (statusLabel != null) {
+                statusLabel.setText("TTS режим: " + modeName);
+                // Через 3 секунды возвращаем обычный статус
+                new Thread(() -> {
+                    try {
+                        Thread.sleep(3000);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    Platform.runLater(() -> updateStatusLabel());
+                }).start();
+            }
         });
     }
 
@@ -991,168 +1265,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
     // ========================================
 
     @FXML
-    private void onTestTTS() {
-        if (textToSpeechService == null) {
-            showError("Ошибка", "TTS сервис не инициализирован");
-            return;
-        }
-
-        boolean isAvailable = textToSpeechService.isAvailable();
-
-        String message;
-        if (isAvailable) {
-            message = String.format("✅ %s доступен\n\nТестовая фраза будет озвучена...",
-                    textToSpeechService.getClass().getSimpleName());
-        } else {
-            message = String.format("⚠️ %s не работает\n\nПроверьте настройки и попробуйте снова",
-                    textToSpeechService.getClass().getSimpleName());
-        }
-
-        showAlert("Тест TTS", message);
-
-        // Проигрываем тестовую фразу
-        textToSpeechService.speakAsync("This is a test of the text to speech system.")
-                .thenRun(() -> Platform.runLater(() ->
-                        showAlert("Тест завершен",
-                                String.format("✅ Тест %s успешно завершен",
-                                        textToSpeechService.getClass().getSimpleName()))))
-                .exceptionally(throwable -> {
-                    Platform.runLater(() ->
-                            showError("Ошибка теста", "Не удалось выполнить тест: " + throwable.getMessage()));
-                    return null;
-                });
-    }
-
-    @FXML
-    private void onSwitchTTSMode() {
-        if (closed) {
-            showError("Ошибка", "Приложение закрывается");
-            return;
-        }
-
-        try {
-            // Загружаем текущие настройки
-            Properties props = new Properties();
-            props.load(getClass().getResourceAsStream("/application.properties"));
-
-            String currentTTSMode = props.getProperty("tts.type", "DEMO").toUpperCase();
-            String newTTSMode = "DEMO".equals(currentTTSMode) ? "OPENAI" : "DEMO";
-
-            // Обновляем свойства в памяти
-            props.setProperty("tts.type", newTTSMode);
-
-            // Создаем новый TTS сервис через фабрику
-            TextToSpeechService newTTS = TextToSpeechFactory.createService(props);
-
-            // Отменяем регистрацию старого сервиса в ResourceManager
-            if (textToSpeechService != null) {
-                resourceManager.unregister(textToSpeechService);
-            }
-
-            // Устанавливаем новый сервис в ChatBotService
-            if (chatBotService != null) {
-                chatBotService.setTextToSpeechService(newTTS);
-            }
-
-            // Устанавливаем новый сервис в контроллере
-            textToSpeechService = newTTS;
-
-            // Регистрируем новый сервис в ResourceManager
-            resourceManager.register(newTTS);
-
-            // Если это демо-режим, настраиваем слушатель
-            if (newTTS instanceof DemoTextToSpeechService) {
-                setupTextToSpeechListener((DemoTextToSpeechService) newTTS);
-            } else {
-                // Если это не демо-режим, очищаем слушатель
-                speechStateListener = null;
-            }
-
-            // Обновляем UI
-            updateTTSModeUI(newTTSMode);
-
-            logger.info("TTS режим переключен с {} на {}", currentTTSMode, newTTSMode);
-
-        } catch (Exception e) {
-            logger.error("Ошибка при переключении TTS режима", e);
-            showError("Ошибка", "Не удалось переключить режим TTS: " + e.getMessage());
-        }
-    }
-
-    private void updateTTSModeUI(String newTTSMode) {
-        Platform.runLater(() -> {
-            String modeName = "DEMO".equals(newTTSMode) ? "Демо TTS" : "OpenAI TTS";
-            String modeDescription = "DEMO".equals(newTTSMode)
-                    ? "Текст выводится в консоль"
-                    : "Используется OpenAI API для озвучки";
-
-            if (ttsModeLabel != null) {
-                ttsModeLabel.setText(modeName);
-                ttsModeLabel.setTooltip(new Tooltip(modeDescription));
-            }
-
-            showAlert("Режим TTS изменен",
-                    String.format("✅ Переключено на %s\n\n%s",
-                            modeName,
-                            textToSpeechService.isAvailable()
-                                    ? "✅ Сервис доступен"
-                                    : "⚠️ Сервис недоступен"));
-
-            // Обновляем статус в главном лейбле
-            if (statusLabel != null) {
-                statusLabel.setText("TTS режим: " + modeName);
-                // Через 3 секунды возвращаем обычный статус
-                new Thread(() -> {
-                    try {
-                        Thread.sleep(3000);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    }
-                    Platform.runLater(() -> updateStatusLabel());
-                }).start();
-            }
-        });
-    }
-
-    // Добавить метод в ChatBotService для обновления TTS сервиса:
-    public void setTextToSpeechService(TextToSpeechService textToSpeechService) {
-        if (this.textToSpeechService != null && this.textToSpeechService != textToSpeechService) {
-            try {
-                this.textToSpeechService.close();
-            } catch (Exception e) {
-                logger.error("Ошибка при закрытии старого TTS сервиса", e);
-            }
-        }
-        this.textToSpeechService = textToSpeechService;
-    }
-
-    private void cleanupAndRegisterTTS(TextToSpeechService oldTTS, TextToSpeechService newTTS) {
-        // Отменяем регистрацию старого TTS
-        if (oldTTS != null) {
-            try {
-                resourceManager.unregister(oldTTS);
-                oldTTS.close();
-            } catch (Exception e) {
-                logger.error("Ошибка при закрытии старого TTS", e);
-            }
-        }
-
-        // Регистрируем новый TTS
-        if (newTTS != null) {
-            resourceManager.register(newTTS);
-            textToSpeechService = newTTS;
-
-            // Обновляем в ChatBotService
-            if (chatBotService != null) {
-                chatBotService.setTextToSpeechService(newTTS);
-            }
-        }
-    }
-
-    @FXML
     private void onStopSpeaking() {
-        if (chatBotService != null) {
-            chatBotService.stopSpeaking();
+        if (textToSpeechService != null) {
+            textToSpeechService.stopSpeaking();
             if (statusLabel != null) {
                 statusLabel.setText("⏹️ Озвучка остановлена");
             }
@@ -1610,6 +1725,12 @@ public class ChatBotController implements Initializable, AutoCloseable {
         boolean isVisible = speechControlPanel.isVisible();
         speechControlPanel.setVisible(!isVisible);
         speechControlPanel.setManaged(!isVisible);
+
+        // Если показываем панель распознавания речи, скрываем панель TTS
+        if (!isVisible && ttsControlPanel != null && ttsControlPanel.isVisible()) {
+            ttsControlPanel.setVisible(false);
+            ttsControlPanel.setManaged(false);
+        }
     }
 
     private void updateSpeechServiceStatus(String serviceInfo) {
@@ -1661,6 +1782,11 @@ public class ChatBotController implements Initializable, AutoCloseable {
             • Выберите язык в выпадающем списке
             • Отрегулируйте чувствительность микрофона
             • Протестируйте микрофон перед записью
+            
+            Настройки озвучки (TTS):
+            • Переключение между демо-режимом и OpenAI TTS
+            • Выбор голоса и скорости речи
+            • Тестирование TTS системы
             
             Советы:
             • Записывайте свою речь для анализа произношения

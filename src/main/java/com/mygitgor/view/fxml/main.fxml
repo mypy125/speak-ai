@@ -45,8 +45,15 @@
                     <Button text="⚙️ Speech"
                             onAction="#toggleSpeechPanel"
                             style="-fx-font-weight: bold; -fx-font-size: 13; -fx-text-fill: #2c3e50;">
-                        <tooltip><Tooltip text="Настройки распознавания"/></tooltip>
+                        <tooltip><Tooltip text="Настройки распознавания речи"/></tooltip>
                     </Button>
+
+                    <Button text="🎤 TTS"
+                            onAction="#toggleTTSPanel"
+                            style="-fx-font-weight: bold; -fx-font-size: 13; -fx-text-fill: #2c3e50;">
+                        <tooltip><Tooltip text="Настройки озвучки"/></tooltip>
+                    </Button>
+
                     <Button fx:id="historyButton" text="📋 History"
                             onAction="#onShowHistory"
                             style="-fx-font-weight: bold; -fx-font-size: 13; -fx-text-fill: #2c3e50;">
@@ -60,18 +67,148 @@
                 </HBox>
             </HBox>
 
+            <!-- Выпадающая панель TTS -->
+            <VBox fx:id="ttsControlPanel" visible="false" managed="false" spacing="10"
+                  styleClass="card">
+
+                <HBox spacing="10" alignment="CENTER_LEFT">
+                    <Label text="🎤 Настройки озвучки (TTS)"
+                           styleClass="label-title"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Button text="✕"
+                            onAction="#toggleTTSPanel"
+                            style="-fx-background-color: transparent; -fx-text-fill: #666666; -fx-font-size: 12px;">
+                        <tooltip><Tooltip text="Скрыть настройки озвучки"/></tooltip>
+                    </Button>
+                </HBox>
+
+                <GridPane hgap="10" vgap="8">
+                    <columnConstraints>
+                        <ColumnConstraints halignment="RIGHT" minWidth="120" prefWidth="120"/>
+                        <ColumnConstraints halignment="LEFT" hgrow="ALWAYS"/>
+                    </columnConstraints>
+
+                    <!-- Текущий режим -->
+                    <Label text="Текущий режим:" GridPane.rowIndex="0" GridPane.columnIndex="0"
+                           style="-fx-text-fill: #666666; -fx-font-weight: 600;"/>
+                    <HBox spacing="5" GridPane.rowIndex="0" GridPane.columnIndex="1">
+                        <Label fx:id="ttsModeLabel" text="Загрузка..."
+                               style="-fx-font-weight: bold; -fx-text-fill: #3498db;"/>
+                        <Region HBox.hgrow="ALWAYS"/>
+                        <HBox spacing="5" alignment="CENTER_RIGHT">
+                            <Circle fx:id="ttsStatusIndicator" radius="4" fill="#95a5a6"/>
+                            <Label fx:id="ttsStatusLabel" text="Статус..."
+                                   style="-fx-font-size: 11px; -fx-text-fill: #666666;"/>
+                        </HBox>
+                    </HBox>
+
+                    <!-- Кнопки управления -->
+                    <Label text="Действия:" GridPane.rowIndex="1" GridPane.columnIndex="0"
+                           style="-fx-text-fill: #666666; -fx-font-weight: 600;"/>
+                    <HBox spacing="10" GridPane.rowIndex="1" GridPane.columnIndex="1">
+                        <Button text="🔄 Переключить TTS"
+                                onAction="#onSwitchTTSMode"
+                                style="-fx-background-color: #3498db; -fx-text-fill: white;
+                                       -fx-background-radius: 20; -fx-padding: 6 12;"
+                                maxWidth="Infinity" HBox.hgrow="ALWAYS">
+                            <tooltip>
+                                <Tooltip text="Переключить между демо-режимом и OpenAI TTS"/>
+                            </tooltip>
+                        </Button>
+
+                        <Button text="🔊 Тест TTS"
+                                onAction="#onTestTTS"
+                                style="-fx-background-color: #2ecc71; -fx-text-fill: white;
+                                       -fx-background-radius: 20; -fx-padding: 6 12;"
+                                maxWidth="Infinity" HBox.hgrow="ALWAYS">
+                            <tooltip>
+                                <Tooltip text="Протестировать текущий режим озвучки"/>
+                            </tooltip>
+                        </Button>
+                    </HBox>
+
+                    <!-- Информация о режиме -->
+                    <Label text="Описание:" GridPane.rowIndex="2" GridPane.columnIndex="0"
+                           style="-fx-text-fill: #666666; -fx-font-weight: 600;"/>
+                    <VBox spacing="5" GridPane.rowIndex="2" GridPane.columnIndex="1">
+                        <TextArea fx:id="ttsInfoTextArea"
+                                  editable="false"
+                                  wrapText="true"
+                                  prefRowCount="3"
+                                  style="-fx-font-size: 11px; -fx-background-color: #f8f9fa;
+                                         -fx-border-color: #e0e0e0; -fx-border-radius: 5;"/>
+                    </VBox>
+
+                    <!-- Для OpenAI TTS: выбор голоса (видно только в режиме OpenAI) -->
+                    <VBox fx:id="openaiVoiceSettings" visible="false" managed="false"
+                          GridPane.columnSpan="2" spacing="5" style="-fx-padding: 10 0 0 0;">
+                        <HBox spacing="10" alignment="CENTER_LEFT">
+                            <Label text="Выберите голос:"
+                                   style="-fx-text-fill: #666666; -fx-font-weight: 600;"/>
+                            <ComboBox fx:id="voiceComboBox"
+                                      prefWidth="200"
+                                      promptText="Выберите голос..."/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Label fx:id="voiceDescriptionLabel" text=""
+                                   style="-fx-font-size: 11px; -fx-text-fill: #95a5a6;"/>
+                        </HBox>
+
+                        <HBox spacing="10" alignment="CENTER_LEFT">
+                            <Label text="Скорость речи:"
+                                   style="-fx-text-fill: #666666; -fx-font-weight: 600; -fx-min-width: 100;"/>
+                            <VBox spacing="5">
+                                <HBox spacing="10" alignment="CENTER_LEFT">
+                                    <Slider fx:id="speechSpeedSlider" prefWidth="150"
+                                            min="0.5" max="2.0" value="1.0" HBox.hgrow="ALWAYS"/>
+                                    <Label fx:id="speedLabel" text="1.0x"
+                                           style="-fx-font-weight: bold; -fx-text-fill: #3498db; -fx-min-width: 40;"/>
+                                </HBox>
+                                <HBox spacing="5">
+                                    <Label text="Медленно" styleClass="label-hint"/>
+                                    <Region HBox.hgrow="ALWAYS"/>
+                                    <Label text="Быстро" styleClass="label-hint"/>
+                                </HBox>
+                            </VBox>
+                        </HBox>
+                    </VBox>
+                </GridPane>
+
+                <!-- Для демо-режима: настройка скорости вывода -->
+                <VBox fx:id="demoSettings" visible="false" managed="false"
+                      spacing="5" style="-fx-padding: 10 0 0 0;">
+                    <Label text="Настройки демо-режима:" styleClass="label-subtitle"/>
+                    <HBox spacing="10" alignment="CENTER_LEFT">
+                        <Label text="Скорость печати:"
+                               style="-fx-text-fill: #666666; -fx-font-weight: 600; -fx-min-width: 100;"/>
+                        <VBox spacing="5">
+                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                <Slider fx:id="typingSpeedSlider" prefWidth="150"
+                                        min="50" max="500" value="200" HBox.hgrow="ALWAYS"/>
+                                <Label fx:id="typingSpeedLabel" text="200 мс/слово"
+                                       style="-fx-font-weight: bold; -fx-text-fill: #3498db; -fx-min-width: 100;"/>
+                            </HBox>
+                            <HBox spacing="5">
+                                <Label text="Медленно" styleClass="label-hint"/>
+                                <Region HBox.hgrow="ALWAYS"/>
+                                <Label text="Быстро" styleClass="label-hint"/>
+                            </HBox>
+                        </VBox>
+                    </HBox>
+                </VBox>
+            </VBox>
+
             <!-- Выпадающая панель распознавания речи -->
             <VBox fx:id="speechControlPanel" visible="false" managed="false" spacing="10"
                   styleClass="card">
 
                 <HBox spacing="10" alignment="CENTER_LEFT">
-                    <Label text="Настройки распознавания речи"
+                    <Label text="🎤 Настройки распознавания речи (STT)"
                            styleClass="label-title"/>
                     <Region HBox.hgrow="ALWAYS"/>
                     <Button text="✕"
                             onAction="#toggleSpeechPanel"
                             style="-fx-background-color: transparent; -fx-text-fill: #666666; -fx-font-size: 12px;">
-                        <tooltip><Tooltip text="Скрыть настройки"/></tooltip>
+                        <tooltip><Tooltip text="Скрыть настройки распознавания"/></tooltip>
                     </Button>
                 </HBox>
 
