@@ -112,7 +112,7 @@
                                        -fx-background-radius: 20; -fx-padding: 6 12;"
                                 maxWidth="Infinity" HBox.hgrow="ALWAYS">
                             <tooltip>
-                                <Tooltip text="Переключить между демо-режимом и OpenAI TTS"/>
+                                <Tooltip text="Переключить между демо-режимом, OpenAI, Google Cloud и локальным TTS"/>
                             </tooltip>
                         </Button>
 
@@ -134,17 +134,147 @@
                         <TextArea fx:id="ttsInfoTextArea"
                                   editable="false"
                                   wrapText="true"
-                                  prefRowCount="3"
+                                  prefRowCount="4"
                                   style="-fx-font-size: 11px; -fx-background-color: #f8f9fa;
                                          -fx-border-color: #e0e0e0; -fx-border-radius: 5;"/>
                     </VBox>
+                </GridPane>
 
-                    <!-- Для OpenAI TTS: выбор голоса (видно только в режиме OpenAI) -->
-                    <VBox fx:id="openaiVoiceSettings" visible="false" managed="false"
-                          GridPane.columnSpan="2" spacing="5" style="-fx-padding: 10 0 0 0;">
-                        <HBox spacing="10" alignment="CENTER_LEFT">
-                            <Label text="Выберите голос:"
-                                   style="-fx-text-fill: #666666; -fx-font-weight: 600;"/>
+                <!-- Для Google Cloud TTS: расширенные настройки (видно только в режиме Google Cloud) -->
+                <VBox fx:id="googleCloudSettings" visible="false" managed="false"
+                      spacing="8" style="-fx-padding: 10 0 0 0;">
+                    <Label text="⚙️ Настройки Google Cloud TTS" styleClass="label-subtitle"/>
+
+                    <!-- Выбор языка -->
+                    <GridPane hgap="10" vgap="8">
+                        <columnConstraints>
+                            <ColumnConstraints halignment="RIGHT" minWidth="120" prefWidth="120"/>
+                            <ColumnConstraints halignment="LEFT" hgrow="ALWAYS"/>
+                        </columnConstraints>
+
+                        <Label text="Язык:" GridPane.rowIndex="0" GridPane.columnIndex="0"
+                               style="-fx-text-fill: #666666; -fx-font-weight: 600;"/>
+                        <HBox spacing="5" GridPane.rowIndex="0" GridPane.columnIndex="1">
+                            <ComboBox fx:id="googleLanguageComboBox"
+                                      prefWidth="200"
+                                      promptText="Выберите язык..."/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                        </HBox>
+
+                        <Label text="Голос:" GridPane.rowIndex="1" GridPane.columnIndex="0"
+                               style="-fx-text-fill: #666666; -fx-font-weight: 600;"/>
+                        <HBox spacing="5" GridPane.rowIndex="1" GridPane.columnIndex="1">
+                            <ComboBox fx:id="googleVoiceComboBox"
+                                      prefWidth="300"
+                                      promptText="Выберите голос..."/>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Label fx:id="googleVoiceDescriptionLabel" text=""
+                                   style="-fx-font-size: 11px; -fx-text-fill: #95a5a6;"/>
+                        </HBox>
+                    </GridPane>
+
+                    <!-- Настройки качества звука -->
+                    <GridPane hgap="10" vgap="8" style="-fx-padding: 10 0 0 0;">
+                        <columnConstraints>
+                            <ColumnConstraints halignment="RIGHT" minWidth="120" prefWidth="120"/>
+                            <ColumnConstraints halignment="LEFT" hgrow="ALWAYS"/>
+                        </columnConstraints>
+
+                        <!-- Скорость -->
+                        <Label text="Скорость:" GridPane.rowIndex="0" GridPane.columnIndex="0"
+                               style="-fx-text-fill: #666666; -fx-font-weight: 600;"/>
+                        <VBox spacing="5" GridPane.rowIndex="0" GridPane.columnIndex="1">
+                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                <Slider fx:id="googleSpeedSlider" prefWidth="150"
+                                        min="0.25" max="4.0" value="1.0" HBox.hgrow="ALWAYS"/>
+                                <Label fx:id="googleSpeedLabel" text="1.0x"
+                                       style="-fx-font-weight: bold; -fx-text-fill: #3498db; -fx-min-width: 40;"/>
+                            </HBox>
+                            <HBox spacing="5">
+                                <Label text="Медленно (0.25x)" styleClass="label-hint"/>
+                                <Region HBox.hgrow="ALWAYS"/>
+                                <Label text="Быстро (4.0x)" styleClass="label-hint"/>
+                            </HBox>
+                        </VBox>
+
+                        <!-- Тон -->
+                        <Label text="Тон голоса:" GridPane.rowIndex="1" GridPane.columnIndex="0"
+                               style="-fx-text-fill: #666666; -fx-font-weight: 600;"/>
+                        <VBox spacing="5" GridPane.rowIndex="1" GridPane.columnIndex="1">
+                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                <Slider fx:id="googlePitchSlider" prefWidth="150"
+                                        min="-20.0" max="20.0" value="0.0" HBox.hgrow="ALWAYS"/>
+                                <Label fx:id="pitchLabel" text="0.0"
+                                       style="-fx-font-weight: bold; -fx-text-fill: #9b59b6; -fx-min-width: 40;"/>
+                            </HBox>
+                            <HBox spacing="5">
+                                <Label text="Низкий (-20)" styleClass="label-hint"/>
+                                <Region HBox.hgrow="ALWAYS"/>
+                                <Label text="Высокий (20)" styleClass="label-hint"/>
+                            </HBox>
+                        </VBox>
+
+                        <!-- Громкость -->
+                        <Label text="Громкость:" GridPane.rowIndex="2" GridPane.columnIndex="0"
+                               style="-fx-text-fill: #666666; -fx-font-weight: 600;"/>
+                        <VBox spacing="5" GridPane.rowIndex="2" GridPane.columnIndex="1">
+                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                <Slider fx:id="googleVolumeSlider" prefWidth="150"
+                                        min="-96.0" max="16.0" value="0.0" HBox.hgrow="ALWAYS"/>
+                                <Label fx:id="volumeLabel" text="0 дБ"
+                                       style="-fx-font-weight: bold; -fx-text-fill: #e67e22; -fx-min-width: 40;"/>
+                            </HBox>
+                            <HBox spacing="5">
+                                <Label text="Тише (-96 дБ)" styleClass="label-hint"/>
+                                <Region HBox.hgrow="ALWAYS"/>
+                                <Label text="Громче (16 дБ)" styleClass="label-hint"/>
+                            </HBox>
+                        </VBox>
+                    </GridPane>
+
+                    <!-- Кнопки управления Google Cloud TTS -->
+                    <HBox spacing="10" alignment="CENTER" style="-fx-padding: 10 0 0 0;">
+                        <Button fx:id="testGoogleTTSButton" text="🔊 Тест Google TTS"
+                                onAction="#onTestGoogleTTS"
+                                style="-fx-background-color: #4285f4; -fx-text-fill: white;
+                                       -fx-background-radius: 20; -fx-padding: 6 12;"
+                                maxWidth="Infinity" HBox.hgrow="ALWAYS">
+                            <tooltip><Tooltip text="Тестирование Google Cloud TTS с текущими настройками"/></tooltip>
+                        </Button>
+
+                        <Button fx:id="showTTSInfoButton" text="ℹ️ Информация"
+                                onAction="#onShowTTSInfo"
+                                style="-fx-background-color: #7f8c8d; -fx-text-fill: white;
+                                       -fx-background-radius: 20; -fx-padding: 6 12;"
+                                maxWidth="Infinity" HBox.hgrow="ALWAYS">
+                            <tooltip><Tooltip text="Показать информацию о текущем TTS сервисе"/></tooltip>
+                        </Button>
+
+                        <Button fx:id="configureGoogleTTSButton" text="⚙️ Настройки"
+                                onAction="#onConfigureGoogleTTS"
+                                style="-fx-background-color: #95a5a6; -fx-text-fill: white;
+                                       -fx-background-radius: 20; -fx-padding: 6 12;"
+                                maxWidth="Infinity" HBox.hgrow="ALWAYS">
+                            <tooltip><Tooltip text="Инструкции по настройке Google Cloud TTS"/></tooltip>
+                        </Button>
+                    </HBox>
+                </VBox>
+
+                <!-- Для OpenAI TTS: выбор голоса (видно только в режиме OpenAI) -->
+                <VBox fx:id="openaiVoiceSettings" visible="false" managed="false"
+                      spacing="5" style="-fx-padding: 10 0 0 0;">
+                    <Label text="🎤 Настройки OpenAI/Groq TTS" styleClass="label-subtitle"/>
+
+                    <GridPane hgap="10" vgap="8">
+                        <columnConstraints>
+                            <ColumnConstraints halignment="RIGHT" minWidth="120" prefWidth="120"/>
+                            <ColumnConstraints halignment="LEFT" hgrow="ALWAYS"/>
+                        </columnConstraints>
+
+                        <!-- Выбор голоса -->
+                        <Label text="Голос:" GridPane.rowIndex="0" GridPane.columnIndex="0"
+                               style="-fx-text-fill: #666666; -fx-font-weight: 600;"/>
+                        <HBox spacing="10" GridPane.rowIndex="0" GridPane.columnIndex="1">
                             <ComboBox fx:id="voiceComboBox"
                                       prefWidth="200"
                                       promptText="Выберите голос..."/>
@@ -153,34 +283,50 @@
                                    style="-fx-font-size: 11px; -fx-text-fill: #95a5a6;"/>
                         </HBox>
 
-                        <HBox spacing="10" alignment="CENTER_LEFT">
-                            <Label text="Скорость речи:"
-                                   style="-fx-text-fill: #666666; -fx-font-weight: 600; -fx-min-width: 100;"/>
-                            <VBox spacing="5">
-                                <HBox spacing="10" alignment="CENTER_LEFT">
-                                    <Slider fx:id="speechSpeedSlider" prefWidth="150"
-                                            min="0.5" max="2.0" value="1.0" HBox.hgrow="ALWAYS"/>
-                                    <Label fx:id="speedLabel" text="1.0x"
-                                           style="-fx-font-weight: bold; -fx-text-fill: #3498db; -fx-min-width: 40;"/>
-                                </HBox>
-                                <HBox spacing="5">
-                                    <Label text="Медленно" styleClass="label-hint"/>
-                                    <Region HBox.hgrow="ALWAYS"/>
-                                    <Label text="Быстро" styleClass="label-hint"/>
-                                </HBox>
-                            </VBox>
-                        </HBox>
-                    </VBox>
-                </GridPane>
+                        <!-- Скорость речи -->
+                        <Label text="Скорость:" GridPane.rowIndex="1" GridPane.columnIndex="0"
+                               style="-fx-text-fill: #666666; -fx-font-weight: 600;"/>
+                        <VBox spacing="5" GridPane.rowIndex="1" GridPane.columnIndex="1">
+                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                <Slider fx:id="speechSpeedSlider" prefWidth="150"
+                                        min="0.5" max="2.0" value="1.0" HBox.hgrow="ALWAYS"/>
+                                <Label fx:id="speedLabel" text="1.0x"
+                                       style="-fx-font-weight: bold; -fx-text-fill: #3498db; -fx-min-width: 40;"/>
+                            </HBox>
+                            <HBox spacing="5">
+                                <Label text="Медленно" styleClass="label-hint"/>
+                                <Region HBox.hgrow="ALWAYS"/>
+                                <Label text="Быстро" styleClass="label-hint"/>
+                            </HBox>
+                        </VBox>
+                    </GridPane>
+
+                    <!-- Кнопки управления OpenAI TTS -->
+                    <HBox spacing="10" alignment="CENTER" style="-fx-padding: 10 0 0 0;">
+                        <Button text="🔊 Тест OpenAI TTS"
+                                onAction="#onTestTTS"
+                                style="-fx-background-color: #10a37f; -fx-text-fill: white;
+                                       -fx-background-radius: 20; -fx-padding: 6 12;"
+                                maxWidth="Infinity" HBox.hgrow="ALWAYS">
+                            <tooltip><Tooltip text="Тестирование OpenAI/Groq TTS"/></tooltip>
+                        </Button>
+                    </HBox>
+                </VBox>
 
                 <!-- Для демо-режима: настройка скорости вывода -->
                 <VBox fx:id="demoSettings" visible="false" managed="false"
                       spacing="5" style="-fx-padding: 10 0 0 0;">
-                    <Label text="Настройки демо-режима:" styleClass="label-subtitle"/>
-                    <HBox spacing="10" alignment="CENTER_LEFT">
-                        <Label text="Скорость печати:"
-                               style="-fx-text-fill: #666666; -fx-font-weight: 600; -fx-min-width: 100;"/>
-                        <VBox spacing="5">
+                    <Label text="🎭 Настройки демо-режима" styleClass="label-subtitle"/>
+
+                    <GridPane hgap="10" vgap="8">
+                        <columnConstraints>
+                            <ColumnConstraints halignment="RIGHT" minWidth="120" prefWidth="120"/>
+                            <ColumnConstraints halignment="LEFT" hgrow="ALWAYS"/>
+                        </columnConstraints>
+
+                        <Label text="Скорость печати:" GridPane.rowIndex="0" GridPane.columnIndex="0"
+                               style="-fx-text-fill: #666666; -fx-font-weight: 600;"/>
+                        <VBox spacing="5" GridPane.rowIndex="0" GridPane.columnIndex="1">
                             <HBox spacing="10" alignment="CENTER_LEFT">
                                 <Slider fx:id="typingSpeedSlider" prefWidth="150"
                                         min="50" max="500" value="200" HBox.hgrow="ALWAYS"/>
@@ -193,6 +339,16 @@
                                 <Label text="Быстро" styleClass="label-hint"/>
                             </HBox>
                         </VBox>
+                    </GridPane>
+
+                    <HBox spacing="10" alignment="CENTER" style="-fx-padding: 10 0 0 0;">
+                        <Button text="🔊 Тест демо-режима"
+                                onAction="#onTestTTS"
+                                style="-fx-background-color: #f39c12; -fx-text-fill: white;
+                                       -fx-background-radius: 20; -fx-padding: 6 12;"
+                                maxWidth="Infinity" HBox.hgrow="ALWAYS">
+                            <tooltip><Tooltip text="Тестирование демо-режима (вывод в консоль)"/></tooltip>
+                        </Button>
                     </HBox>
                 </VBox>
             </VBox>

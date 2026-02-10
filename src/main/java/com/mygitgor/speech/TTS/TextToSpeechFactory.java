@@ -1,6 +1,7 @@
 package com.mygitgor.speech.TTS;
 
 import com.mygitgor.speech.TTS.type.DemoTextToSpeechService;
+import com.mygitgor.speech.TTS.type.GoogleCloudTextToSpeechService;
 import com.mygitgor.speech.TTS.type.LocalTextToSpeechService;
 import com.mygitgor.speech.TTS.type.OpenAITextToSpeechService;
 import org.slf4j.Logger;
@@ -16,6 +17,7 @@ public class TextToSpeechFactory {
     public enum TTSType {
         SMART,      // Умный выбор с автоматическим fallback
         OPENAI,     // OpenAI TTS API
+        GOOGLE,     // Google Cloud TTS (WaveNet)
         GROQ,       // Groq API (для чата, но TTS не поддерживается)
         LOCAL,      // Локальный системный TTS
         DEMO,       // Демо-режим (текст в консоль)
@@ -41,6 +43,7 @@ public class TextToSpeechFactory {
         return switch (type) {
             case SMART -> createSmartTtsService(props);
             case OPENAI -> createOpenAITtsService(props);
+            case GOOGLE -> createGoogleTtsService(props);
             case GROQ -> createGroqTtsService(props);
             case LOCAL -> createLocalTtsService(props);
             case DEMO -> createDemoTtsService(props);
@@ -60,9 +63,10 @@ public class TextToSpeechFactory {
 
         // Пробуем в порядке приоритета
         TextToSpeechService[] candidates = {
-                createOpenAITtsService(props),   // 1. OpenAI TTS (если доступен)
-                createLocalTtsService(props),    // 2. Локальный TTS (если есть утилиты)
-                createDemoTtsService(props)      // 3. Демо-режим (всегда доступен)
+                createGoogleTtsService(props),   // 1. Google TTS (WaveNet - лучшее качество)
+                createOpenAITtsService(props),   // 2. OpenAI TTS (хорошее качество)
+                createLocalTtsService(props),    // 3. Локальный TTS (оффлайн)
+                createDemoTtsService(props)      // 4. Демо-режим (всегда доступен)
         };
 
         for (int i = 0; i < candidates.length; i++) {
@@ -101,6 +105,36 @@ public class TextToSpeechFactory {
         try {
             OpenAITextToSpeechService service = new OpenAITextToSpeechService(apiKey);
 
+            // Настраиваем параметры из конфигурации
+            String voiceName = props.getProperty("tts.openai.voice", "alloy");
+            String model = props.getProperty("tts.openai.model", "tts-1");
+            String speedStr = props.getProperty("tts.openai.speed", "1.0");
+
+            try {
+                OpenAITextToSpeechService.OpenAIVoice voice =
+                        OpenAITextToSpeechService.OpenAIVoice.valueOf(voiceName.toUpperCase());
+                service.setVoice(voice);
+            } catch (IllegalArgumentException e) {
+                logger.debug("Неизвестный голос OpenAI TTS: {}, используем alloy", voiceName);
+            }
+
+            try {
+                if (model.equals("tts-1-hd")) {
+                    service.setModel(OpenAITextToSpeechService.TTSModel.TTS_1_HD);
+                }
+            } catch (Exception e) {
+                logger.debug("Некорректная модель OpenAI TTS: {}", model);
+            }
+
+            try {
+                float speed = Float.parseFloat(speedStr);
+                if (speed >= 0.25f && speed <= 4.0f) {
+                    service.setSpeed(speed);
+                }
+            } catch (NumberFormatException e) {
+                logger.debug("Некорректная скорость OpenAI TTS: {}", speedStr);
+            }
+
             // Проверяем доступность асинхронно, но сразу возвращаем сервис
             checkServiceAvailabilityAsync(service, "OpenAI TTS");
 
@@ -113,11 +147,97 @@ public class TextToSpeechFactory {
     }
 
     /**
+     * Создает Google Cloud TTS сервис
+     */
+    private static TextToSpeechService createGoogleTtsService(Properties props) {
+        String apiKey = getApiKey(props, "google.cloud.api.key", "GOOGLE_CLOUD_API_KEY");
+        String credentialsFile = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
+
+        // Проверяем разные способы аутентификации
+        boolean hasApiKey = apiKey != null && !apiKey.trim().isEmpty() &&
+                !apiKey.equals("your-google-cloud-api-key-here");
+        boolean hasCredentialsFile = credentialsFile != null && !credentialsFile.trim().isEmpty();
+
+        if (!hasApiKey && !hasCredentialsFile) {
+            logger.debug("Google Cloud API ключ не настроен");
+            logger.debug("Способы настройки Google TTS:\n" +
+                    "1. Укажите google.cloud.api.key в application.properties\n" +
+                    "2. Установите переменную окружения GOOGLE_CLOUD_API_KEY\n" +
+                    "3. Установите GOOGLE_APPLICATION_CREDENTIALS для файла учетных данных");
+            return createUnavailableService("Google Cloud TTS (не настроен API ключ)");
+        }
+
+        try {
+            GoogleCloudTextToSpeechService service;
+
+            if (hasApiKey) {
+                service = new GoogleCloudTextToSpeechService(apiKey);
+                logger.debug("Используется Google Cloud API ключ");
+            } else {
+                service = new GoogleCloudTextToSpeechService("CREDENTIALS_FILE");
+                logger.debug("Используется файл учетных данных: {}", credentialsFile);
+            }
+
+            // Настраиваем параметры из конфигурации
+            String voiceName = props.getProperty("tts.google.voice", "EN_US_WAVENET_B");
+            String speedStr = props.getProperty("tts.google.speed", "1.0");
+            String pitchStr = props.getProperty("tts.google.pitch", "0.0");
+            String volumeStr = props.getProperty("tts.google.volume", "0.0");
+
+            try {
+                GoogleCloudTextToSpeechService.GoogleVoice voice =
+                        GoogleCloudTextToSpeechService.GoogleVoice.valueOf(voiceName);
+                service.setVoice(voice);
+            } catch (IllegalArgumentException e) {
+                logger.debug("Неизвестный голос Google TTS: {}, используем стандартный", voiceName);
+            }
+
+            try {
+                float speed = Float.parseFloat(speedStr);
+                if (speed >= 0.25f && speed <= 4.0f) {
+                    service.setSpeed(speed);
+                }
+            } catch (NumberFormatException e) {
+                logger.debug("Некорректная скорость Google TTS: {}", speedStr);
+            }
+
+            try {
+                float pitch = Float.parseFloat(pitchStr);
+                if (pitch >= -20.0f && pitch <= 20.0f) {
+                    service.setPitch(pitch);
+                }
+            } catch (NumberFormatException e) {
+                logger.debug("Некорректный тон Google TTS: {}", pitchStr);
+            }
+
+            try {
+                float volume = Float.parseFloat(volumeStr);
+                if (volume >= -96.0f && volume <= 16.0f) {
+                    service.setVolume(volume);
+                }
+            } catch (NumberFormatException e) {
+                logger.debug("Некорректная громкость Google TTS: {}", volumeStr);
+            }
+
+            // Проверяем доступность асинхронно
+            checkServiceAvailabilityAsync(service, "Google Cloud TTS");
+
+            logger.info("✅ Google Cloud TTS Service создан (WaveNet technology)");
+
+            return service;
+
+        } catch (Exception e) {
+            logger.error("Ошибка при создании Google Cloud TTS: {}", e.getMessage());
+            return createUnavailableService("Google Cloud TTS (ошибка инициализации)");
+        }
+    }
+
+    /**
      * Создает Groq TTS сервис (напоминание: Groq не поддерживает TTS API!)
      */
     private static TextToSpeechService createGroqTtsService(Properties props) {
         logger.warn("⚠️ ВНИМАНИЕ: Groq не поддерживает TTS API");
-        logger.info("Используем обходное решение: Groq для чата + OpenAI/Demo для TTS");
+        logger.info("Используем обходное решение: Groq для чата + другие TTS сервисы");
 
         String apiKey = getApiKey(props, "groq.api.key", "GROQ_API_KEY");
 
@@ -125,8 +245,38 @@ public class TextToSpeechFactory {
             logger.debug("Groq API ключ не настроен");
         }
 
-        // Создаем умный сервис как fallback
-        return createSmartTtsService(props);
+        // Создаем умный сервис как fallback (пропускаем Groq в приоритетах)
+        return createSmartTtsServiceWithoutGroq(props);
+    }
+
+    /**
+     * Умный TTS сервис без Groq (чтобы избежать рекурсии)
+     */
+    private static TextToSpeechService createSmartTtsServiceWithoutGroq(Properties props) {
+        logger.info("Создание Smart TTS Service (без Groq)...");
+
+        // Пробуем в порядке приоритета, без Groq
+        TextToSpeechService[] candidates = {
+                createGoogleTtsService(props),   // 1. Google TTS
+                createOpenAITtsService(props),   // 2. OpenAI TTS
+                createLocalTtsService(props),    // 3. Локальный TTS
+                createDemoTtsService(props)      // 4. Демо-режим
+        };
+
+        for (int i = 0; i < candidates.length; i++) {
+            TextToSpeechService service = candidates[i];
+            String serviceName = service.getClass().getSimpleName();
+
+            if (service.isAvailable()) {
+                logger.info("✅ Smart TTS (без Groq) выбрал: {} (приоритет {})", serviceName, i + 1);
+                return service;
+            } else {
+                logger.debug("❌ {} недоступен", serviceName);
+            }
+        }
+
+        logger.warn("⚠️ Все TTS сервисы недоступны, используем демо-режим");
+        return candidates[candidates.length - 1];
     }
 
     /**
@@ -146,7 +296,7 @@ public class TextToSpeechFactory {
                     if (speed < 0.5f) speed = 0.5f;
                     if (speed > 2.0f) speed = 2.0f;
 
-                    // Здесь можно настроить сервис если есть соответствующие методы
+                    service.setSpeed(speed);
                     logger.debug("Локальный TTS настроен: голос={}, скорость={}", voice, speed);
                 } catch (NumberFormatException e) {
                     logger.debug("Некорректная скорость TTS: {}", speedStr);
@@ -196,7 +346,7 @@ public class TextToSpeechFactory {
 
         // Читаем конфигурацию приоритетов
         String prioritiesStr = props.getProperty("tts.composite.priorities",
-                "OPENAI,LOCAL,DEMO");
+                "GOOGLE,OPENAI,LOCAL,DEMO");
         String[] priorities = prioritiesStr.split(",");
 
         for (String priority : priorities) {
@@ -228,8 +378,9 @@ public class TextToSpeechFactory {
         } catch (IllegalArgumentException e) {
             // Поддержка старых значений для обратной совместимости
             return switch (typeStr) {
-                case "GROQ" -> TTSType.SMART; // Groq не поддерживает TTS
+                case "GOOGLE" -> TTSType.GOOGLE;
                 case "OPENAI" -> TTSType.OPENAI;
+                case "GROQ" -> TTSType.GROQ;
                 case "LOCAL" -> TTSType.LOCAL;
                 case "DEMO" -> TTSType.DEMO;
                 default -> TTSType.SMART;
@@ -280,17 +431,25 @@ public class TextToSpeechFactory {
 
     private static void logServiceSelectionReason(TextToSpeechService service, int priority) {
         String reason = switch (priority) {
-            case 0 -> "OpenAI TTS выбран как основной облачный сервис";
-            case 1 -> "Локальный TTS выбран как оффлайн альтернатива";
-            case 2 -> "Демо TTS выбран как последний fallback";
+            case 0 -> "Google Cloud TTS (WaveNet) выбран как сервис с лучшим качеством звука";
+            case 1 -> "OpenAI TTS выбран как качественный облачный сервис";
+            case 2 -> "Локальный TTS выбран как оффлайн альтернатива";
+            case 3 -> "Демо TTS выбран как последний fallback";
             default -> "Выбран по приоритету " + (priority + 1);
         };
 
         logger.info("📋 Причина выбора: {}", reason);
 
         // Дополнительная информация о сервисе
-        if (service instanceof OpenAITextToSpeechService) {
-            logger.info("   • Тип: Облачный (OpenAI API)");
+        if (service instanceof GoogleCloudTextToSpeechService googleService) {
+            logger.info("   • Тип: Google Cloud TTS (WaveNet)");
+            logger.info("   • Технология: Нейросетевая (премиум качество)");
+            logger.info("   • Голос: {}", googleService.getCurrentVoice().getDescription());
+            logger.info("   • Скорость: {}", googleService.getCurrentSpeed());
+            logger.info("   • Требуется: Интернет + API ключ");
+        } else if (service instanceof OpenAITextToSpeechService) {
+            logger.info("   • Тип: OpenAI TTS");
+            logger.info("   • Качество: Очень хорошее");
             logger.info("   • Требуется: Интернет + API ключ");
             logger.info("   • Преимущества: Натуральное звучание, много голосов");
         } else if (service instanceof LocalTextToSpeechService localService) {
@@ -303,6 +462,10 @@ public class TextToSpeechFactory {
             logger.info("   • Требуется: Ничего");
             logger.info("   • Режим: Вывод текста в консоль");
             logger.info("   • Преимущества: Всегда работает, идеален для тестирования");
+        } else if (service.getClass().getSimpleName().contains("Groq")) {
+            logger.info("   • Тип: Groq (заглушка)");
+            logger.info("   • Примечание: Groq не поддерживает TTS API");
+            logger.info("   • Используется: Другой TTS сервис как fallback");
         }
     }
 
@@ -340,6 +503,11 @@ public class TextToSpeechFactory {
             }
 
             @Override
+            public java.util.Map<String, String> getAvailableVoices() {
+                return java.util.Collections.emptyMap();
+            }
+
+            @Override
             public String toString() {
                 return "UnavailableTTS[" + reason + "]";
             }
@@ -369,11 +537,18 @@ public class TextToSpeechFactory {
                     info.append("  ОС: ").append(localService.getOperatingSystem()).append("\n");
                 }
 
-                if (type == TTSType.OPENAI) {
-                    String apiKey = getApiKey(props, "openai.api.key", "OPENAI_API_KEY");
+                if (type == TTSType.OPENAI || type == TTSType.GOOGLE) {
+                    String apiKeyProp = type == TTSType.OPENAI ? "openai.api.key" : "google.cloud.api.key";
+                    String envKey = type == TTSType.OPENAI ? "OPENAI_API_KEY" : "GOOGLE_CLOUD_API_KEY";
+                    String apiKey = getApiKey(props, apiKeyProp, envKey);
                     info.append("  API ключ: ").append(
                             apiKey != null && !apiKey.isEmpty() ? "Настроен" : "Не настроен"
                     ).append("\n");
+                }
+
+                if (type == TTSType.GROQ) {
+                    info.append("  Примечание: Не поддерживает TTS API\n");
+                    info.append("  Используется: Другой TTS сервис как fallback\n");
                 }
 
             } catch (Exception e) {
@@ -385,11 +560,66 @@ public class TextToSpeechFactory {
 
         // Рекомендации
         info.append("=== Рекомендации ===\n");
-        info.append("• Для продакшена: используйте SMART или OPENAI\n");
+        info.append("• Для лучшего качества: используйте GOOGLE (WaveNet)\n");
+        info.append("• Для хорошего качества: используйте OPENAI\n");
         info.append("• Для оффлайн работы: используйте LOCAL\n");
         info.append("• Для тестирования: используйте DEMO\n");
-        info.append("• Groq не поддерживает TTS - используйте для чата только\n");
+        info.append("• Для автоматического выбора: используйте SMART (рекомендуется)\n");
+        info.append("• Groq не поддерживает TTS - используйте для чата только\n\n");
+
+        info.append("=== Сравнение качества ===\n");
+        info.append("1. Google WaveNet: ⭐⭐⭐⭐⭐ (нейросетевое, премиум)\n");
+        info.append("2. OpenAI TTS: ⭐⭐⭐⭐ (очень хорошее)\n");
+        info.append("3. Локальный TTS: ⭐⭐ (базовое)\n");
+        info.append("4. Демо TTS: ⭐ (текст в консоль)\n");
 
         return info.toString();
+    }
+
+    /**
+     * Создает тестовый TTS сервис для проверки конфигурации
+     */
+    public static TextToSpeechService createTestService(Properties props) {
+        logger.info("Создание тестового TTS сервиса для проверки конфигурации...");
+
+        // Создаем демо-сервис для тестирования
+        TextToSpeechService testService = createDemoTtsService(props);
+
+        // Проверяем доступность других сервисов
+        new Thread(() -> {
+            try {
+                logger.info("=== Начало тестирования TTS сервисов ===");
+
+                TextToSpeechService[] services = {
+                        createGoogleTtsService(props),
+                        createOpenAITtsService(props),
+                        createLocalTtsService(props)
+                };
+
+                String[] serviceNames = {"Google TTS", "OpenAI TTS", "Local TTS"};
+
+                for (int i = 0; i < services.length; i++) {
+                    try {
+                        Thread.sleep(500);
+                        boolean available = services[i].isAvailable();
+                        logger.info("{}: {}", serviceNames[i],
+                                available ? "✅ Доступен" : "❌ Недоступен");
+
+                        if (!available && services[i] instanceof LocalTextToSpeechService) {
+                            logger.info("   Для локального TTS установите: espeak, festival и т.д.");
+                        }
+                    } catch (Exception e) {
+                        logger.warn("Ошибка при проверке {}: {}", serviceNames[i], e.getMessage());
+                    }
+                }
+
+                logger.info("=== Тестирование завершено ===");
+
+            } catch (Exception e) {
+                logger.error("Ошибка при тестировании TTS сервисов", e);
+            }
+        }).start();
+
+        return testService;
     }
 }

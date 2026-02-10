@@ -15,6 +15,26 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.*;
 import java.util.HashMap;
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioInputStream;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.Clip;
+import javax.sound.sampled.DataLine;
+import javax.sound.sampled.UnsupportedAudioFileException;
 
 public class OpenAITextToSpeechService implements TextToSpeechService {
     private static final Logger logger = LoggerFactory.getLogger(OpenAITextToSpeechService.class);
@@ -24,6 +44,11 @@ public class OpenAITextToSpeechService implements TextToSpeechService {
     private volatile boolean closed = false;
     private Clip currentClip;
     private CompletableFuture<Void> currentSpeechFuture;
+
+    // Текущие настройки
+    private String currentModel = "tts-1";
+    private OpenAIVoice currentVoice = OpenAIVoice.ALLOY;
+    private float currentSpeed = 1.0f;
 
     // Голоса OpenAI
     public enum OpenAIVoice {
@@ -42,6 +67,48 @@ public class OpenAITextToSpeechService implements TextToSpeechService {
 
         public String getValue() {
             return value;
+        }
+
+        public static OpenAIVoice fromString(String value) {
+            for (OpenAIVoice voice : values()) {
+                if (voice.getValue().equalsIgnoreCase(value) ||
+                        voice.name().equalsIgnoreCase(value)) {
+                    return voice;
+                }
+            }
+            return ALLOY;
+        }
+    }
+
+    // Модели OpenAI TTS
+    public enum TTSModel {
+        TTS_1("tts-1", "Стандартная модель"),
+        TTS_1_HD("tts-1-hd", "HD модель с улучшенным качеством");
+
+        private final String value;
+        private final String description;
+
+        TTSModel(String value, String description) {
+            this.value = value;
+            this.description = description;
+        }
+
+        public String getValue() {
+            return value;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+
+        public static TTSModel fromString(String value) {
+            for (TTSModel model : values()) {
+                if (model.getValue().equalsIgnoreCase(value) ||
+                        model.name().replace("_", "-").equalsIgnoreCase(value)) {
+                    return model;
+                }
+            }
+            return TTS_1;
         }
     }
 
@@ -75,6 +142,66 @@ public class OpenAITextToSpeechService implements TextToSpeechService {
             logger.warn("Не удалось загрузить API ключ из свойств", e);
             return "";
         }
+    }
+
+    // Добавленные методы для конфигурации
+
+    /**
+     * Установка голоса
+     */
+    public void setVoice(String voice) {
+        this.currentVoice = OpenAIVoice.fromString(voice);
+        logger.info("Голос установлен: {}", this.currentVoice.getValue());
+    }
+
+    public void setVoice(OpenAIVoice voice) {
+        this.currentVoice = voice;
+        logger.info("Голос установлен: {}", voice.getValue());
+    }
+
+    /**
+     * Установка модели
+     */
+    public void setModel(String model) {
+        this.currentModel = TTSModel.fromString(model).getValue();
+        logger.info("Модель установлена: {}", this.currentModel);
+    }
+
+    public void setModel(TTSModel model) {
+        this.currentModel = model.getValue();
+        logger.info("Модель установлена: {}", model.getValue());
+    }
+
+    /**
+     * Установка скорости воспроизведения
+     */
+    public void setSpeed(float speed) {
+        // OpenAI TTS поддерживает скорость от 0.25 до 4.0
+        if (speed < 0.25f) {
+            this.currentSpeed = 0.25f;
+            logger.warn("Скорость слишком низкая, установлено минимальное значение: 0.25");
+        } else if (speed > 4.0f) {
+            this.currentSpeed = 4.0f;
+            logger.warn("Скорость слишком высокая, установлено максимальное значение: 4.0");
+        } else {
+            this.currentSpeed = speed;
+        }
+        logger.info("Скорость установлена: {}", this.currentSpeed);
+    }
+
+    /**
+     * Получение текущей конфигурации
+     */
+    public String getCurrentVoice() {
+        return currentVoice.getValue();
+    }
+
+    public String getCurrentModel() {
+        return currentModel;
+    }
+
+    public float getCurrentSpeed() {
+        return currentSpeed;
     }
 
     /**
@@ -181,7 +308,8 @@ public class OpenAITextToSpeechService implements TextToSpeechService {
                 .trim();
 
         return String.format(
-                "{\"model\":\"tts-1\",\"input\":\"%s\",\"voice\":\"%s\",\"speed\":%.1f,\"response_format\":\"mp3\"}",
+                "{\"model\":\"%s\",\"input\":\"%s\",\"voice\":\"%s\",\"speed\":%.1f,\"response_format\":\"mp3\"}",
+                currentModel, // Используем текущую установленную модель
                 cleanText,
                 voice,
                 speed
@@ -190,7 +318,7 @@ public class OpenAITextToSpeechService implements TextToSpeechService {
 
     @Override
     public CompletableFuture<Void> speakAsync(String text) {
-        return speakAsync(text, OpenAIVoice.ALLOY, 1.0f);
+        return speakAsync(text, currentVoice, currentSpeed);
     }
 
     public CompletableFuture<Void> speakAsync(String text, OpenAIVoice voice, float speed) {
@@ -199,6 +327,7 @@ public class OpenAITextToSpeechService implements TextToSpeechService {
         }
 
         CompletableFuture<Void> future = new CompletableFuture<>();
+        currentSpeechFuture = future;
 
         executorService.submit(() -> {
             try {
@@ -206,15 +335,21 @@ public class OpenAITextToSpeechService implements TextToSpeechService {
             } catch (Exception e) {
                 logger.error("Ошибка при озвучке", e);
                 future.completeExceptionally(e);
+            } finally {
+                currentSpeechFuture = null;
             }
         });
 
         return future;
     }
 
+    public CompletableFuture<Void> speakAsync(String text, String voice, float speed) {
+        return speakAsync(text, OpenAIVoice.fromString(voice), speed);
+    }
+
     @Override
     public void speak(String text) {
-        speak(text, OpenAIVoice.ALLOY, 1.0f);
+        speak(text, currentVoice, currentSpeed);
     }
 
     public void speak(String text, OpenAIVoice voice, float speed) {
@@ -230,12 +365,33 @@ public class OpenAITextToSpeechService implements TextToSpeechService {
         }
     }
 
+    public void speak(String text, String voice, float speed) {
+        speak(text, OpenAIVoice.fromString(voice), speed);
+    }
+
+    public void speak(String text, String model, String voice, float speed) {
+        String originalModel = currentModel;
+        OpenAIVoice originalVoice = currentVoice;
+        float originalSpeed = currentSpeed;
+
+        try {
+            setModel(model);
+            setVoice(voice);
+            setSpeed(speed);
+            speak(text);
+        } finally {
+            currentModel = originalModel;
+            currentVoice = originalVoice;
+            currentSpeed = originalSpeed;
+        }
+    }
+
     private void speakInternal(String text, OpenAIVoice voice, float speed,
                                CompletableFuture<Void> future) {
         try {
             String cleanText = cleanTextForSpeech(text);
-            logger.info("OpenAI TTS: Озвучка текста ({} символов), голос: {}, скорость: {}",
-                    cleanText.length(), voice, speed);
+            logger.info("OpenAI TTS: Озвучка текста ({} символов), голос: {}, скорость: {}, модель: {}",
+                    cleanText.length(), voice, speed, currentModel);
 
             // Генерация речи
             byte[] audioData = generateSpeech(cleanText, voice, speed);
@@ -442,6 +598,10 @@ public class OpenAITextToSpeechService implements TextToSpeechService {
         if (currentSpeechFuture != null && !currentSpeechFuture.isDone()) {
             currentSpeechFuture.cancel(true);
         }
+        if (currentClip != null && currentClip.isRunning()) {
+            currentClip.stop();
+            currentClip.close();
+        }
     }
 
     @Override
@@ -458,13 +618,30 @@ public class OpenAITextToSpeechService implements TextToSpeechService {
     @Override
     public Map<String, String> getAvailableVoices() {
         Map<String, String> voices = new HashMap<>();
-        voices.put("ALLOY", "Alloy - нейтральный голос");
-        voices.put("ECHO", "Echo - ясный и четкий");
-        voices.put("FABLE", "Fable - выразительный, подходит для историй");
-        voices.put("ONYX", "Onyx - глубокий и авторитетный");
-        voices.put("NOVA", "Nova - мягкий и дружелюбный");
-        voices.put("SHIMMER", "Shimmer - яркий и энергичный");
+        for (OpenAIVoice voice : OpenAIVoice.values()) {
+            voices.put(voice.name(), voice.getValue() + " - " + getVoiceDescription(voice));
+        }
         return voices;
+    }
+
+    public Map<String, String> getAvailableModels() {
+        Map<String, String> models = new HashMap<>();
+        for (TTSModel model : TTSModel.values()) {
+            models.put(model.name(), model.getValue() + " - " + model.getDescription());
+        }
+        return models;
+    }
+
+    private String getVoiceDescription(OpenAIVoice voice) {
+        switch (voice) {
+            case ALLOY: return "нейтральный голос";
+            case ECHO: return "ясный и четкий";
+            case FABLE: return "выразительный, подходит для историй";
+            case ONYX: return "глубокий и авторитетный";
+            case NOVA: return "мягкий и дружелюбный";
+            case SHIMMER: return "яркий и энергичный";
+            default: return "";
+        }
     }
 
     private String cleanTextForSpeech(String text) {
@@ -507,5 +684,24 @@ public class OpenAITextToSpeechService implements TextToSpeechService {
         }
 
         logger.info("OpenAI TTS Service закрыт");
+    }
+
+    /**
+     * Сброс настроек к значениям по умолчанию
+     */
+    public void resetSettings() {
+        currentModel = "tts-1";
+        currentVoice = OpenAIVoice.ALLOY;
+        currentSpeed = 1.0f;
+        logger.info("Настройки сброшены к значениям по умолчанию");
+    }
+
+    /**
+     * Получение информации о сервисе
+     */
+    public String getServiceInfo() {
+        return String.format("OpenAI TTS Service [Модель: %s, Голос: %s, Скорость: %.1f, API Key: %s]",
+                currentModel, currentVoice.getValue(), currentSpeed,
+                apiKey != null ? "установлен" : "не установлен");
     }
 }

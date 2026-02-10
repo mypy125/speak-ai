@@ -75,3 +75,5 @@ config/application-secret.properties
 dist/
 out/
 bin/
+
+*.json

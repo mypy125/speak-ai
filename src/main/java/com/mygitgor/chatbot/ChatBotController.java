@@ -11,9 +11,7 @@ import com.mygitgor.model.EnhancedSpeechAnalysis;
 import com.mygitgor.model.SpeechAnalysis;
 import com.mygitgor.speech.*;
 import com.mygitgor.speech.STT.SpeechToTextService;
-import com.mygitgor.speech.TTS.type.DemoTextToSpeechService;
-import com.mygitgor.speech.TTS.type.GroqTextToSpeechService;
-import com.mygitgor.speech.TTS.type.OpenAITextToSpeechService;
+import com.mygitgor.speech.TTS.type.*;
 import com.mygitgor.speech.TTS.TextToSpeechFactory;
 import com.mygitgor.speech.TTS.TextToSpeechService;
 import com.mygitgor.utils.ResourceManager;
@@ -46,6 +44,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.List;
+import java.util.Map;
 
 public class ChatBotController implements Initializable, AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(ChatBotController.class);
@@ -104,15 +104,15 @@ public class ChatBotController implements Initializable, AutoCloseable {
     // ========================================
     @FXML private VBox mainContainer;
     @FXML private VBox chatMessagesContainer;
-    @FXML private ScrollPane chatScrollPane; // Добавлен ScrollPane из FXML
+    @FXML private ScrollPane chatScrollPane;
 
     // ========================================
     // FXML UI Elements - Response Mode
     // ========================================
     @FXML private ToggleGroup responseModeToggleGroup;
     @FXML private Button playResponseButton;
-    @FXML private ToggleButton textToggle; // Добавлен из FXML
-    @FXML private ToggleButton voiceToggle; // Добавлен из FXML
+    @FXML private ToggleButton textToggle;
+    @FXML private ToggleButton voiceToggle;
 
     // ========================================
     // FXML UI Elements - TTS Panel
@@ -132,6 +132,23 @@ public class ChatBotController implements Initializable, AutoCloseable {
     @FXML private Label typingSpeedLabel;
 
     // ========================================
+    // Новые элементы для Google Cloud TTS
+    // ========================================
+    @FXML private VBox googleCloudSettings;
+    @FXML private ComboBox<String> googleVoiceComboBox;
+    @FXML private Label googleVoiceDescriptionLabel;
+    @FXML private Slider googlePitchSlider;
+    @FXML private Label pitchLabel;
+    @FXML private ComboBox<String> googleLanguageComboBox;
+    @FXML private Slider googleVolumeSlider;
+    @FXML private Label volumeLabel;
+    @FXML private Slider googleSpeedSlider;
+    @FXML private Label googleSpeedLabel;
+    @FXML private Button testGoogleTTSButton;
+    @FXML private Button showTTSInfoButton;
+    @FXML private Button configureGoogleTTSButton;
+
+    // ========================================
     // Services
     // ========================================
     private ChatBotService chatBotService;
@@ -142,7 +159,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
     private ResourceManager resourceManager;
     private TextToSpeechService textToSpeechService;
 
-    // Добавьте после других полей состояния
     private CompletableFuture<Void> currentSpeechFuture;
     private boolean isPlayingSpeech = false;
     private DemoTextToSpeechService.SpeechStateListener speechStateListener;
@@ -158,7 +174,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
     private String lastBotResponse;
     private ResponseMode currentResponseMode = ResponseMode.TEXT;
 
-    // Executor для фоновых задач озвучки
     private ExecutorService speechExecutor;
 
     // ========================================
@@ -207,6 +222,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
         try {
             Properties props = new Properties();
             props.load(getClass().getResourceAsStream("/application.properties"));
+            props.setProperty("tts.type", "GOOGLE");
 
             // Создаем AI сервис
             AiService aiService = AIServiceFactory.createService(props);
@@ -229,6 +245,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
             // Создаем сервис преобразования текста в речь через фабрику
             this.textToSpeechService = TextToSpeechFactory.createService(props);
             logger.info("{} создан", textToSpeechService.getClass().getSimpleName());
+
+            logger.info("TTS сервис создан: {}", textToSpeechService.getClass().getSimpleName());
+            logger.info("TTS доступен: {}", textToSpeechService.isAvailable());
 
             // Проверяем доступность TTS сервиса
             if (textToSpeechService.isAvailable()) {
@@ -289,11 +308,19 @@ public class ChatBotController implements Initializable, AutoCloseable {
     }
 
     private void setupTTSControls() {
-        // Настройка слайдера скорости речи для OpenAI
+        // Настройка слайдера скорости речи для OpenAI/Groq
         if (speechSpeedSlider != null && speedLabel != null) {
             speechSpeedSlider.valueProperty().addListener((observable, oldValue, newValue) -> {
                 double speed = Math.round(newValue.doubleValue() * 10) / 10.0;
                 speedLabel.setText(String.format("%.1fx", speed));
+
+                if (textToSpeechService != null) {
+                    if (textToSpeechService instanceof OpenAITextToSpeechService openaiService) {
+                        openaiService.setSpeed((float) speed);
+                    } else if (textToSpeechService instanceof GroqTextToSpeechService groqService) {
+                        groqService.setSpeed((float) speed);
+                    }
+                }
             });
         }
 
@@ -303,7 +330,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 int speed = newValue.intValue();
                 typingSpeedLabel.setText(speed + " мс/слово");
 
-                // Обновляем скорость в демо-режиме если он активен
                 if (textToSpeechService instanceof DemoTextToSpeechService demoService) {
                     // Здесь можно добавить метод setTypingSpeed в DemoTextToSpeechService
                     // demoService.setTypingSpeed(speed);
@@ -315,8 +341,119 @@ public class ChatBotController implements Initializable, AutoCloseable {
         if (voiceComboBox != null && voiceDescriptionLabel != null) {
             voiceComboBox.setOnAction(event -> {
                 String selected = voiceComboBox.getValue();
-                if (selected != null) {
+                if (selected != null && textToSpeechService instanceof OpenAITextToSpeechService openaiService) {
                     voiceDescriptionLabel.setText("Выбран: " + selected);
+
+                    String voiceName = selected.split(" - ")[0];
+                    openaiService.setVoice(voiceName);
+                }
+            });
+        }
+
+        // Настройка элементов управления Google Cloud TTS
+        setupGoogleCloudTTSControls();
+    }
+
+    private void setupGoogleCloudTTSControls() {
+        // Настройка слайдера скорости для Google Cloud
+        if (googleSpeedSlider != null && googleSpeedLabel != null) {
+            googleSpeedSlider.setMin(0.25);
+            googleSpeedSlider.setMax(4.0);
+            googleSpeedSlider.setValue(1.0);
+
+            googleSpeedSlider.valueProperty().addListener((observable, oldValue, newValue) -> {
+                double speed = Math.round(newValue.doubleValue() * 10) / 10.0;
+                googleSpeedLabel.setText(String.format("%.1fx", speed));
+
+                if (textToSpeechService instanceof GoogleCloudTextToSpeechService googleService) {
+                    googleService.setSpeed((float) speed);
+                }
+            });
+        }
+
+        // Настройка слайдера тона для Google Cloud
+        if (googlePitchSlider != null && pitchLabel != null) {
+            googlePitchSlider.setMin(-20.0);
+            googlePitchSlider.setMax(20.0);
+            googlePitchSlider.setValue(0.0);
+
+            googlePitchSlider.valueProperty().addListener((observable, oldValue, newValue) -> {
+                double pitch = Math.round(newValue.doubleValue() * 10) / 10.0;
+                pitchLabel.setText(String.format("%.1f", pitch));
+
+                if (textToSpeechService instanceof GoogleCloudTextToSpeechService googleService) {
+                    googleService.setPitch((float) pitch);
+                }
+            });
+        }
+
+        // Настройка слайдера громкости для Google Cloud
+        if (googleVolumeSlider != null && volumeLabel != null) {
+            googleVolumeSlider.setMin(-96.0);
+            googleVolumeSlider.setMax(16.0);
+            googleVolumeSlider.setValue(0.0);
+
+            googleVolumeSlider.valueProperty().addListener((observable, oldValue, newValue) -> {
+                int volume = newValue.intValue();
+                volumeLabel.setText(volume + " дБ");
+
+                if (textToSpeechService instanceof GoogleCloudTextToSpeechService googleService) {
+                    googleService.setVolumeGainDb(volume);
+                }
+            });
+        }
+
+        // Настройка выбора языка для Google Cloud
+        if (googleLanguageComboBox != null) {
+            googleLanguageComboBox.setOnAction(event -> {
+                String selected = googleLanguageComboBox.getValue();
+                if (selected != null && textToSpeechService instanceof GoogleCloudTextToSpeechService googleService) {
+                    String languageCode = selected.split(" - ")[0];
+                    googleService.setLanguage(languageCode);
+
+                    updateGoogleVoicesForLanguage(languageCode);
+                }
+            });
+        }
+
+        // Настройка выбора голоса для Google Cloud
+        if (googleVoiceComboBox != null && googleVoiceDescriptionLabel != null) {
+            googleVoiceComboBox.setOnAction(event -> {
+                String selected = googleVoiceComboBox.getValue();
+                if (selected != null && textToSpeechService instanceof GoogleCloudTextToSpeechService googleService) {
+                    googleVoiceDescriptionLabel.setText("Выбран: " + selected);
+
+                    // Получаем название голоса из выбранного значения
+                    String voiceName = selected.split(" \\(")[0];
+                    try {
+                        GoogleCloudTextToSpeechService.GoogleVoice voice =
+                                GoogleCloudTextToSpeechService.GoogleVoice.valueOf(voiceName);
+                        googleService.setVoice(voice);
+                    } catch (IllegalArgumentException e) {
+                        logger.warn("Неизвестный голос Google TTS: {}", voiceName);
+                    }
+                }
+            });
+        }
+    }
+
+    private void updateGoogleVoicesForLanguage(String languageCode) {
+        if (textToSpeechService instanceof GoogleCloudTextToSpeechService googleService && googleVoiceComboBox != null) {
+            Platform.runLater(() -> {
+                googleVoiceComboBox.getItems().clear();
+
+                // Получаем все голоса Google TTS
+                for (GoogleCloudTextToSpeechService.GoogleVoice voice :
+                        GoogleCloudTextToSpeechService.GoogleVoice.values()) {
+
+                    // Фильтруем по языку
+                    if (voice.getLanguageCode().equals(languageCode)) {
+                        googleVoiceComboBox.getItems().add(voice.name() + " (" + voice.getDescription() + ")");
+                    }
+                }
+
+                if (!googleVoiceComboBox.getItems().isEmpty()) {
+                    googleVoiceComboBox.setValue(googleVoiceComboBox.getItems().get(0));
                 }
             });
         }
@@ -334,6 +471,12 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 } else if (textToSpeechService instanceof OpenAITextToSpeechService) {
                     ttsModeLabel.setText("OpenAI TTS");
                     ttsModeLabel.setTooltip(new Tooltip("Используется OpenAI API для озвучки"));
+                } else if (textToSpeechService instanceof GoogleCloudTextToSpeechService) {
+                    ttsModeLabel.setText("Google Cloud TTS");
+                    ttsModeLabel.setTooltip(new Tooltip("Используется Google Cloud Text-to-Speech API"));
+                } else if (textToSpeechService instanceof LocalTextToSpeechService) {
+                    ttsModeLabel.setText("Локальный TTS");
+                    ttsModeLabel.setTooltip(new Tooltip("Используются системные TTS утилиты"));
                 } else {
                     ttsModeLabel.setText("TTS Активен");
                     ttsModeLabel.setTooltip(new Tooltip(
@@ -343,23 +486,20 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
             // Показываем соответствующие настройки в зависимости от типа TTS
             if (demoSettings != null) {
-                demoSettings.setVisible(textToSpeechService instanceof DemoTextToSpeechService);
-                demoSettings.setManaged(textToSpeechService instanceof DemoTextToSpeechService);
+                boolean isDemo = textToSpeechService instanceof DemoTextToSpeechService;
+                demoSettings.setVisible(isDemo);
+                demoSettings.setManaged(isDemo);
             }
 
             if (openaiVoiceSettings != null) {
-                // Проблема здесь! Проверяем тип сервиса правильно
                 boolean isOpenAIOrGroq = textToSpeechService instanceof OpenAITextToSpeechService ||
                         textToSpeechService instanceof GroqTextToSpeechService;
-
                 openaiVoiceSettings.setVisible(isOpenAIOrGroq);
                 openaiVoiceSettings.setManaged(isOpenAIOrGroq);
 
-                // Заполняем голоса только для OpenAITextToSpeechService
                 if (isOpenAIOrGroq && voiceComboBox != null) {
                     voiceComboBox.getItems().clear();
 
-                    // Для OpenAI TTS
                     if (textToSpeechService instanceof OpenAITextToSpeechService openaiService) {
                         Map<String, String> voices = openaiService.getAvailableVoices();
                         if (!voices.isEmpty()) {
@@ -368,10 +508,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
                             });
                             voiceComboBox.setValue("Alloy - нейтральный голос");
                         }
-                    }
-                    // Для Groq TTS (если у него есть метод getAvailableVoices)
-                    else if (textToSpeechService instanceof GroqTextToSpeechService groqService) {
-                        // Если у GroqTextToSpeechService есть метод getAvailableVoices
+                    } else if (textToSpeechService instanceof GroqTextToSpeechService groqService) {
                         try {
                             Map<String, String> voices = groqService.getAvailableVoices();
                             if (voices != null && !voices.isEmpty()) {
@@ -385,6 +522,80 @@ public class ChatBotController implements Initializable, AutoCloseable {
                         }
                     }
                 }
+            }
+
+            // Настройки Google Cloud TTS
+            if (googleCloudSettings != null) {
+                boolean isGoogleCloud = textToSpeechService instanceof GoogleCloudTextToSpeechService;
+                googleCloudSettings.setVisible(isGoogleCloud);
+                googleCloudSettings.setManaged(isGoogleCloud);
+
+                if (isGoogleCloud && textToSpeechService instanceof GoogleCloudTextToSpeechService googleService) {
+                    // Инициализация слайдеров с текущими значениями
+                    if (googleSpeedSlider != null) {
+                        googleSpeedSlider.setValue(googleService.getCurrentSpeed());
+                    }
+                    if (googlePitchSlider != null) {
+                        googlePitchSlider.setValue(googleService.getCurrentPitch());
+                    }
+                    if (googleVolumeSlider != null) {
+                        googleVolumeSlider.setValue(googleService.getCurrentVolumeGainDb());
+                    }
+
+                    // Заполняем список языков
+                    if (googleLanguageComboBox != null) {
+                        googleLanguageComboBox.getItems().clear();
+
+                        // Получаем уникальные языки из доступных голосов
+                        Set<String> languages = new HashSet<>();
+                        for (GoogleCloudTextToSpeechService.GoogleVoice voice :
+                                GoogleCloudTextToSpeechService.GoogleVoice.values()) {
+                            languages.add(voice.getLanguageCode());
+                        }
+
+                        // Маппинг кодов языков на названия
+                        Map<String, String> languageNames = new HashMap<>();
+                        languageNames.put("en-US", "Английский (США)");
+                        languageNames.put("ru-RU", "Русский");
+                        languageNames.put("en-GB", "Английский (Великобритания)");
+                        languageNames.put("de-DE", "Немецкий");
+                        languageNames.put("fr-FR", "Французский");
+                        languageNames.put("es-ES", "Испанский");
+                        languageNames.put("it-IT", "Итальянский");
+                        languageNames.put("ja-JP", "Японский");
+                        languageNames.put("ko-KR", "Корейский");
+                        languageNames.put("zh-CN", "Китайский (упрощенный)");
+                        languageNames.put("zh-TW", "Китайский (традиционный)");
+
+                        // Добавляем языки в ComboBox
+                        List<String> sortedLanguages = new ArrayList<>(languages);
+                        Collections.sort(sortedLanguages);
+
+                        for (String langCode : sortedLanguages) {
+                            String langName = languageNames.getOrDefault(langCode, langCode);
+                            googleLanguageComboBox.getItems().add(langCode + " - " + langName);
+                        }
+
+                        // Устанавливаем текущий язык
+                        String currentLangCode = googleService.getCurrentVoice().getLanguageCode();
+                        String currentLangName = languageNames.getOrDefault(currentLangCode, currentLangCode);
+                        String currentLangItem = currentLangCode + " - " + currentLangName;
+
+                        if (googleLanguageComboBox.getItems().contains(currentLangItem)) {
+                            googleLanguageComboBox.setValue(currentLangItem);
+                        } else if (!googleLanguageComboBox.getItems().isEmpty()) {
+                            googleLanguageComboBox.setValue(googleLanguageComboBox.getItems().get(0));
+                        }
+
+                        // Заполняем голоса для выбранного языка
+                        updateGoogleVoicesForLanguage(currentLangCode);
+                    }
+                }
+            }
+
+            // Показываем/скрываем локальные настройки
+            if (textToSpeechService instanceof LocalTextToSpeechService) {
+                // Можете добавить специфичные настройки для локального TTS
             }
 
             // Обновляем информацию в текстовом поле
@@ -407,11 +618,39 @@ public class ChatBotController implements Initializable, AutoCloseable {
                             "• Требуется интернет соединение и API ключ\n" +
                             "• Поддерживает разные голоса и скорость\n" +
                             "• Генерирует натуральное звучание речи");
+                } else if (textToSpeechService instanceof GoogleCloudTextToSpeechService googleService) {
+                    StringBuilder info = new StringBuilder();
+                    info.append("Google Cloud TTS (WaveNet):\n");
+                    info.append("• Использует Google Cloud Text-to-Speech API\n");
+                    info.append("• Технология WaveNet (нейросетевая)\n");
+                    info.append("• Премиум качество звучания\n");
+                    info.append("• Требуется Google Cloud учетная запись\n");
+                    info.append("• Многоязычная поддержка\n");
+                    info.append("• Настраиваемый тон, громкость и скорость\n\n");
+
+                    info.append("Текущая конфигурация:\n");
+                    info.append("• Голос: ").append(googleService.getCurrentVoice().getDescription()).append("\n");
+                    info.append("• Скорость: ").append(googleService.getCurrentSpeed()).append("x\n");
+                    info.append("• Тон: ").append(googleService.getCurrentPitch()).append("\n");
+                    info.append("• Громкость: ").append(googleService.getCurrentVolumeGainDb()).append(" дБ\n");
+                    info.append("• Метод аутентификации: ").append(googleService.getAuthMethod()).append("\n");
+
+                    ttsInfoTextArea.setText(info.toString());
+                } else if (textToSpeechService instanceof LocalTextToSpeechService localService) {
+                    ttsInfoTextArea.setText("Локальный TTS:\n" +
+                            "• Использует системные TTS утилиты\n" +
+                            "• Не требует интернет соединения\n" +
+                            "• Обычно базовое качество\n" +
+                            "• Отлично для оффлайн режима\n" +
+                            "• ОС: " + localService.getOperatingSystem());
                 } else {
                     ttsInfoTextArea.setText("Текущий режим: " +
                             textToSpeechService.getClass().getSimpleName());
                 }
             }
+
+            // Обновляем статус доступности
+            updateTTSStatus();
         });
     }
 
@@ -474,7 +713,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
             public void onSpeechError(String error) {
                 Platform.runLater(() -> {
                     logger.warn("Ошибка TTS: {}", error);
-                    // Показываем ошибку только для демо-режима
                     if (textToSpeechService instanceof DemoTextToSpeechService) {
                         showAlert("Ошибка демо TTS", error);
                     }
@@ -755,9 +993,18 @@ public class ChatBotController implements Initializable, AutoCloseable {
     }
 
     private void showWelcomeMessage() {
-        String ttsMode = textToSpeechService instanceof DemoTextToSpeechService
-                ? "Демо-режим (текст в консоль)"
-                : "OpenAI TTS (голосовая озвучка)";
+        String ttsMode = "";
+        if (textToSpeechService instanceof DemoTextToSpeechService) {
+            ttsMode = "Демо-режим (текст в консоль)";
+        } else if (textToSpeechService instanceof OpenAITextToSpeechService) {
+            ttsMode = "OpenAI TTS (голосовая озвучка)";
+        } else if (textToSpeechService instanceof GoogleCloudTextToSpeechService) {
+            ttsMode = "Google Cloud TTS (WaveNet качество)";
+        } else if (textToSpeechService instanceof LocalTextToSpeechService) {
+            ttsMode = "Локальный TTS (оффлайн)";
+        } else {
+            ttsMode = "Голосовая озвучка";
+        }
 
         String welcomeMessage = String.format("""
         🌟 Добро пожаловать в SpeakAI!
@@ -841,55 +1088,26 @@ public class ChatBotController implements Initializable, AutoCloseable {
     }
 
     private void processResponse(ChatBotService.ChatResponse response) {
-        // Сохраняем ответ бота для возможной озвучки
+        // Сохраняем ответ бота для возможной повторной озвучки
         lastBotResponse = response.getFullResponse();
 
         // Добавляем ответ бота в чат
         addAIMessage(response.getFullResponse());
 
-        // Если выбран голосовой режим - автоматически озвучиваем
-        if (currentResponseMode == ResponseMode.VOICE && textToSpeechService != null) {
-            // Используем асинхронный метод
-            CompletableFuture<Void> speechFuture = textToSpeechService.speakAsync(response.getFullResponse());
-
-            // Обновляем состояние кнопки
+        // ОБНОВЛЕНИЕ: Не озвучиваем здесь, так как ChatBotService уже делает это
+        // Просто обновляем состояние кнопки проигрывания
+        if (currentResponseMode == ResponseMode.VOICE) {
+            // Устанавливаем состояние "идет озвучка"
             isPlayingSpeech = true;
             updatePlayResponseButtonState(true);
 
-            // Обрабатываем результат
-            speechFuture.thenRun(() -> {
-                Platform.runLater(() -> {
-                    isPlayingSpeech = false;
-                    updatePlayResponseButtonState(false);
-                    logger.info("✅ Ответ озвучен");
-                    if (statusLabel != null) {
-                        statusLabel.setText("✅ Ответ озвучен");
-                        // Через 3 секунды возвращаем обычный статус
-                        new Thread(() -> {
-                            try {
-                                Thread.sleep(3000);
-                                Platform.runLater(() -> updateStatusLabel());
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                            }
-                        }).start();
-                    }
-                });
-            }).exceptionally(throwable -> {
-                Platform.runLater(() -> {
-                    isPlayingSpeech = false;
-                    updatePlayResponseButtonState(false);
-                    logger.warn("❌ Ошибка при озвучке ответа: {}", throwable.getMessage());
-                    if (statusLabel != null) {
-                        statusLabel.setText("⚠️ Ошибка озвучки");
-                    }
-                    if (!(throwable.getCause() instanceof IllegalStateException)) {
-                        showAlert("Ошибка озвучки", "Не удалось озвучить ответ: " +
-                                throwable.getMessage());
-                    }
-                });
-                return null;
-            });
+            // Запускаем таймер для автоматического обновления состояния
+            // (или можно добавить слушатель в TTS сервис для получения событий)
+            startSpeechCompletionTimer();
+        } else {
+            // В текстовом режиме кнопка всегда выключена
+            isPlayingSpeech = false;
+            updatePlayResponseButtonState(false);
         }
 
         // Обновляем области анализа
@@ -906,6 +1124,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
         }
 
         // Обновляем видимость кнопки проигрывания
+        // В голосовом режиме показываем кнопку для повторного прослушивания
         updatePlayResponseButtonVisibility();
 
         // Скрываем индикатор загрузки
@@ -921,6 +1140,54 @@ public class ChatBotController implements Initializable, AutoCloseable {
         }
     }
 
+    // Новый метод для таймера завершения озвучки
+    private void startSpeechCompletionTimer() {
+        new Thread(() -> {
+            try {
+                // Примерная длительность озвучки (можно сделать динамической)
+                int estimatedDuration = calculateSpeechDuration(lastBotResponse);
+
+                // Ждем завершения озвучки + небольшая задержка
+                Thread.sleep(estimatedDuration + 1000);
+
+                Platform.runLater(() -> {
+                    isPlayingSpeech = false;
+                    updatePlayResponseButtonState(false);
+                    updatePlayResponseButtonVisibility();
+
+                    if (statusLabel != null) {
+                        statusLabel.setText("✅ Ответ озвучен");
+                        // Через 3 секунды возвращаем обычный статус
+                        new Thread(() -> {
+                            try {
+                                Thread.sleep(3000);
+                                Platform.runLater(() -> updateStatusLabel());
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }).start();
+                    }
+                });
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }).start();
+    }
+
+    // Метод для оценки длительности озвучки (примерный расчет)
+    private int calculateSpeechDuration(String text) {
+        if (text == null || text.isEmpty()) {
+            return 3000; // 3 секунды по умолчанию
+        }
+
+        // Пример: 150 слов в минуту = 2.5 слова в секунду
+        int wordCount = text.split("\\s+").length;
+        int seconds = (int)(wordCount / 2.5);
+
+        // Минимальная и максимальная длительность
+        return Math.min(Math.max(seconds * 1000, 2000), 30000);
+    }
+
     @FXML
     private void onPlayResponse() {
         if (closed) {
@@ -934,37 +1201,45 @@ public class ChatBotController implements Initializable, AutoCloseable {
         }
 
         if (isPlayingSpeech) {
-            // Останавливаем текущую озвучку
-            textToSpeechService.stopSpeaking();
+            // Останавливаем текущую озвучку через ChatBotService
+            if (chatBotService != null) {
+                chatBotService.stopSpeaking();
+            }
             isPlayingSpeech = false;
             updatePlayResponseButtonState(false);
             return;
         }
 
-        // Запускаем новую озвучку
-        CompletableFuture<Void> speechFuture = textToSpeechService.speakAsync(lastBotResponse);
+        // Запускаем новую озвучку через ChatBotService
+        try {
+            CompletableFuture<Void> speechFuture = chatBotService.speakTextAsync(lastBotResponse);
 
-        isPlayingSpeech = true;
-        updatePlayResponseButtonState(true);
+            isPlayingSpeech = true;
+            updatePlayResponseButtonState(true);
 
-        speechFuture.thenRun(() -> {
-            Platform.runLater(() -> {
-                isPlayingSpeech = false;
-                updatePlayResponseButtonState(false);
-                logger.info("✅ Ответ озвучен по запросу");
+            speechFuture.thenRun(() -> {
+                Platform.runLater(() -> {
+                    isPlayingSpeech = false;
+                    updatePlayResponseButtonState(false);
+                    logger.info("✅ Ответ озвучен по запросу");
+                });
+            }).exceptionally(throwable -> {
+                Platform.runLater(() -> {
+                    isPlayingSpeech = false;
+                    updatePlayResponseButtonState(false);
+                    if (!(throwable instanceof java.util.concurrent.CancellationException)) {
+                        logger.error("❌ Ошибка при озвучке ответа", throwable);
+                        showAlert("Ошибка озвучки",
+                                "Не удалось озвучить ответ: " + throwable.getMessage());
+                    }
+                });
+                return null;
             });
-        }).exceptionally(throwable -> {
-            Platform.runLater(() -> {
-                isPlayingSpeech = false;
-                updatePlayResponseButtonState(false);
-                if (!(throwable instanceof java.util.concurrent.CancellationException)) {
-                    logger.error("❌ Ошибка при озвучке ответа", throwable);
-                    showAlert("Ошибка озвучки",
-                            "Не удалось озвучить ответ: " + throwable.getMessage());
-                }
-            });
-            return null;
-        });
+
+        } catch (Exception e) {
+            logger.error("Ошибка при запуске озвучки", e);
+            showError("Ошибка озвучки", "Не удалось запустить озвучку: " + e.getMessage());
+        }
     }
 
     // ========================================
@@ -1028,10 +1303,20 @@ public class ChatBotController implements Initializable, AutoCloseable {
                     ttsStatusIndicator.setFill(Color.LIMEGREEN);
                     ttsStatusLabel.setText("Доступен");
                     ttsStatusLabel.setStyle("-fx-text-fill: #27ae60;");
+
+                    // Дополнительная информация для Google Cloud TTS
+                    if (textToSpeechService instanceof GoogleCloudTextToSpeechService googleService) {
+                        ttsStatusLabel.setText("✅ Доступен (Google Cloud)");
+                    }
                 } else {
                     ttsStatusIndicator.setFill(Color.ORANGERED);
                     ttsStatusLabel.setText("Недоступен");
                     ttsStatusLabel.setStyle("-fx-text-fill: #e74c3c;");
+
+                    // Дополнительная информация для Google Cloud TTS
+                    if (textToSpeechService instanceof GoogleCloudTextToSpeechService) {
+                        ttsStatusLabel.setText("⚠️ Недоступен (Google Cloud)");
+                    }
                 }
             }
         });
@@ -1049,8 +1334,8 @@ public class ChatBotController implements Initializable, AutoCloseable {
             Properties props = new Properties();
             props.load(getClass().getResourceAsStream("/application.properties"));
 
-            String currentTTSMode = props.getProperty("tts.type", "DEMO").toUpperCase();
-            String newTTSMode = "DEMO".equals(currentTTSMode) ? "OPENAI" : "DEMO";
+            String currentTTSMode = props.getProperty("tts.type", "SMART").toUpperCase();
+            String newTTSMode = getNextTTSType(currentTTSMode);
 
             // Обновляем свойства в памяти
             props.setProperty("tts.type", newTTSMode);
@@ -1095,12 +1380,36 @@ public class ChatBotController implements Initializable, AutoCloseable {
         }
     }
 
+    private String getNextTTSType(String currentType) {
+        return switch (currentType) {
+            case "DEMO" -> "OPENAI";
+            case "OPENAI" -> "GOOGLE";
+            case "GOOGLE" -> "LOCAL";
+            case "LOCAL" -> "SMART";
+            case "SMART" -> "DEMO";
+            default -> "SMART";
+        };
+    }
+
     private void updateTTSModeUI(String newTTSMode) {
         Platform.runLater(() -> {
-            String modeName = "DEMO".equals(newTTSMode) ? "Демо TTS" : "OpenAI TTS";
-            String modeDescription = "DEMO".equals(newTTSMode)
-                    ? "Текст выводится в консоль"
-                    : "Используется OpenAI API для озвучки";
+            String modeName = switch (newTTSMode) {
+                case "DEMO" -> "Демо TTS";
+                case "OPENAI" -> "OpenAI TTS";
+                case "GOOGLE" -> "Google Cloud TTS";
+                case "LOCAL" -> "Локальный TTS";
+                case "SMART" -> "Умный TTS";
+                default -> "TTS";
+            };
+
+            String modeDescription = switch (newTTSMode) {
+                case "DEMO" -> "Текст выводится в консоль";
+                case "OPENAI" -> "Используется OpenAI API для озвучки";
+                case "GOOGLE" -> "Используется Google Cloud TTS API (WaveNet)";
+                case "LOCAL" -> "Используются системные TTS утилиты";
+                case "SMART" -> "Автоматический выбор лучшего доступного сервиса";
+                default -> "";
+            };
 
             if (ttsModeLabel != null) {
                 ttsModeLabel.setText(modeName);
@@ -1108,8 +1417,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
             }
 
             showAlert("Режим TTS изменен",
-                    String.format("✅ Переключено на %s\n\n%s",
+                    String.format("✅ Переключено на %s\n\n%s\n\n%s",
                             modeName,
+                            modeDescription,
                             textToSpeechService.isAvailable()
                                     ? "✅ Сервис доступен"
                                     : "⚠️ Сервис недоступен"));
@@ -1128,6 +1438,150 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 }).start();
             }
         });
+    }
+
+    // ========================================
+    // Event Handlers - Google Cloud TTS
+    // ========================================
+
+    @FXML
+    private void onTestGoogleTTS() {
+        if (textToSpeechService == null) {
+            showError("Ошибка", "TTS сервис не инициализирован");
+            return;
+        }
+
+        if (!(textToSpeechService instanceof GoogleCloudTextToSpeechService)) {
+            showAlert("Внимание", "Сейчас активен не Google Cloud TTS. Переключитесь в Google Cloud режим.");
+            return;
+        }
+
+        boolean isAvailable = textToSpeechService.isAvailable();
+
+        String message;
+        if (isAvailable) {
+            GoogleCloudTextToSpeechService googleService = (GoogleCloudTextToSpeechService) textToSpeechService;
+            message = String.format("✅ Google Cloud TTS доступен\n\n" +
+                            "Конфигурация:\n" +
+                            "• Голос: %s\n" +
+                            "• Скорость: %.1fx\n" +
+                            "• Тон: %.1f\n" +
+                            "• Громкость: %.0f дБ\n" +
+                            "• Метод аутентификации: %s\n\n" +
+                            "Тестовая фраза будет озвучена...",
+                    googleService.getCurrentVoice().getDescription(),
+                    googleService.getCurrentSpeed(),
+                    googleService.getCurrentPitch(),
+                    googleService.getCurrentVolumeGainDb(),
+                    googleService.getAuthMethod());
+        } else {
+            message = String.format("⚠️ Google Cloud TTS не работает\n\n" +
+                    "Проверьте:\n" +
+                    "1. Наличие google-credentials.json\n" +
+                    "2. Включен ли Text-to-Speech API\n" +
+                    "3. Имеет ли Service Account права\n" +
+                    "4. Наличие интернет соединения\n\n" +
+                    "Попробуйте снова после настройки");
+        }
+
+        showAlert("Тест Google Cloud TTS", message);
+
+        // Проигрываем тестовую фразу
+        if (isAvailable) {
+            textToSpeechService.speakAsync("Hello! This is a test of Google Cloud Text-to-Speech. The quality is excellent!")
+                    .thenRun(() -> Platform.runLater(() ->
+                            showAlert("Тест завершен",
+                                    "✅ Тест Google Cloud TTS успешно завершен")))
+                    .exceptionally(throwable -> {
+                        Platform.runLater(() ->
+                                showError("Ошибка теста", "Не удалось выполнить тест: " + throwable.getMessage()));
+                        return null;
+                    });
+        }
+    }
+
+    @FXML
+    private void onShowTTSInfo() {
+        if (textToSpeechService == null) {
+            showAlert("Информация", "TTS сервис не инициализирован");
+            return;
+        }
+
+        StringBuilder info = new StringBuilder();
+        info.append("=== Информация о TTS сервисе ===\n\n");
+
+        info.append("Текущий сервис: ").append(textToSpeechService.getClass().getSimpleName()).append("\n");
+        info.append("Доступность: ").append(textToSpeechService.isAvailable() ? "✅ Доступен" : "❌ Недоступен").append("\n\n");
+
+        if (textToSpeechService instanceof GoogleCloudTextToSpeechService googleService) {
+            info.append("Google Cloud TTS:\n");
+            info.append("• Метод аутентификации: ").append(googleService.getAuthMethod()).append("\n");
+            info.append("• Голос: ").append(googleService.getCurrentVoice().getDescription()).append("\n");
+            info.append("• Скорость: ").append(googleService.getCurrentSpeed()).append("x\n");
+            info.append("• Тон: ").append(googleService.getCurrentPitch()).append("\n");
+            info.append("• Громкость: ").append(googleService.getCurrentVolumeGainDb()).append(" дБ\n\n");
+
+            info.append("Доступные голоса:\n");
+            for (GoogleCloudTextToSpeechService.GoogleVoice voice :
+                    GoogleCloudTextToSpeechService.GoogleVoice.values()) {
+                info.append("• ").append(voice.getDescription()).append("\n");
+            }
+        } else if (textToSpeechService instanceof OpenAITextToSpeechService openaiService) {
+            info.append("OpenAI TTS:\n");
+            info.append("• Голос: ").append(openaiService.getCurrentVoice()).append("\n");
+            info.append("• Скорость: ").append(openaiService.getCurrentSpeed()).append("x\n");
+            info.append("• Модель: ").append(openaiService.getCurrentModel()).append("\n");
+        } else if (textToSpeechService instanceof LocalTextToSpeechService localService) {
+            info.append("Локальный TTS:\n");
+            info.append("• ОС: ").append(localService.getOperatingSystem()).append("\n");
+        }
+
+        showAlert("Информация о TTS", info.toString());
+    }
+
+    @FXML
+    private void onConfigureGoogleTTS() {
+        if (!(textToSpeechService instanceof GoogleCloudTextToSpeechService)) {
+            showAlert("Внимание", "Этот метод доступен только для Google Cloud TTS");
+            return;
+        }
+
+        String helpText = """
+            === Настройка Google Cloud TTS ===
+            
+            Способы аутентификации:
+            
+            1. Файл учетных данных (рекомендуется):
+               • Создайте Service Account в Google Cloud Console
+               • Скачайте ключ в формате JSON
+               • Сохраните как google-credentials.json в папке с приложением
+            
+            2. Переменная окружения:
+               • Установите GOOGLE_APPLICATION_CREDENTIALS
+               • Укажите путь к файлу учетных данных
+            
+            3. API ключ (ограниченный доступ):
+               • Получите API ключ в Google Cloud Console
+               • Добавьте в application.properties:
+                 google.cloud.api.key=ВАШ_КЛЮЧ
+            
+            Требуемые права:
+            • cloud-platform (полный доступ)
+            • cloud-platform.read-only (только чтение)
+            
+            Как включить API:
+            1. Откройте Google Cloud Console
+            2. Перейдите в "APIs & Services" > "Library"
+            3. Найдите "Cloud Text-to-Speech API"
+            4. Нажмите "Enable"
+            
+            Бесплатный лимит:
+            • 1 миллион символов в месяц
+            • WaveNet голоса: 1 млн символов бесплатно
+            • Стандартные голоса: 4 млн символов бесплатно
+            """;
+
+        showAlert("Настройка Google Cloud TTS", helpText);
     }
 
     private void processAnalysisResponse(ChatBotService.ChatResponse response) {
