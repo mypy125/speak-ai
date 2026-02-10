@@ -1,7 +1,6 @@
-package com.mygitgor.speech;
+package com.mygitgor.speech.STT;
 
 
-import org.intellij.lang.annotations.Language;
 import org.vosk.Recognizer;
 import org.vosk.Model;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -10,7 +9,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.sound.sampled.*;
-import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;

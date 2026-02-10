@@ -10,7 +10,8 @@ import com.mygitgor.model.User;
 import com.mygitgor.repository.DAO.ConversationDao;
 import com.mygitgor.repository.DAO.UserDao;
 import com.mygitgor.speech.*;
-import com.mygitgor.speech.tovoice.TextToSpeechService;
+import com.mygitgor.speech.STT.SpeechToTextService;
+import com.mygitgor.speech.TTS.TextToSpeechService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

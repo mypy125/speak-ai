@@ -1,9 +1,8 @@
-package com.mygitgor.speech.tovoice;
+package com.mygitgor.speech.TTS;
 
-import com.mygitgor.speech.tovoice.type.DemoTextToSpeechService;
-import com.mygitgor.speech.tovoice.type.GroqTextToSpeechService;
-import com.mygitgor.speech.tovoice.type.LocalTextToSpeechService;
-import com.mygitgor.speech.tovoice.type.OpenAITextToSpeechService;
+import com.mygitgor.speech.TTS.type.DemoTextToSpeechService;
+import com.mygitgor.speech.TTS.type.LocalTextToSpeechService;
+import com.mygitgor.speech.TTS.type.OpenAITextToSpeechService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,29 +38,18 @@ public class TextToSpeechFactory {
      * Создает TTS сервис для конкретного типа
      */
     public static TextToSpeechService createTtsService(TTSType type, Properties props) {
-        switch (type) {
-            case SMART:
-                return createSmartTtsService(props);
-
-            case OPENAI:
-                return createOpenAITtsService(props);
-
-            case GROQ:
-                return createGroqTtsService(props);
-
-            case LOCAL:
-                return createLocalTtsService(props);
-
-            case DEMO:
-                return createDemoTtsService(props);
-
-            case COMPOSITE:
-                return createCompositeTtsService(props);
-
-            default:
+        return switch (type) {
+            case SMART -> createSmartTtsService(props);
+            case OPENAI -> createOpenAITtsService(props);
+            case GROQ -> createGroqTtsService(props);
+            case LOCAL -> createLocalTtsService(props);
+            case DEMO -> createDemoTtsService(props);
+            case COMPOSITE -> createCompositeTtsService(props);
+            default -> {
                 logger.warn("Неизвестный тип TTS: {}, используем SMART", type);
-                return createSmartTtsService(props);
-        }
+                yield createSmartTtsService(props);
+            }
+        };
     }
 
     /**

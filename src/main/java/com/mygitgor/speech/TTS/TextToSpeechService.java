@@ -1,4 +1,4 @@
-package com.mygitgor.speech.tovoice;
+package com.mygitgor.speech.TTS;
 
 import java.util.Collections;
 import java.util.Map;

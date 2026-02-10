@@ -1,6 +1,6 @@
-package com.mygitgor.speech.tovoice.type;
+package com.mygitgor.speech.TTS.type;
 
-import com.mygitgor.speech.tovoice.TextToSpeechService;
+import com.mygitgor.speech.TTS.TextToSpeechService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
