@@ -106,16 +106,6 @@
                     <Label text="Действия:" GridPane.rowIndex="1" GridPane.columnIndex="0"
                            style="-fx-text-fill: #666666; -fx-font-weight: 600;"/>
                     <HBox spacing="10" GridPane.rowIndex="1" GridPane.columnIndex="1">
-                        <Button text="🔄 Переключить TTS"
-                                onAction="#onSwitchTTSMode"
-                                style="-fx-background-color: #3498db; -fx-text-fill: white;
-                                       -fx-background-radius: 20; -fx-padding: 6 12;"
-                                maxWidth="Infinity" HBox.hgrow="ALWAYS">
-                            <tooltip>
-                                <Tooltip text="Переключить между демо-режимом, OpenAI, Google Cloud и локальным TTS"/>
-                            </tooltip>
-                        </Button>
-
                         <Button text="🔊 Тест TTS"
                                 onAction="#onTestTTS"
                                 style="-fx-background-color: #2ecc71; -fx-text-fill: white;

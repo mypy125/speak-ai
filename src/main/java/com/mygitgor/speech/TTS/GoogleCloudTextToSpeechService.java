@@ -1,8 +1,7 @@
-package com.mygitgor.speech.TTS.type;
+package com.mygitgor.speech.TTS;
 
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.auth.oauth2.ServiceAccountCredentials;
-import com.mygitgor.speech.TTS.TextToSpeechService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.io.*;
