@@ -1,7 +1,8 @@
-package com.mygitgor.speech.TTS;
+package com.mygitgor.service;
 
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.auth.oauth2.ServiceAccountCredentials;
+import com.mygitgor.service.interfaces.ITTSService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.io.*;
@@ -20,7 +21,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-public class GoogleCloudTextToSpeechService implements TextToSpeechService {
+public class GoogleCloudTextToSpeechService implements ITTSService {
     private static final Logger logger = LoggerFactory.getLogger(GoogleCloudTextToSpeechService.class);
 
     public enum GoogleVoice {
@@ -82,6 +83,7 @@ public class GoogleCloudTextToSpeechService implements TextToSpeechService {
 
     // Константы
     private static final int MAX_TEXT_LENGTH = 5000;
+    private static final int SAFE_TEXT_LENGTH = 4800; // Оставляем запас 200 байт
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 30000;
     private static final String TTS_API_URL = "https://texttospeech.googleapis.com/v1/text:synthesize";
@@ -370,9 +372,10 @@ public class GoogleCloudTextToSpeechService implements TextToSpeechService {
     private byte[] callGoogleTTSAPI(String text, String voiceName,
                                     float speed, float pitch, float volumeGainDb) throws IOException {
         // Ограничиваем текст
-        if (text.length() > MAX_TEXT_LENGTH) {
-            logger.warn("Текст слишком длинный ({} символов), сокращаем", text.length());
-            text = text.substring(0, MAX_TEXT_LENGTH) + "...";
+        if (text.length() > SAFE_TEXT_LENGTH) {
+            logger.warn("Текст слишком длинный ({} символов), сокращаем до {} символов",
+                    text.length(), SAFE_TEXT_LENGTH);
+            text = text.substring(0, SAFE_TEXT_LENGTH) + "...";
         }
 
         String apiUrl = TTS_API_URL;
@@ -577,7 +580,6 @@ public class GoogleCloudTextToSpeechService implements TextToSpeechService {
         return serviceAvailable;
     }
 
-    @Override
     public Map<String, String> getAvailableVoices() {
         Map<String, String> voices = new HashMap<>();
         for (GoogleVoice voice : GoogleVoice.values()) {
@@ -649,8 +651,48 @@ public class GoogleCloudTextToSpeechService implements TextToSpeechService {
     private void speakInternal(String text, CompletableFuture<Void> future) {
         try {
             String cleanText = cleanTextForSpeech(text);
-            logger.info("Google Cloud TTS: Озвучка текста ({} символов), голос: {}, скорость: {}, язык: {}",
-                    cleanText.length(), currentVoice.getDescription(), currentSpeed, currentLanguage);
+
+            // ========== ПРОВЕРКА ДЛИНЫ И ОБРЕЗКА ТЕКСТА ==========
+            // Проверяем размер текста в байтах (UTF-8)
+            byte[] textBytes = cleanText.getBytes(StandardCharsets.UTF_8);
+
+            if (textBytes.length > SAFE_TEXT_LENGTH) {
+                logger.warn("⚠️ Текст слишком длинный ({} байт). Лимит: {} байт. Обрезаем...",
+                        textBytes.length, SAFE_TEXT_LENGTH);
+
+                // Обрезаем до безопасного размера
+                String trimmed = new String(textBytes, 0, SAFE_TEXT_LENGTH, StandardCharsets.UTF_8);
+
+                // Находим последнее полное предложение для более аккуратной обрезки
+                int lastPeriod = trimmed.lastIndexOf('.');
+                int lastQuestion = trimmed.lastIndexOf('?');
+                int lastExclamation = trimmed.lastIndexOf('!');
+                int lastSentence = Math.max(Math.max(lastPeriod, lastQuestion), lastExclamation);
+
+                if (lastSentence > trimmed.length() / 2) {
+                    // Обрезаем по последнему предложению
+                    cleanText = trimmed.substring(0, lastSentence + 1) +
+                            "\n\n[Текст сокращен из-за ограничения длины Google TTS]";
+                } else {
+                    // Если нет хорошего предложения, обрезаем по последнему слову
+                    int lastSpace = trimmed.lastIndexOf(' ');
+                    if (lastSpace > trimmed.length() / 2) {
+                        cleanText = trimmed.substring(0, lastSpace) +
+                                "... [Текст сокращен из-за ограничения длины Google TTS]";
+                    } else {
+                        // Простая обрезка
+                        cleanText = trimmed + "... [Текст сокращен]";
+                    }
+                }
+
+                logger.info("Текст обрезан с {} до {} байт, {} символов",
+                        textBytes.length, cleanText.getBytes(StandardCharsets.UTF_8).length, cleanText.length());
+            }
+            // ========== КОНЕЦ ПРОВЕРКИ ДЛИНЫ ==========
+
+            logger.info("Google Cloud TTS: Озвучка текста ({} символов, {} байт), голос: {}, скорость: {}, язык: {}",
+                    cleanText.length(), cleanText.getBytes(StandardCharsets.UTF_8).length,
+                    currentVoice.getDescription(), currentSpeed, currentLanguage);
 
             // Генерация речи
             byte[] audioData = callGoogleTTSAPI(cleanText, currentVoice.getVoiceName(),
@@ -724,7 +766,6 @@ public class GoogleCloudTextToSpeechService implements TextToSpeechService {
         }
     }
 
-    @Override
     public void speak(String text) {
         if (closed) {
             throw new IllegalStateException("Google Cloud TTS Service закрыт");
@@ -781,16 +822,41 @@ public class GoogleCloudTextToSpeechService implements TextToSpeechService {
     private String cleanTextForSpeech(String text) {
         if (text == null) return "";
 
-        return text
+        String cleaned = text
+                // Удаляем markdown и форматирование
                 .replaceAll("#+\\s*", "")
                 .replaceAll("\\*\\*", "")
                 .replaceAll("\\*", "")
                 .replaceAll("`", "")
+                .replaceAll("_", "")
                 .replaceAll("\\[.*?\\]\\(.*?\\)", "")
                 .replaceAll("<[^>]*>", "")
+
+                // Удаляем эмодзи и спецсимволы
                 .replaceAll("[🤖🎤📝📊🗣️✅⚠️🔴🔊▶️🏆🎉👍💪📚🔧❤️✨🌟🔥💡🎯📅❌ℹ️]", "")
+
+                // Удаляем целые секции с рекомендациями для экономии места
+                .replaceAll("(?s)## 🎯 ПЕРСОНАЛИЗИРОВАННЫЕ РЕКОМЕНДАЦИИ:.*?(?=##|$)", "")
+                .replaceAll("(?s)## 📅 НЕДЕЛЬНЫЙ ПЛАН ОБУЧЕНИЯ:.*?(?=##|$)", "")
+                .replaceAll("(?s)## 🎯 Упражнение для практики:.*?(?=##|$)", "")
+                .replaceAll("ℹ️ \\*.*?\\*", "")
+
+                // Удаляем повторяющиеся пробелы и переносы
                 .replaceAll("\\s+", " ")
                 .replaceAll("\\n{3,}", "\n\n")
                 .trim();
+
+        // Если текст все еще слишком длинный, берем только первую часть
+        if (cleaned.length() > 4000) {
+            int firstSentence = cleaned.indexOf('.');
+            if (firstSentence > 200) {
+                cleaned = cleaned.substring(0, firstSentence + 1) +
+                        " Далее следует подробный ответ...";
+            } else {
+                cleaned = cleaned.substring(0, 2000) + "... [продолжение следует]";
+            }
+        }
+
+        return cleaned;
     }
 }

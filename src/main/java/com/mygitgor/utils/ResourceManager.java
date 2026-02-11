@@ -42,6 +42,24 @@ public class ResourceManager implements AutoCloseable {
         }
     }
 
+    public void registerIfCloseable(Object resource) {
+        if (resource != null && resource instanceof AutoCloseable && !closed) {
+            resources.add((AutoCloseable) resource);
+            logger.debug("Ресурс зарегистрирован (if closeable): {}", resource.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * Регистрирует ресурс с указанием имени
+     */
+    public <T extends AutoCloseable> T register(T resource, String name) {
+        if (resource != null && !closed) {
+            resources.add(resource);
+            logger.debug("Ресурс '{}' зарегистрирован", name);
+        }
+        return resource;
+    }
+
     public void registerExecutor(ExecutorService executor) {
         if (executor == null) return;
 

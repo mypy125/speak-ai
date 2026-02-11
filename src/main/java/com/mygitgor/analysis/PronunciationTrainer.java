@@ -1,52 +1,308 @@
 package com.mygitgor.analysis;
 
 import com.mygitgor.model.EnhancedSpeechAnalysis;
-import com.mygitgor.speech.AudioAnalyzer;
+import com.mygitgor.service.interfaces.IRecommendationService;
+import com.mygitgor.service.AudioAnalyzer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
-public class PronunciationTrainer {
+public class PronunciationTrainer implements IRecommendationService, AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(PronunciationTrainer.class);
 
     private final AudioAnalyzer audioAnalyzer;
     private final Map<String, String> phonemeExamples;
+    private volatile boolean closed = false;
 
     public PronunciationTrainer() {
         this.audioAnalyzer = new AudioAnalyzer();
         this.phonemeExamples = createPhonemeExamples();
+        logger.info("Инициализирован тренажер произношения");
     }
 
-    /**
-     * Создание примеров произношения для каждого звука
-     */
+    // ========================================
+    // IRecommendationService Implementation
+    // ========================================
+
+    @Override
+    public List<RecommendationEngine.PersonalizedRecommendation> generateRecommendations(EnhancedSpeechAnalysis analysis) {
+        logger.info("Генерация персонализированных рекомендаций на основе анализа");
+
+        List<RecommendationEngine.PersonalizedRecommendation> recommendations = new ArrayList<>();
+
+        if (analysis == null) {
+            return recommendations;
+        }
+
+        // Рекомендации на основе слабых фонем
+        if (analysis.getPhonemeScores() != null && !analysis.getPhonemeScores().isEmpty()) {
+            List<String> weakPhonemes = analysis.getPhonemeScores().entrySet().stream()
+                    .filter(e -> e.getValue() < 70)
+                    .sorted(Map.Entry.comparingByValue())
+                    .limit(3)
+                    .map(Map.Entry::getKey)
+                    .collect(Collectors.toList());
+
+            if (!weakPhonemes.isEmpty()) {
+                recommendations.add(createPhonemeRecommendation(weakPhonemes, analysis));
+            }
+        }
+
+        // Рекомендации на основе произношения
+        if (analysis.getPronunciationScore() < 70) {
+            recommendations.add(createPronunciationRecommendation(analysis));
+        }
+
+        // Рекомендации на основе беглости
+        if (analysis.getFluencyScore() < 65) {
+            recommendations.add(createFluencyRecommendation(analysis));
+        }
+
+        // Рекомендации на основе интонации
+        if (analysis.getIntonationScore() < 70) {
+            recommendations.add(createIntonationRecommendation(analysis));
+        }
+
+        // Рекомендации на основе громкости
+        if (analysis.getVolumeScore() < 65) {
+            recommendations.add(createVolumeRecommendation(analysis));
+        }
+
+        logger.info("Сгенерировано {} персонализированных рекомендаций", recommendations.size());
+        return recommendations;
+    }
+
+    @Override
+    public RecommendationEngine.WeeklyLearningPlan generateWeeklyPlan(EnhancedSpeechAnalysis analysis) {
+        logger.info("Генерация недельного плана обучения");
+
+        RecommendationEngine.WeeklyLearningPlan plan = new RecommendationEngine.WeeklyLearningPlan();
+
+        // Определяем целевой уровень на основе текущей оценки
+        double overallScore = analysis.getOverallScore();
+        String targetLevel;
+        float expectedImprovement;
+        String weeklyGoal;
+
+        if (overallScore < 60) {
+            targetLevel = "A2 (Элементарный)";
+            expectedImprovement = 15.0f;
+            weeklyGoal = "Освоить базовые звуки и простые фразы";
+        } else if (overallScore < 75) {
+            targetLevel = "B1 (Средний)";
+            expectedImprovement = 12.0f;
+            weeklyGoal = "Улучшить произношение сложных звуков и беглость речи";
+        } else if (overallScore < 85) {
+            targetLevel = "B2 (Выше среднего)";
+            expectedImprovement = 8.0f;
+            weeklyGoal = "Работа над интонацией и естественностью речи";
+        } else {
+            targetLevel = "C1 (Продвинутый)";
+            expectedImprovement = 5.0f;
+            weeklyGoal = "Совершенствование акцента и сложных фонетических конструкций";
+        }
+
+        plan.setTargetLevel(targetLevel);
+        plan.setExpectedImprovement(expectedImprovement);
+        plan.setWeeklyGoal(weeklyGoal);
+
+        // Создаем расписание на неделю
+        List<RecommendationEngine.DailySchedule> schedule = createWeeklySchedule(analysis);
+        plan.setSchedule(schedule);
+
+        logger.info("Недельный план создан: цель='{}', улучшение={}%", weeklyGoal, expectedImprovement);
+
+        return plan;
+    }
+
+    private RecommendationEngine.PersonalizedRecommendation createPhonemeRecommendation(
+            List<String> weakPhonemes, EnhancedSpeechAnalysis analysis) {
+
+        StringBuilder desc = new StringBuilder("Сосредоточьтесь на этих звуках: ");
+        for (int i = 0; i < weakPhonemes.size(); i++) {
+            if (i > 0) desc.append(", ");
+            desc.append("/").append(weakPhonemes.get(i)).append("/");
+        }
+
+        List<String> exercises = new ArrayList<>();
+        for (String phoneme : weakPhonemes) {
+            PronunciationExercise exercise = createExercise(phoneme,
+                    analysis.getPronunciationScore() < 60 ? "beginner" : "intermediate");
+            if (exercise.getExamples() != null && !exercise.getExamples().isEmpty()) {
+                exercises.addAll(exercise.getExamples().stream()
+                        .limit(2)
+                        .collect(Collectors.toList()));
+            }
+        }
+
+        return new RecommendationEngine.PersonalizedRecommendation(
+                "PHON_" + System.currentTimeMillis(),
+                "🔊 Тренировка проблемных звуков",
+                desc.toString(),
+                "Высокий",
+                exercises,
+                25.0f
+        );
+    }
+
+    private RecommendationEngine.PersonalizedRecommendation createPronunciationRecommendation(
+            EnhancedSpeechAnalysis analysis) {
+
+        List<String> exercises = new ArrayList<>();
+        exercises.add("Повторяйте минимальные пары: ship/sheep, live/leave, bit/beat");
+        exercises.add("Практикуйте звук 'th' в словах: think, this, that, through");
+        exercises.add("Записывайте себя и сравнивайте с произношением носителей");
+        exercises.add("Используйте технику 'shadowing' - повторяйте за диктором");
+
+        return new RecommendationEngine.PersonalizedRecommendation(
+                "PRON_" + System.currentTimeMillis(),
+                "🎯 Улучшение общего произношения",
+                "Ваше общее произношение нуждается в улучшении. Сосредоточьтесь на базовых звуках и их различении.",
+                "Высокий",
+                exercises,
+                20.0f
+        );
+    }
+
+    private RecommendationEngine.PersonalizedRecommendation createFluencyRecommendation(
+            EnhancedSpeechAnalysis analysis) {
+
+        List<String> exercises = new ArrayList<>();
+        exercises.add("Техника 'shadowing': повторяйте за диктором без пауз");
+        exercises.add("Читайте вслух, постепенно увеличивая темп");
+        exercises.add("Говорите на таймер: 1 минута без остановки на любую тему");
+        exercises.add("Практикуйте скороговорки для улучшения артикуляции");
+
+        return new RecommendationEngine.PersonalizedRecommendation(
+                "FLU_" + System.currentTimeMillis(),
+                "⚡ Развитие беглости речи",
+                "Работайте над скоростью и плавностью речи. Уменьшите количество и длительность пауз.",
+                "Средний",
+                exercises,
+                18.0f
+        );
+    }
+
+    private RecommendationEngine.PersonalizedRecommendation createIntonationRecommendation(
+            EnhancedSpeechAnalysis analysis) {
+
+        List<String> exercises = new ArrayList<>();
+        exercises.add("Практикуйте повышение тона в вопросах");
+        exercises.add("Выделяйте ключевые слова в предложении голосом");
+        exercises.add("Слушайте и имитируйте интонацию носителей");
+        exercises.add("Читайте диалоги с разными эмоциями");
+
+        return new RecommendationEngine.PersonalizedRecommendation(
+                "INT_" + System.currentTimeMillis(),
+                "🎵 Улучшение интонации",
+                "Работайте над интонационными паттернами английского языка.",
+                "Средний",
+                exercises,
+                15.0f
+        );
+    }
+
+    private RecommendationEngine.PersonalizedRecommendation createVolumeRecommendation(
+            EnhancedSpeechAnalysis analysis) {
+
+        List<String> exercises = new ArrayList<>();
+        exercises.add("Говорите с разным расстоянием до микрофона");
+        exercises.add("Практикуйте изменение громкости в пределах одного предложения");
+        exercises.add("Записывайте себя и анализируйте уровень громкости");
+
+        return new RecommendationEngine.PersonalizedRecommendation(
+                "VOL_" + System.currentTimeMillis(),
+                "🔊 Контроль громкости",
+                "Работайте над стабильностью и адекватностью громкости речи.",
+                "Низкий",
+                exercises,
+                10.0f
+        );
+    }
+
+    private List<RecommendationEngine.DailySchedule> createWeeklySchedule(EnhancedSpeechAnalysis analysis) {
+        List<RecommendationEngine.DailySchedule> schedule = new ArrayList<>();
+
+        String[] days = {"Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"};
+        String[] focuses = {
+                "Фонемы /θ/ и /ð/ (межзубные звуки)",
+                "Фонемы /r/ и /w/ (сонорные согласные)",
+                "Гласные /iː/ и /ɪ/ (долгий и краткий)",
+                "Дифтонги /eɪ/, /aɪ/, /ɔɪ/",
+                "Интонация в вопросах и утверждениях",
+                "Беглость речи и скороговорки",
+                "Повторение и закрепление"
+        };
+
+        int baseDuration = analysis.getOverallScore() < 70 ? 30 : 20;
+
+        for (int i = 0; i < days.length; i++) {
+            RecommendationEngine.DailySchedule day = new RecommendationEngine.DailySchedule();
+            day.setDay(days[i]);
+            day.setFocus(focuses[i % focuses.length]);
+            day.setDurationMinutes(baseDuration + (i % 3) * 5);
+
+            List<String> exercises = new ArrayList<>();
+            exercises.add("Разминка: повторение звуков - 5 минут");
+            exercises.add("Основная практика: " + focuses[i % focuses.length] + " - 15 минут");
+            exercises.add("Запись и анализ своей речи - 5 минут");
+            day.setExercises(exercises);
+
+            List<String> tips = new ArrayList<>();
+            tips.add(getDailyTip(i));
+            day.setTips(tips);
+
+            schedule.add(day);
+        }
+
+        return schedule;
+    }
+
+    private String getDailyTip(int day) {
+        String[] tips = {
+                "Не забывайте про межзубное положение языка для звука /θ/",
+                "Английский /r/ произносится без вибрации кончика языка",
+                "Долгие гласные должны быть действительно долгими",
+                "Дифтонги - это скольжение от одного звука к другому",
+                "В вопросах голос повышается к концу предложения",
+                "Скороговорки помогают улучшить дикцию",
+                "Регулярность важнее длительности занятий"
+        };
+        return tips[day % tips.length];
+    }
+
+    // ========================================
+    // Existing PronunciationTrainer Methods
+    // ========================================
+
     private Map<String, String> createPhonemeExamples() {
         Map<String, String> examples = new HashMap<>();
 
         // Гласные звуки английского языка
-        examples.put("iː", "sheep, see, eat"); // как в "see"
-        examples.put("ɪ", "ship, sit, pin"); // как в "sit"
-        examples.put("e", "bed, head, said"); // как в "bed"
-        examples.put("æ", "cat, bat, apple"); // как в "cat"
-        examples.put("ɑː", "car, park, father"); // как в "car"
-        examples.put("ɒ", "hot, rock, watch"); // как в "hot"
-        examples.put("ɔː", "door, more, law"); // как в "door"
-        examples.put("ʊ", "book, put, could"); // как в "book"
-        examples.put("uː", "blue, food, too"); // как в "blue"
-        examples.put("ʌ", "cup, luck, up"); // как в "cup"
-        examples.put("ɜː", "bird, learn, turn"); // как в "bird"
-        examples.put("ə", "about, banana, supply"); // schwa
+        examples.put("iː", "sheep, see, eat");
+        examples.put("ɪ", "ship, sit, pin");
+        examples.put("e", "bed, head, said");
+        examples.put("æ", "cat, bat, apple");
+        examples.put("ɑː", "car, park, father");
+        examples.put("ɒ", "hot, rock, watch");
+        examples.put("ɔː", "door, more, law");
+        examples.put("ʊ", "book, put, could");
+        examples.put("uː", "blue, food, too");
+        examples.put("ʌ", "cup, luck, up");
+        examples.put("ɜː", "bird, learn, turn");
+        examples.put("ə", "about, banana, supply");
 
         // Дифтонги
-        examples.put("eɪ", "day, make, rain"); // как в "day"
-        examples.put("aɪ", "my, time, eye"); // как в "my"
-        examples.put("ɔɪ", "boy, join, toy"); // как в "boy"
-        examples.put("aʊ", "now, house, out"); // как в "now"
-        examples.put("oʊ", "go, home, show"); // как в "go"
-        examples.put("ɪə", "here, near, ear"); // как в "here"
-        examples.put("eə", "hair, care, there"); // как в "hair"
-        examples.put("ʊə", "tour, sure, pure"); // как в "tour"
+        examples.put("eɪ", "day, make, rain");
+        examples.put("aɪ", "my, time, eye");
+        examples.put("ɔɪ", "boy, join, toy");
+        examples.put("aʊ", "now, house, out");
+        examples.put("oʊ", "go, home, show");
+        examples.put("ɪə", "here, near, ear");
+        examples.put("eə", "hair, care, there");
+        examples.put("ʊə", "tour, sure, pure");
 
         // Согласные
         examples.put("p", "pen, stop, apple");
@@ -57,8 +313,8 @@ public class PronunciationTrainer {
         examples.put("g", "go, get, big");
         examples.put("f", "fish, off, phone");
         examples.put("v", "voice, have, very");
-        examples.put("θ", "think, both, thick"); // voiceless th
-        examples.put("ð", "this, mother, that"); // voiced th
+        examples.put("θ", "think, both, thick");
+        examples.put("ð", "this, mother, that");
         examples.put("s", "see, miss, say");
         examples.put("z", "zoo, has, zero");
         examples.put("ʃ", "she, wish, sure");
@@ -89,7 +345,7 @@ public class PronunciationTrainer {
         exercise.setPracticeWords(generatePracticeWords(phoneme, difficulty));
         exercise.setTips(generateTips(phoneme));
 
-        logger.info("Создано упражнение для звука: {}", phoneme);
+        logger.debug("Создано упражнение для звука: {}", phoneme);
         return exercise;
     }
 
@@ -101,7 +357,6 @@ public class PronunciationTrainer {
         result.setTargetPhoneme(targetPhoneme);
 
         try {
-            // Анализ аудио
             EnhancedSpeechAnalysis analysis = (EnhancedSpeechAnalysis) audioAnalyzer.analyzeAudio(
                     audioFilePath,
                     "Practice pronunciation of " + targetPhoneme
@@ -109,15 +364,13 @@ public class PronunciationTrainer {
 
             result.setAnalysis(analysis);
 
-            // Специфичная проверка для звука
             double phonemeScore = evaluatePhoneme(targetPhoneme, analysis);
             result.setScore(phonemeScore);
 
-            // Генерация обратной связи
             result.setFeedback(generatePhonemeFeedback(targetPhoneme, phonemeScore, analysis));
 
-            logger.debug("Проверка произношения звука {}: оценка {}",
-                    targetPhoneme, String.format("%.1f", phonemeScore));
+            logger.debug("Проверка произношения звука {}: оценка {:.1f}",
+                    targetPhoneme, phonemeScore);
 
         } catch (Exception e) {
             logger.error("Ошибка при проверке произношения", e);
@@ -128,321 +381,166 @@ public class PronunciationTrainer {
         return result;
     }
 
-    /**
-     * Оценка произношения конкретного звука
-     */
     private double evaluatePhoneme(String phoneme, EnhancedSpeechAnalysis analysis) {
-        // Эмуляция оценки конкретного звука
         double baseScore = analysis.getPronunciationScore();
 
-        // Корректировка на основе типа звука
         switch (phoneme) {
-            case "θ": // th как в "think"
-            case "ð": // th как в "this"
-                // Русскоязычные часто заменяют на "s" или "z"
+            case "θ": case "ð":
                 return baseScore * 0.8;
-
-            case "r": // Английский "r"
-                // Отличается от русского
+            case "r":
                 return baseScore * 0.85;
-
-            case "w": // Английский "w"
-            case "v": // Отличие от русского "в"
+            case "w": case "v":
                 return baseScore * 0.9;
-
-            case "æ": // как в "cat"
-            case "ʌ": // как в "cup"
-                // Гласные, которых нет в русском
+            case "æ": case "ʌ":
                 return baseScore * 0.75;
-
             default:
                 return baseScore;
         }
     }
 
-    /**
-     * Генерация инструкций для упражнения
-     */
     private String generateInstructions(String phoneme, String difficulty) {
         StringBuilder instructions = new StringBuilder();
         instructions.append("УПРАЖНЕНИЕ: Произношение звука /").append(phoneme).append("/\n\n");
-
         instructions.append("ИНСТРУКЦИИ:\n");
         instructions.append("1. Прослушайте пример произношения\n");
         instructions.append("2. Повторите слова, обращая внимание на целевой звук\n");
         instructions.append("3. Запишите свою речь\n");
         instructions.append("4. Получите обратную связь и рекомендации\n\n");
-
         instructions.append("КАК ПРОИЗНОСИТСЯ:\n");
         instructions.append(getPhonemeDescription(phoneme));
 
         return instructions.toString();
     }
 
-    /**
-     * Генерация примеров для практики
-     */
     private List<String> generateExamples(String phoneme, String difficulty) {
         List<String> examples = new ArrayList<>();
         String exampleString = phonemeExamples.get(phoneme);
 
         if (exampleString != null) {
             String[] words = exampleString.split(", ");
-
-            for (String word : words) {
-                examples.add(word);
-
-                // Добавляем больше примеров для сложного уровня
-                if ("advanced".equals(difficulty)) {
-                    examples.add(word + " in sentence");
-                }
-            }
+            examples.addAll(Arrays.asList(words));
         }
 
-        // Добавляем дополнительные примеры
         examples.add("Repeat after me: " + phoneme);
-        examples.add("Practice slowly: " + phoneme + " - " + phoneme + " - " + phoneme);
-
         return examples;
     }
 
-    /**
-     * Генерация слов для практики
-     */
     private List<String> generatePracticeWords(String phoneme, String difficulty) {
         List<String> words = new ArrayList<>();
 
-        // Базовые слова для каждого звука
         switch (phoneme) {
-            case "θ": // voiceless th
-                words.add("think");
-                words.add("thought");
-                words.add("thank");
-                words.add("thing");
+            case "θ":
+                words.add("think"); words.add("thought"); words.add("thank");
                 if (!"beginner".equals(difficulty)) {
-                    words.add("throughout");
-                    words.add("thorough");
+                    words.add("throughout"); words.add("thorough");
                 }
                 break;
-
-            case "ð": // voiced th
-                words.add("this");
-                words.add("that");
-                words.add("there");
-                words.add("then");
+            case "ð":
+                words.add("this"); words.add("that"); words.add("there");
                 if (!"beginner".equals(difficulty)) {
-                    words.add("therefore");
-                    words.add("nevertheless");
+                    words.add("therefore"); words.add("nevertheless");
                 }
                 break;
-
-            case "r": // English r
-                words.add("red");
-                words.add("right");
-                words.add("rain");
-                words.add("road");
+            case "r":
+                words.add("red"); words.add("right"); words.add("rain");
                 if (!"beginner".equals(difficulty)) {
-                    words.add("rural");
-                    words.add("repository");
+                    words.add("rural"); words.add("repository");
                 }
                 break;
-
-            case "æ": // cat vowel
-                words.add("cat");
-                words.add("bat");
-                words.add("hat");
-                words.add("mat");
+            case "æ":
+                words.add("cat"); words.add("bat"); words.add("hat");
                 if (!"beginner".equals(difficulty)) {
-                    words.add("backpack");
-                    words.add("abstract");
+                    words.add("backpack"); words.add("abstract");
                 }
                 break;
-
             default:
-                // Общие слова для других звуков
-                words.add("practice");
-                words.add("pronunciation");
-                words.add("speak");
-                words.add("clear");
+                words.add("practice"); words.add("pronunciation");
                 break;
         }
 
         return words;
     }
 
-    /**
-     * Генерация советов по произношению
-     */
     private List<String> generateTips(String phoneme) {
         List<String> tips = new ArrayList<>();
 
         switch (phoneme) {
-            case "θ": // voiceless th
+            case "θ":
                 tips.add("Прижмите кончик языка к верхним зубам");
                 tips.add("Выдыхайте воздух через небольшую щель");
                 tips.add("Не заменяйте звук на русский 'с'");
                 break;
-
-            case "ð": // voiced th
+            case "ð":
                 tips.add("Положение языка как для /θ/, но с голосом");
                 tips.add("Ощутите вибрацию в горле");
-                tips.add("Практикуйте в словах 'this', 'that', 'there'");
                 break;
-
-            case "r": // English r
+            case "r":
                 tips.add("Кончик языка не касается нёба");
                 tips.add("Язык оттянут назад");
-                tips.add("Губы немного округлены");
                 break;
-
-            case "æ": // cat vowel
+            case "æ":
                 tips.add("Рот открыт шире, чем для русского 'э'");
-                tips.add("Язык лежит плоско");
                 tips.add("Звук короткий и открытый");
                 break;
-
-            case "ɪ": // sit vowel
+            case "ɪ":
                 tips.add("Звук короче и закрытее, чем /iː/");
-                tips.add("Язык чуть ниже, чем для русского 'и'");
-                tips.add("Не растягивайте звук");
                 break;
-
             default:
                 tips.add("Слушайте и повторяйте за носителями");
-                tips.add("Записывайте себя и сравнивайте");
-                tips.add("Практикуйтесь регулярно");
                 break;
         }
 
         return tips;
     }
 
-    /**
-     * Получение описания звука
-     */
     private String getPhonemeDescription(String phoneme) {
         Map<String, String> descriptions = new HashMap<>();
-
-        descriptions.put("θ", "Безголосый межзубный звук (как в 'think'). Кончик языка между зубами.");
-        descriptions.put("ð", "Голосовой межзубный звук (как в 'this'). Вибрация в горле.");
-        descriptions.put("r", "Английский 'r'. Кончик языка не вибрирует, оттянут назад.");
-        descriptions.put("æ", "Открытый гласный (как в 'cat'). Рот широко открыт.");
-        descriptions.put("ɪ", "Короткий гласный (как в 'sit'). Звук между 'и' и 'ы'.");
-        descriptions.put("iː", "Долгий гласный (как в 'see'). Углы губ растянуты.");
-        descriptions.put("ʃ", "Шипящий звук (как в 'she'). Язык поднят к нёбу.");
-        descriptions.put("ʒ", "Звонкий вариант /ʃ/ (как в 'pleasure').");
-        descriptions.put("ŋ", "Носовой звук (как в 'sing'). Воздух проходит через нос.");
-        descriptions.put("w", "Губно-губной звук (как в 'we'). Губы округлены.");
-        descriptions.put("v", "Губно-зубной звук (как в 'very'). Нижняя губа к верхним зубам.");
-
+        descriptions.put("θ", "Безголосый межзубный звук. Кончик языка между зубами.");
+        descriptions.put("ð", "Голосовой межзубный звук. Вибрация в горле.");
+        descriptions.put("r", "Английский 'r'. Кончик языка не вибрирует.");
+        descriptions.put("æ", "Открытый гласный. Рот широко открыт.");
         return descriptions.getOrDefault(phoneme,
-                "Международный фонетический символ: /" + phoneme + "/. " +
-                        "Практикуйте, слушая примеры произношения.");
+                "Международный фонетический символ: /" + phoneme + "/");
     }
 
-    /**
-     * Генерация обратной связи по произношению звука
-     */
     private String generatePhonemeFeedback(String phoneme, double score, EnhancedSpeechAnalysis analysis) {
         StringBuilder feedback = new StringBuilder();
-
         feedback.append("РЕЗУЛЬТАТ ПРОВЕРКИ ПРОИЗНОШЕНИЯ /").append(phoneme).append("/\n\n");
         feedback.append("Ваша оценка: ").append(String.format("%.1f", score)).append("/100\n\n");
 
         if (score >= 90) {
-            feedback.append("🌟 ОТЛИЧНО! Ваше произношение звука /").append(phoneme)
-                    .append("/ практически идеальное!\n");
+            feedback.append("🌟 ОТЛИЧНО! Произношение практически идеальное!\n");
         } else if (score >= 75) {
-            feedback.append("✅ ХОРОШО! Звук распознается правильно, есть небольшие нюансы.\n");
+            feedback.append("✅ ХОРОШО! Звук распознается правильно.\n");
         } else if (score >= 60) {
-            feedback.append("⚠️ НЕПЛОХО, но нужна практика. Звук близок к правильному.\n");
+            feedback.append("⚠️ НЕПЛОХО, но нужна практика.\n");
         } else {
-            feedback.append("📝 НУЖНО УЛУЧШИТЬ. Обратите внимание на технику произношения.\n");
-        }
-
-        feedback.append("\nАНАЛИЗ ВАШЕЙ РЕЧИ:\n");
-        feedback.append("• Общая оценка произношения: ").append(String.format("%.1f", analysis.getPronunciationScore())).append("/100\n");
-        feedback.append("• Беглость: ").append(String.format("%.1f", analysis.getFluencyScore())).append("/100\n");
-        feedback.append("• Интонация: ").append(String.format("%.1f", analysis.getIntonationScore())).append("/100\n");
-        feedback.append("• Громкость: ").append(String.format("%.1f", analysis.getVolumeScore())).append("/100\n");
-
-        feedback.append("\nСОВЕТЫ ДЛЯ ЗВУКА /").append(phoneme).append("/:\n");
-        for (String tip : generateTips(phoneme)) {
-            feedback.append("• ").append(tip).append("\n");
-        }
-
-        feedback.append("\nСЛЕДУЮЩИЙ ШАГ:\n");
-        if (score < 70) {
-            feedback.append("Повторите упражнение 3-5 раз, сосредоточившись на технике.\n");
-        } else {
-            feedback.append("Перейдите к более сложным словам и фразам с этим звуком.\n");
+            feedback.append("📝 НУЖНО УЛУЧШИТЬ.\n");
         }
 
         return feedback.toString();
     }
 
-    /**
-     * Создание плана тренировок
-     */
-    public TrainingPlan createTrainingPlan(String[] weakPhonemes, String level) {
-        TrainingPlan plan = new TrainingPlan();
-        plan.setLevel(level);
-        plan.setDurationWeeks(4);
+    @Override
+    public void close() {
+        if (closed) return;
 
-        List<WeekSchedule> schedule = new ArrayList<>();
+        logger.info("Закрытие PronunciationTrainer...");
+        closed = true;
 
-        for (int week = 1; week <= 4; week++) {
-            WeekSchedule weekSchedule = new WeekSchedule();
-            weekSchedule.setWeekNumber(week);
-            weekSchedule.setFocusPhonemes(getWeeklyFocus(weakPhonemes, week));
-            weekSchedule.setDailyExercises(createDailyExercises(weekSchedule.getFocusPhonemes(), level));
-            weekSchedule.setGoals(getWeeklyGoals(week));
-
-            schedule.add(weekSchedule);
+        if (audioAnalyzer != null && !audioAnalyzer.isClosed()) {
+            try {
+                audioAnalyzer.close();
+            } catch (Exception e) {
+                logger.warn("Ошибка при закрытии AudioAnalyzer", e);
+            }
         }
 
-        plan.setSchedule(schedule);
-        plan.setFinalGoal("Улучшить произношение " + weakPhonemes.length + " проблемных звуков");
-
-        logger.info("Создан план тренировок на 4 недели");
-        return plan;
+        logger.info("PronunciationTrainer закрыт");
     }
 
-    private String[] getWeeklyFocus(String[] weakPhonemes, int week) {
-        if (weakPhonemes.length <= 3) {
-            return weakPhonemes; // Все звуки каждый неделю
-        }
-
-        // Разделяем звуки по неделям
-        int start = (week - 1) * 2;
-        int end = Math.min(start + 2, weakPhonemes.length);
-
-        if (start >= weakPhonemes.length) {
-            start = 0;
-            end = Math.min(2, weakPhonemes.length);
-        }
-
-        return Arrays.copyOfRange(weakPhonemes, start, end);
-    }
-
-    private List<PronunciationExercise> createDailyExercises(String[] phonemes, String level) {
-        List<PronunciationExercise> exercises = new ArrayList<>();
-
-        for (String phoneme : phonemes) {
-            exercises.add(createExercise(phoneme, level));
-        }
-
-        return exercises;
-    }
-
-    private String getWeeklyGoals(int week) {
-        switch (week) {
-            case 1: return "Освоить правильную артикуляцию звуков";
-            case 2: return "Улучшить четкость произношения в словах";
-            case 3: return "Автоматизировать звуки в быстрой речи";
-            case 4: return "Закрепить результат и провести итоговую проверку";
-            default: return "Улучшить общее произношение";
-        }
+    public boolean isClosed() {
+        return closed;
     }
 
     // ====================== ВСПОМОГАТЕЛЬНЫЕ КЛАССЫ ======================
@@ -461,26 +559,18 @@ public class PronunciationTrainer {
         // Getters and Setters
         public String getTargetPhoneme() { return targetPhoneme; }
         public void setTargetPhoneme(String targetPhoneme) { this.targetPhoneme = targetPhoneme; }
-
         public String getDifficulty() { return difficulty; }
         public void setDifficulty(String difficulty) { this.difficulty = difficulty; }
-
         public String getInstructions() { return instructions; }
         public void setInstructions(String instructions) { this.instructions = instructions; }
-
         public List<String> getExamples() { return examples; }
         public void setExamples(List<String> examples) { this.examples = examples; }
-
         public List<String> getPracticeWords() { return practiceWords; }
         public void setPracticeWords(List<String> practiceWords) { this.practiceWords = practiceWords; }
-
         public List<String> getTips() { return tips; }
         public void setTips(List<String> tips) { this.tips = tips; }
     }
 
-    /**
-     * Результат проверки произношения
-     */
     public static class PronunciationResult {
         private String targetPhoneme;
         private double score;
@@ -490,60 +580,11 @@ public class PronunciationTrainer {
         // Getters and Setters
         public String getTargetPhoneme() { return targetPhoneme; }
         public void setTargetPhoneme(String targetPhoneme) { this.targetPhoneme = targetPhoneme; }
-
         public double getScore() { return score; }
         public void setScore(double score) { this.score = score; }
-
         public String getFeedback() { return feedback; }
         public void setFeedback(String feedback) { this.feedback = feedback; }
-
         public EnhancedSpeechAnalysis getAnalysis() { return analysis; }
         public void setAnalysis(EnhancedSpeechAnalysis analysis) { this.analysis = analysis; }
-    }
-
-    /**
-     * План тренировок
-     */
-    public static class TrainingPlan {
-        private String level;
-        private int durationWeeks;
-        private List<WeekSchedule> schedule;
-        private String finalGoal;
-
-        // Getters and Setters
-        public String getLevel() { return level; }
-        public void setLevel(String level) { this.level = level; }
-
-        public int getDurationWeeks() { return durationWeeks; }
-        public void setDurationWeeks(int durationWeeks) { this.durationWeeks = durationWeeks; }
-
-        public List<WeekSchedule> getSchedule() { return schedule; }
-        public void setSchedule(List<WeekSchedule> schedule) { this.schedule = schedule; }
-
-        public String getFinalGoal() { return finalGoal; }
-        public void setFinalGoal(String finalGoal) { this.finalGoal = finalGoal; }
-    }
-
-    /**
-     * Расписание на неделю
-     */
-    public static class WeekSchedule {
-        private int weekNumber;
-        private String[] focusPhonemes;
-        private List<PronunciationExercise> dailyExercises;
-        private String goals;
-
-        // Getters and Setters
-        public int getWeekNumber() { return weekNumber; }
-        public void setWeekNumber(int weekNumber) { this.weekNumber = weekNumber; }
-
-        public String[] getFocusPhonemes() { return focusPhonemes; }
-        public void setFocusPhonemes(String[] focusPhonemes) { this.focusPhonemes = focusPhonemes; }
-
-        public List<PronunciationExercise> getDailyExercises() { return dailyExercises; }
-        public void setDailyExercises(List<PronunciationExercise> dailyExercises) { this.dailyExercises = dailyExercises; }
-
-        public String getGoals() { return goals; }
-        public void setGoals(String goals) { this.goals = goals; }
     }
 }

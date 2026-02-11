@@ -1,4 +1,4 @@
-package com.mygitgor.speech.STT;
+package com.mygitgor.service;
 
 
 import org.vosk.Recognizer;

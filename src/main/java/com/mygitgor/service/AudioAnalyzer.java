@@ -1,18 +1,18 @@
-package com.mygitgor.speech;
+package com.mygitgor.service;
 
 import com.mygitgor.model.EnhancedSpeechAnalysis;
+import com.mygitgor.service.interfaces.IAudioAnalysisService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.sound.sampled.*;
-import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-public class AudioAnalyzer implements AutoCloseable {
+public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(AudioAnalyzer.class);
 
     private static final int SAMPLE_RATE = 44100;
@@ -28,6 +28,7 @@ public class AudioAnalyzer implements AutoCloseable {
         logger.info("Инициализирован анализатор аудио");
     }
 
+    @Override
     public EnhancedSpeechAnalysis analyzeAudio(String audioFilePath, String referenceText) {
         EnhancedSpeechAnalysis analysis = new EnhancedSpeechAnalysis();
         analysis.setAudioPath(audioFilePath);
@@ -627,7 +628,6 @@ public class AudioAnalyzer implements AutoCloseable {
         logger.info("AudioAnalyzer закрыт");
     }
 
-
     public boolean isClosed() {
         return closed;
     }
@@ -645,7 +645,6 @@ public class AudioAnalyzer implements AutoCloseable {
     }
 
     // ====================== ВСПОМОГАТЕЛЬНЫЕ КЛАССЫ ======================
-
 
     private static class AudioData {
         double[] samples;
@@ -665,7 +664,6 @@ public class AudioAnalyzer implements AutoCloseable {
             this.duration = duration;
         }
     }
-
 
     private static class SimpleFFT {
         public static double[] calculateSpectrum(double[] samples) {
