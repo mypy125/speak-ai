@@ -769,7 +769,7 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         isStopping = true;
 
         stopCurrentPlayback();
-        
+
         if (currentSpeechFuture != null && !currentSpeechFuture.isDone()) {
             currentSpeechFuture.cancel(true);
             currentSpeechFuture = null;
