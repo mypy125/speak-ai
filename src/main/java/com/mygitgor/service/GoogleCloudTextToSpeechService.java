@@ -3,6 +3,7 @@ package com.mygitgor.service;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.auth.oauth2.ServiceAccountCredentials;
 import com.mygitgor.service.interfaces.ITTSService;
+import com.mygitgor.utils.ThreadPoolManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.io.*;
@@ -22,12 +23,13 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javazoom.jl.player.Player;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class GoogleCloudTextToSpeechService implements ITTSService {
     private static final Logger logger = LoggerFactory.getLogger(GoogleCloudTextToSpeechService.class);
 
     public enum GoogleVoice {
-        // WaveNet voices (высокое качество)
         EN_US_WAVENET_A("en-US-Wavenet-A", "en-US", "Male", "WaveNet",
                 "Английский (US) - Мужской WaveNet"),
         EN_US_WAVENET_B("en-US-Wavenet-B", "en-US", "Female", "WaveNet",
@@ -41,7 +43,6 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         EN_US_WAVENET_F("en-US-Wavenet-F", "en-US", "Female", "WaveNet",
                 "Английский (US) - Женский WaveNet 4"),
 
-        // Русские голоса WaveNet
         RU_RU_WAVENET_A("ru-RU-Wavenet-A", "ru-RU", "Female", "WaveNet",
                 "Русский - Женский WaveNet"),
         RU_RU_WAVENET_B("ru-RU-Wavenet-B", "ru-RU", "Male", "WaveNet",
@@ -51,7 +52,6 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         RU_RU_WAVENET_D("ru-RU-Wavenet-D", "ru-RU", "Male", "WaveNet",
                 "Русский - Мужской WaveNet 2"),
 
-        // Standard voices (низкое качество, дешевле)
         EN_US_STANDARD_B("en-US-Standard-B", "en-US", "Male", "Standard",
                 "Английский (US) - Мужской стандартный"),
         EN_US_STANDARD_C("en-US-Standard-C", "en-US", "Female", "Standard",
@@ -83,21 +83,21 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         public String getDescription() { return description; }
     }
 
-    // Константы
     private static final int MAX_TEXT_LENGTH = 5000;
     private static final int SAFE_TEXT_LENGTH = 4800;
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 30000;
     private static final String TTS_API_URL = "https://texttospeech.googleapis.com/v1/text:synthesize";
+    private static final int PLAYBACK_START_DELAY_MS = 200;
+    private static final int TEMP_FILE_DELETE_DELAY_MS = 30000;
+    private static final int SPEECH_TIMEOUT_SECONDS = 30;
 
-    // Конфигурация
     private GoogleVoice currentVoice = GoogleVoice.EN_US_WAVENET_B;
     private float currentSpeed = 1.0f;
     private float currentPitch = 0.0f;
     private float currentVolumeGainDb = 0.0f;
     private String currentLanguage = "en-US";
 
-    // Аутентификация
     private enum AuthMethod {
         API_KEY,
         SERVICE_ACCOUNT,
@@ -110,20 +110,26 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
     private GoogleCredentials credentials;
     private String accessToken;
 
-    private final ExecutorService executorService;
+    private final ExecutorService ttsExecutor;
+    private final ScheduledExecutorService scheduledExecutor;
+    private final ThreadPoolManager threadPoolManager;
+
     private volatile boolean closed = false;
-    private CompletableFuture<Void> currentSpeechFuture;
     private volatile boolean serviceAvailable = false;
 
-    // ========== НОВЫЕ ПОЛЯ ДЛЯ УПРАВЛЕНИЯ ВОСПРОИЗВЕДЕНИЕМ ==========
-    private volatile Player currentPlayer;
-    private volatile Thread playbackThread;
-    private volatile Process playbackProcess;
+    private final AtomicBoolean isStopping = new AtomicBoolean(false);
+    private final AtomicReference<CompletableFuture<Void>> currentSpeechFuture = new AtomicReference<>(null);
+
+    private final AtomicReference<Player> currentPlayer = new AtomicReference<>(null);
+    private final AtomicReference<Thread> playbackThread = new AtomicReference<>(null);
+    private final AtomicReference<Process> playbackProcess = new AtomicReference<>(null);
     private final Object playerLock = new Object();
-    private volatile boolean isStopping = false;
-    // ==============================================================
 
     public GoogleCloudTextToSpeechService(String apiKeyOrCredentials) {
+        this.threadPoolManager = ThreadPoolManager.getInstance();
+        this.ttsExecutor = threadPoolManager.getTtsExecutor();
+        this.scheduledExecutor = threadPoolManager.getScheduledExecutor();
+
         logger.info("Инициализация Google Cloud TTS Service...");
 
         if (apiKeyOrCredentials == null || apiKeyOrCredentials.trim().isEmpty()) {
@@ -131,13 +137,6 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         }
 
         initializeAuthentication(apiKeyOrCredentials);
-
-        this.executorService = Executors.newSingleThreadExecutor(r -> {
-            Thread thread = new Thread(r, "Google-TTS-Thread");
-            thread.setDaemon(true);
-            return thread;
-        });
-
         checkAvailabilityAsync();
 
         logger.info("Google Cloud TTS Service инициализирован с методом аутентификации: {}", authMethod);
@@ -267,13 +266,15 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
     }
 
     private void checkAvailabilityAsync() {
-        executorService.submit(() -> {
+        CompletableFuture.runAsync(() -> {
             try {
                 logger.debug("Проверка доступности Google Cloud TTS API...");
                 byte[] testAudio = callGoogleTTSAPI("test", currentVoice.getVoiceName(),
                         currentSpeed, currentPitch, currentVolumeGainDb);
-                if (testAudio.length > 100) {
-                    serviceAvailable = true;
+
+                serviceAvailable = testAudio.length > 100;
+
+                if (serviceAvailable) {
                     logger.info("✅ Google Cloud TTS API доступен (получено {} байт)", testAudio.length);
                     logger.info("✅ Метод аутентификации: {}", authMethod);
                     if (authMethod == AuthMethod.SERVICE_ACCOUNT) {
@@ -289,7 +290,7 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
                 logger.error("❌ Google Cloud TTS недоступен: {}", e.getMessage());
                 analyzeGoogleError(e);
             }
-        });
+        }, ttsExecutor);
     }
 
     private void analyzeGoogleError(Exception e) {
@@ -516,17 +517,6 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         closed = true;
         logger.info("Закрытие Google Cloud TTS Service...");
         stopSpeaking();
-        if (executorService != null && !executorService.isShutdown()) {
-            try {
-                executorService.shutdown();
-                if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) {
-                    executorService.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                executorService.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
-        }
         logger.info("Google Cloud TTS Service закрыт");
     }
 
@@ -538,9 +528,17 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         }
 
         CompletableFuture<Void> future = new CompletableFuture<>();
-        currentSpeechFuture = future;
+        currentSpeechFuture.set(future);
 
-        executorService.submit(() -> {
+        ScheduledFuture<?> timeout = scheduledExecutor.schedule(() -> {
+            if (!future.isDone()) {
+                future.completeExceptionally(new TimeoutException("Таймаут озвучки"));
+                stopSpeaking();
+                logger.warn("Таймаут озвучки ({} сек)", SPEECH_TIMEOUT_SECONDS);
+            }
+        }, SPEECH_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        CompletableFuture.runAsync(() -> {
             try {
                 speakInternal(text, future);
             } catch (Exception e) {
@@ -548,122 +546,126 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
                 if (!future.isDone()) {
                     future.completeExceptionally(e);
                 }
+            } finally {
+                timeout.cancel(false);
             }
-        });
+        }, ttsExecutor);
 
         return future;
     }
 
     private void speakInternal(String text, CompletableFuture<Void> future) {
-        isStopping = false;
+        isStopping.set(false);
 
         try {
             String cleanText = cleanTextForSpeech(text);
-
-            byte[] textBytes = cleanText.getBytes(StandardCharsets.UTF_8);
-            if (textBytes.length > SAFE_TEXT_LENGTH) {
-                logger.warn("⚠️ Текст слишком длинный ({} байт). Лимит: {} байт. Обрезаем...",
-                        textBytes.length, SAFE_TEXT_LENGTH);
-
-                String trimmed = new String(textBytes, 0, SAFE_TEXT_LENGTH, StandardCharsets.UTF_8);
-                int lastPeriod = trimmed.lastIndexOf('.');
-                int lastQuestion = trimmed.lastIndexOf('?');
-                int lastExclamation = trimmed.lastIndexOf('!');
-                int lastSentence = Math.max(Math.max(lastPeriod, lastQuestion), lastExclamation);
-
-                if (lastSentence > trimmed.length() / 2) {
-                    cleanText = trimmed.substring(0, lastSentence + 1) +
-                            "\n\n[Текст сокращен из-за ограничения длины Google TTS]";
-                } else {
-                    int lastSpace = trimmed.lastIndexOf(' ');
-                    if (lastSpace > trimmed.length() / 2) {
-                        cleanText = trimmed.substring(0, lastSpace) +
-                                "... [Текст сокращен из-за ограничения длины Google TTS]";
-                    } else {
-                        cleanText = trimmed + "... [Текст сокращен]";
-                    }
-                }
-
-                logger.info("Текст обрезан с {} до {} байт, {} символов",
-                        textBytes.length, cleanText.getBytes(StandardCharsets.UTF_8).length, cleanText.length());
-            }
+            cleanText = trimTextToSafeLength(cleanText);
 
             logger.info("Google Cloud TTS: Озвучка текста ({} символов, {} байт), голос: {}, скорость: {}, язык: {}",
                     cleanText.length(), cleanText.getBytes(StandardCharsets.UTF_8).length,
                     currentVoice.getDescription(), currentSpeed, currentLanguage);
 
-            if (isStopping || Thread.currentThread().isInterrupted()) {
-                logger.info("Озвучка отменена перед генерацией");
-                if (future != null && !future.isDone()) {
-                    future.completeExceptionally(new CancellationException("Озвучка отменена"));
-                }
+            if (isStopping.get() || Thread.currentThread().isInterrupted()) {
+                handleCancellation(future, "Озвучка отменена перед генерацией");
                 return;
             }
 
             byte[] audioData = callGoogleTTSAPI(cleanText, currentVoice.getVoiceName(),
                     currentSpeed, currentPitch, currentVolumeGainDb);
 
-            if (isStopping || Thread.currentThread().isInterrupted()) {
-                logger.info("Озвучка отменена после генерации");
-                if (future != null && !future.isDone()) {
-                    future.completeExceptionally(new CancellationException("Озвучка отменена"));
-                }
+            if (isStopping.get() || Thread.currentThread().isInterrupted()) {
+                handleCancellation(future, "Озвучка отменена после генерации");
                 return;
             }
 
             playAudio(audioData);
 
-            if (!isStopping && future != null && !future.isDone()) {
+            if (!isStopping.get() && future != null && !future.isDone()) {
                 future.complete(null);
+                logger.info("Google Cloud TTS: Озвучка завершена успешно");
             }
-
-            logger.info("Google Cloud TTS: Озвучка завершена успешно");
 
         } catch (CancellationException e) {
             logger.info("⏹️ Озвучка отменена");
-            if (future != null && !future.isDone()) {
-                future.completeExceptionally(e);
-            }
+            handleCancellation(future, "Озвучка отменена");
         } catch (Exception e) {
             logger.error("Ошибка при озвучке текста", e);
             if (future != null && !future.isDone()) {
                 future.completeExceptionally(e);
             }
         } finally {
-            currentSpeechFuture = null;
+            currentSpeechFuture.set(null);
         }
     }
 
-    private void playAudio(byte[] audioData) throws Exception {
-        Path tempFile = Files.createTempFile("google_tts_", ".mp3");
-        Files.write(tempFile, audioData);
+    private String trimTextToSafeLength(String text) {
+        byte[] textBytes = text.getBytes(StandardCharsets.UTF_8);
+        if (textBytes.length <= SAFE_TEXT_LENGTH) {
+            return text;
+        }
 
+        logger.warn("⚠️ Текст слишком длинный ({} байт). Лимит: {} байт. Обрезаем...",
+                textBytes.length, SAFE_TEXT_LENGTH);
+
+        String trimmed = new String(textBytes, 0, SAFE_TEXT_LENGTH, StandardCharsets.UTF_8);
+
+        int lastSentence = Math.max(
+                Math.max(trimmed.lastIndexOf('.'), trimmed.lastIndexOf('?')),
+                trimmed.lastIndexOf('!')
+        );
+
+        if (lastSentence > trimmed.length() / 2) {
+            return trimmed.substring(0, lastSentence + 1) +
+                    "\n\n[Текст сокращен из-за ограничения длины Google TTS]";
+        }
+
+        int lastSpace = trimmed.lastIndexOf(' ');
+        if (lastSpace > trimmed.length() / 2) {
+            return trimmed.substring(0, lastSpace) +
+                    "... [Текст сокращен из-за ограничения длины Google TTS]";
+        }
+
+        return trimmed + "... [Текст сокращен]";
+    }
+
+    private void handleCancellation(CompletableFuture<Void> future, String message) {
+        if (future != null && !future.isDone()) {
+            future.completeExceptionally(new CancellationException(message));
+        }
+    }
+
+    private void playAudio(byte[] audioData) {
+        Path tempFile = null;
         try {
+            tempFile = Files.createTempFile("google_tts_", ".mp3");
+            Files.write(tempFile, audioData);
+
             stopCurrentPlayback();
 
             synchronized (playerLock) {
                 FileInputStream fis = new FileInputStream(tempFile.toFile());
-                currentPlayer = new Player(fis);
+                Player player = new Player(fis);
+                currentPlayer.set(player);
 
-                playbackThread = new Thread(() -> {
+                Thread thread = new Thread(() -> {
                     try {
-                        currentPlayer.play();
+                        player.play();
                         logger.debug("Воспроизведение завершено");
                     } catch (javazoom.jl.decoder.JavaLayerException e) {
-                        if (isStopping) {
+                        if (isStopping.get()) {
                             logger.debug("Воспроизведение прервано пользователем");
                         } else {
                             logger.error("Ошибка при воспроизведении", e);
                         }
                     } catch (Exception e) {
-                        if (!isStopping) {
+                        if (!isStopping.get()) {
                             logger.error("Ошибка при воспроизведении", e);
                         }
                     } finally {
                         synchronized (playerLock) {
-                            if (Thread.currentThread() == playbackThread) {
-                                playbackThread = null;
-                                currentPlayer = null;
+                            if (Thread.currentThread() == playbackThread.get()) {
+                                playbackThread.set(null);
+                                currentPlayer.set(null);
                             }
                         }
                         try {
@@ -674,16 +676,39 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
                     }
                 });
 
-                playbackThread.setDaemon(true);
-                playbackThread.setName("TTS-Playback-Thread");
-                playbackThread.start();
+                thread.setDaemon(true);
+                thread.setName("TTS-Playback");
+                playbackThread.set(thread);
+                thread.start();
             }
 
-            Thread.sleep(200);
+            CompletableFuture<Void> delayFuture = new CompletableFuture<>();
+            ThreadPoolManager.runWithDelay(() -> delayFuture.complete(null), PLAYBACK_START_DELAY_MS);
+            delayFuture.get(1, TimeUnit.SECONDS);
 
         } catch (NoClassDefFoundError e) {
             logger.warn("JLayer не найден, используем системный плеер");
+            playAudioWithSystemPlayer(tempFile);
+        } catch (Exception e) {
+            logger.error("Ошибка при воспроизведении аудио", e);
+        } finally {
+            if (tempFile != null) {
+                final Path fileToDelete = tempFile;
+                scheduledExecutor.schedule(() -> {
+                    try {
+                        Files.deleteIfExists(fileToDelete);
+                    } catch (IOException ex) {
+                        logger.debug("Не удалось удалить временный файл: {}", ex.getMessage());
+                    }
+                }, TEMP_FILE_DELETE_DELAY_MS, TimeUnit.MILLISECONDS);
+            }
+        }
+    }
 
+    private void playAudioWithSystemPlayer(Path tempFile) {
+        if (tempFile == null) return;
+
+        try {
             stopCurrentPlayback();
 
             synchronized (playerLock) {
@@ -700,50 +725,46 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
                     pb = new ProcessBuilder("play", tempFile.toString());
                 }
 
-                playbackProcess = pb.start();
+                Process process = pb.start();
+                playbackProcess.set(process);
             }
-
-        } finally {
-            CompletableFuture.runAsync(() -> {
-                try {
-                    Thread.sleep(30000);
-                    Files.deleteIfExists(tempFile);
-                } catch (Exception ex) {
-                    logger.debug("Не удалось удалить временный файл: {}", ex.getMessage());
-                }
-            });
+        } catch (IOException e) {
+            logger.error("Ошибка при запуске системного плеера", e);
         }
     }
 
     private void stopCurrentPlayback() {
         synchronized (playerLock) {
-            if (currentPlayer != null) {
+            Player player = currentPlayer.getAndSet(null);
+            if (player != null) {
                 try {
-                    currentPlayer.close();
+                    player.close();
                     logger.debug("JLayer Player остановлен");
                 } catch (Exception e) {
                     logger.debug("Ошибка при остановке JLayer Player: {}", e.getMessage());
-                } finally {
-                    currentPlayer = null;
                 }
             }
 
-            if (playbackThread != null && playbackThread.isAlive()) {
-                playbackThread.interrupt();
-                playbackThread = null;
+            Thread thread = playbackThread.getAndSet(null);
+            if (thread != null && thread.isAlive()) {
+                thread.interrupt();
+                try {
+                    thread.join(500);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
             }
 
-            if (playbackProcess != null && playbackProcess.isAlive()) {
-                playbackProcess.destroy();
+            Process process = playbackProcess.getAndSet(null);
+            if (process != null && process.isAlive()) {
+                process.destroy();
                 try {
-                    if (!playbackProcess.waitFor(500, TimeUnit.MILLISECONDS)) {
-                        playbackProcess.destroyForcibly();
+                    if (!process.waitFor(500, TimeUnit.MILLISECONDS)) {
+                        process.destroyForcibly();
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    playbackProcess.destroyForcibly();
-                } finally {
-                    playbackProcess = null;
+                    process.destroyForcibly();
                 }
                 logger.debug("Системный плеер остановлен");
             }
@@ -756,7 +777,11 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         }
         try {
             CompletableFuture<Void> future = speakAsync(text);
-            future.get(30, TimeUnit.SECONDS);
+            future.get(SPEECH_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            logger.error("Таймаут озвучки");
+            stopSpeaking();
+            throw new RuntimeException("Таймаут озвучки", e);
         } catch (Exception e) {
             logger.error("Ошибка при озвучке", e);
             throw new RuntimeException("Ошибка озвучки: " + e.getMessage(), e);
@@ -766,13 +791,14 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
     @Override
     public void stopSpeaking() {
         logger.info("⏹️ Остановка Google Cloud TTS...");
-        isStopping = true;
+
+        isStopping.set(true);
 
         stopCurrentPlayback();
 
-        if (currentSpeechFuture != null && !currentSpeechFuture.isDone()) {
-            currentSpeechFuture.cancel(true);
-            currentSpeechFuture = null;
+        CompletableFuture<Void> future = currentSpeechFuture.getAndSet(null);
+        if (future != null && !future.isDone()) {
+            future.cancel(true);
         }
 
         logger.info("✅ Google Cloud TTS остановлен");

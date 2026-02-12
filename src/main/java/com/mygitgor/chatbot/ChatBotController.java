@@ -19,6 +19,7 @@ import com.mygitgor.speech.SpeechRecorder;
 import com.mygitgor.service.GoogleCloudTextToSpeechService;
 import com.mygitgor.state.ChatBotState;
 import com.mygitgor.utils.ResourceManager;
+import com.mygitgor.utils.ThreadPoolManager;
 import javafx.application.Platform;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
@@ -121,6 +122,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
     private RecordingManager recordingManager;
     private ResponseModeManager responseModeManager;
     private AnalysisManager analysisManager;
+    private ThreadPoolManager threadPoolManager;
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
@@ -143,6 +145,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
     }
 
     private void initializeComponents() {
+        this.threadPoolManager = ThreadPoolManager.getInstance();
         this.state = new ChatBotState();
         this.resourceManager = new ResourceManager();
         this.speechRecorder = new SpeechRecorder();
@@ -564,6 +567,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 ? "Google Cloud TTS (WaveNet)"
                 : "TTS недоступен";
 
+        ResponseMode currentMode = state.getCurrentResponseMode();
+        String modeText = currentMode == ResponseMode.VOICE ? "🔊 Голосовой" : "📝 Текстовый";
+
         String welcomeMessage = String.format("""
             🌟 Добро пожаловать в SpeakAI!
             
@@ -576,11 +582,13 @@ public class ChatBotController implements Initializable, AutoCloseable {
             3. Используйте тренажер произношения для проблемных звуков
             
             Давайте начнем! ✨
-            """, ttsMode,
-                state.getCurrentResponseMode() == ResponseMode.VOICE ?
-                        "🔊 Голосовой" : "📝 Текстовый");
+            """, ttsMode, modeText);
 
         messagesManager.addAIMessage(welcomeMessage);
+
+        ThreadPoolManager.runWithDelay(() -> {
+            logger.debug("Приветственное сообщение показано");
+        }, 100);
     }
 
     private void updateStatusLabel() {
@@ -590,8 +598,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 ? "✅ ИИ-сервис доступен"
                 : "⚠️ Демо-режим";
 
-        String finalStatus = status;
-        Platform.runLater(() -> statusLabel.setText(finalStatus));
+        Platform.runLater(() -> statusLabel.setText(status));
     }
 
     private void showLoadingIndicator(boolean show) {
@@ -614,16 +621,22 @@ public class ChatBotController implements Initializable, AutoCloseable {
         }
 
         String text = inputField.getText().trim();
+        String currentAudioFile = state.getCurrentAudioFile();
+        ResponseMode currentResponseMode = state.getCurrentResponseMode();
 
-        if (text.isEmpty() && !state.hasAudioFile()) {
+        if (text.isEmpty() && currentAudioFile == null) {
             ErrorHandler.showWarning("Внимание", "Введите сообщение или запишите аудио");
             return;
         }
 
+        final String finalText = text;
+        final String finalAudioFile = currentAudioFile;
+        final ResponseMode finalResponseMode = currentResponseMode;
+
         if (!text.isEmpty()) {
             messagesManager.addUserMessage(text);
             inputField.clear();
-        } else if (state.hasAudioFile()) {
+        } else if (currentAudioFile != null) {
             messagesManager.addUserMessage("🎤 [Аудиосообщение]");
         }
 
@@ -633,20 +646,22 @@ public class ChatBotController implements Initializable, AutoCloseable {
         CompletableFuture.runAsync(() -> {
             try {
                 ChatBotService.ChatResponse response = chatBotService.processUserInput(
-                        text,
-                        state.getCurrentAudioFile(),
-                        state.getCurrentResponseMode()
+                        finalText,
+                        finalAudioFile,
+                        finalResponseMode
                 );
 
-                Platform.runLater(() -> {
-                    messagesManager.addAIMessage(response.getFullResponse());
+                final ChatBotService.ChatResponse finalResponse = response;
 
-                    state.setLastBotResponse(response.getFullResponse());
+                Platform.runLater(() -> {
+                    messagesManager.addAIMessage(finalResponse.getFullResponse());
+
+                    state.setLastBotResponse(finalResponse.getFullResponse());
 
                     responseModeManager.updatePlayButtonVisibility();
 
-                    if (response.getSpeechAnalysis() != null) {
-                        analysisManager.processAnalysisResponse(response);
+                    if (finalResponse.getSpeechAnalysis() != null) {
+                        analysisManager.processAnalysisResponse(finalResponse);
                     }
 
                     showLoadingIndicator(false);
@@ -679,7 +694,8 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
     @FXML
     private void onAnalyzeAudio() {
-        analysisManager.analyzeCurrentAudio(inputField.getText().trim());
+        String inputText = inputField.getText().trim();
+        analysisManager.analyzeCurrentAudio(inputText);
     }
 
     @FXML
@@ -745,7 +761,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
             return;
         }
 
-        // Проверяем, является ли сервис Google Cloud TTS
         if (textToSpeechService instanceof GoogleCloudTextToSpeechService) {
             GoogleCloudTextToSpeechService googleService = (GoogleCloudTextToSpeechService) textToSpeechService;
             boolean isAvailable = googleService.isAvailable();
@@ -970,6 +985,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
     public void close() {
         if (state.setClosed(true)) {
             logger.info("Закрытие ChatBotController...");
+
             if (responseModeManager != null) {
                 responseModeManager.stopSpeaking();
             }
@@ -988,10 +1004,16 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
             ErrorHandler.safeClose(resourceManager, "ResourceManager");
 
+            if (threadPoolManager != null) {
+                threadPoolManager.shutdown();
+            }
+
             logger.info("ChatBotController закрыт");
         }
     }
 
+    @FXML
     public void onTestTTS(ActionEvent actionEvent) {
+        onTestGoogleTTS();
     }
 }
