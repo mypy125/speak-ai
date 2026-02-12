@@ -54,14 +54,7 @@ public final class AppConstants {
 
     // ========================================
     // Google Cloud TTS
-    // ========================================
-    // Константы
-    private static final int MAX_TEXT_LENGTH = 5000;
-    private static final int SAFE_TEXT_LENGTH = 4800; // Добавьте эту строку
-    private static final int CONNECT_TIMEOUT_MS = 15000;
-    private static final int READ_TIMEOUT_MS = 30000;
-    private static final String TTS_API_URL = "https://texttospeech.googleapis.com/v1/text:synthesize";
-
+    // =======================================
     public static final String GOOGLE_CREDENTIALS_FILENAME = "google-credentials.json";
     public static final String[] GOOGLE_CREDENTIALS_PATHS = {
             "./" + GOOGLE_CREDENTIALS_FILENAME,

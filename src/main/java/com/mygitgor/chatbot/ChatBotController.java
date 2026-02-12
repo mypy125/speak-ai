@@ -43,9 +43,6 @@ import java.util.concurrent.CompletableFuture;
 public class ChatBotController implements Initializable, AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(ChatBotController.class);
 
-    // ========================================
-    // FXML UI Elements - Chat Area
-    // ========================================
     @FXML private TextArea inputField;
     @FXML private Button sendButton;
     @FXML private Button clearButton;
@@ -53,9 +50,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
     @FXML private VBox chatMessagesContainer;
     @FXML private ScrollPane chatScrollPane;
 
-    // ========================================
-    // FXML UI Elements - TTS Panel
-    // ========================================
     @FXML private VBox ttsControlPanel;
     @FXML private Label ttsModeLabel;
     @FXML private Circle ttsStatusIndicator;
@@ -75,9 +69,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
     @FXML private Button showTTSInfoButton;
     @FXML private Button configureGoogleTTSButton;
 
-    // ========================================
-    // FXML UI Elements - Speech Recognition
-    // ========================================
     @FXML private VBox speechControlPanel;
     @FXML private ComboBox<String> languageComboBox;
     @FXML private ComboBox<String> serviceTypeComboBox;
@@ -89,17 +80,11 @@ public class ChatBotController implements Initializable, AutoCloseable {
     @FXML private Label microphoneStatusLabel;
     @FXML private Button microphoneButton;
 
-    // ========================================
-    // FXML UI Elements - Recording Controls
-    // ========================================
     @FXML private Button recordButton;
     @FXML private Button stopButton;
     @FXML private ProgressIndicator recordingIndicator;
     @FXML private Label recordingTimeLabel;
 
-    // ========================================
-    // FXML UI Elements - Analysis
-    // ========================================
     @FXML private TextArea analysisArea;
     @FXML private TextArea detailedAnalysisArea;
     @FXML private TextArea recommendationsArea;
@@ -108,25 +93,16 @@ public class ChatBotController implements Initializable, AutoCloseable {
     @FXML private ProgressBar analysisProgress;
     @FXML private Label phonemeLabel;
 
-    // ========================================
-    // FXML UI Elements - Response Mode
-    // ========================================
     @FXML private ToggleGroup responseModeToggleGroup;
     @FXML private Button playResponseButton;
     @FXML private ToggleButton textToggle;
     @FXML private ToggleButton voiceToggle;
 
-    // ========================================
-    // FXML UI Elements - Status & Statistics
-    // ========================================
     @FXML private Label statusLabel;
     @FXML private Label messagesCountLabel;
     @FXML private Label analysisCountLabel;
     @FXML private Label recordingsCountLabel;
 
-    // ========================================
-    // Services
-    // ========================================
     private ChatBotService chatBotService;
     private ITTSService textToSpeechService;
     private SpeechRecorder speechRecorder;
@@ -134,14 +110,10 @@ public class ChatBotController implements Initializable, AutoCloseable {
     private PronunciationTrainer pronunciationTrainer;
     private ResourceManager resourceManager;
 
-    // ========================================
-    // State & Managers
-    // ========================================
     private ChatBotState state;
     private ServicesConfig config;
     private Stage stage;
 
-    // UI Managers
     private ChatMessagesManager messagesManager;
     private StatisticsManager statisticsManager;
     private TTSControlsManager ttsControlsManager;
@@ -149,10 +121,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
     private RecordingManager recordingManager;
     private ResponseModeManager responseModeManager;
     private AnalysisManager analysisManager;
-
-    // ========================================
-    // Initialization
-    // ========================================
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
@@ -185,28 +153,22 @@ public class ChatBotController implements Initializable, AutoCloseable {
     }
 
     private void setupServices() {
-        // Load configuration
         this.config = ServicesConfig.load();
 
-        // Initialize services in correct order
         this.audioAnalyzer = new AudioAnalyzer();
         this.pronunciationTrainer = new PronunciationTrainer();
         this.speechRecorder = new SpeechRecorder();
 
-        // Register basic services first
         resourceManager.register(audioAnalyzer);
         resourceManager.register(pronunciationTrainer);
         resourceManager.register(speechRecorder);
 
-        // Initialize TTS service with fallback
         this.textToSpeechService = initializeTTSService();
         resourceManager.register(textToSpeechService);
 
-        // Initialize AI service
         AiService aiService = initializeAIService();
         resourceManager.registerIfCloseable(aiService);
 
-        // Initialize ChatBotService
         this.chatBotService = new ChatBotService(
                 aiService,
                 audioAnalyzer,
@@ -216,24 +178,19 @@ public class ChatBotController implements Initializable, AutoCloseable {
         );
         resourceManager.register(chatBotService);
 
-        // Update state
         state.setAiServiceAvailable(aiService.isAvailable());
 
         logger.info("Все сервисы успешно инициализированы");
     }
 
     private ITTSService initializeTTSService() {
-        // Сначала пробуем настроить Google Cloud TTS
         setupGoogleCloudTTSCredentials();
 
-        // Пробуем инициализировать Google Cloud TTS с retry
         try {
             GoogleCloudTextToSpeechService googleService = ErrorHandler.retry(() -> {
                 try {
-                    // Создаем сервис с автоматическим определением credentials
                     GoogleCloudTextToSpeechService service = new GoogleCloudTextToSpeechService();
 
-                    // Даем время на проверку доступности
                     Thread.sleep(AppConstants.GOOGLE_TTS_INIT_DELAY_MS);
 
                     if (service.isAvailable()) {
@@ -252,7 +209,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
             }, 2, 1000, "инициализация Google Cloud TTS");
 
             if (googleService != null && googleService.isAvailable()) {
-                // Показываем сообщение об успешном подключении
                 showTTSConnectionSuccess(googleService);
                 return googleService;
             }
@@ -261,7 +217,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
             logger.warn("Не удалось инициализировать Google Cloud TTS: {}", e.getMessage());
         }
 
-        // Fallback на демо-режим
         return initializeDemoTTSService();
     }
 
@@ -270,11 +225,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
         DemoTextToSpeechService demoServices = new DemoTextToSpeechService();
 
-        // Показываем предупреждение пользователю в UI
         Platform.runLater(() -> {
             showTTSConnectionWarning();
 
-            // Обновляем статус в UI
             if (ttsStatusLabel != null) {
                 ttsStatusLabel.setText("⚠️ Демо-режим TTS");
                 ttsStatusLabel.setStyle("-fx-text-fill: #f39c12;");
@@ -348,7 +301,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
         alert.setTitle("TTS в демо-режиме");
         alert.setHeaderText("⚠️ Google Cloud TTS не настроен");
 
-        // Создаем расширенный контент с информацией о найденных/не найденных файлах
         StringBuilder content = new StringBuilder();
         content.append("Используется демо-режим без реальной озвучки.\n\n");
         content.append("📁 ПРОВЕРЕННЫЕ ПУТИ:\n");
@@ -369,7 +321,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
             content.append("  • ").append(path).append(" - ").append(status).append("\n");
         }
 
-        // Также проверяем переменную окружения
         String envPath = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
         if (envPath != null && !envPath.isEmpty()) {
             File envFile = new File(envPath);
@@ -403,11 +354,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
         try {
             logger.info("=== НАСТРОЙКА GOOGLE CLOUD TTS ===");
 
-            // Получаем путь к корневой папке проекта
             String projectRoot = System.getProperty("user.dir");
             logger.info("Корневая папка проекта: {}", projectRoot);
 
-            // Проверяем разные возможные расположения файла
             String[] possiblePaths = {
                     projectRoot + "/google-credentials.json",
                     projectRoot + "/src/main/resources/google-credentials.json",
@@ -426,7 +375,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 }
             }
 
-            // Также проверяем переменную окружения
             String envPath = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
             if (credentialsFile == null && envPath != null && !envPath.isEmpty()) {
                 File envFile = new File(envPath);
@@ -442,17 +390,14 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 return;
             }
 
-            // Устанавливаем переменную окружения
             System.setProperty("GOOGLE_APPLICATION_CREDENTIALS", credentialsFile.getAbsolutePath());
             logger.info("✅ Установлена переменная: GOOGLE_APPLICATION_CREDENTIALS={}",
                     credentialsFile.getAbsolutePath());
 
-            // Проверяем, что файл можно прочитать
             try {
                 String content = new String(Files.readAllBytes(credentialsFile.toPath()));
                 logger.info("✅ Файл успешно прочитан, размер: {} байт", content.length());
 
-                // Парсим JSON для проверки
                 JSONObject json = new JSONObject(content);
                 String projectId = json.optString("project_id", "не указан");
                 String clientEmail = json.optString("client_email", "не указан");
@@ -498,7 +443,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
             }
         }
 
-        // Проверяем переменную окружения
         String envPath = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
         if (envPath != null && !envPath.isEmpty()) {
             File envFile = new File(envPath);
@@ -521,11 +465,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
     }
 
     private void setupManagers() {
-        // Statistics Manager
         this.statisticsManager = new StatisticsManager(
                 messagesCountLabel, analysisCountLabel, recordingsCountLabel, state);
 
-        // TTS Controls Manager
         this.ttsControlsManager = new TTSControlsManager(
                 textToSpeechService,
                 googleSpeedSlider, googleSpeedLabel,
@@ -540,7 +482,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 googleCloudSettings
         );
 
-        // Speech Recognition UI Manager
         this.speechRecognitionUIManager = new SpeechRecognitionUIManager(
                 speechControlPanel,
                 serviceTypeComboBox,
@@ -556,7 +497,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 this::updateStatusLabel
         );
 
-        // Recording Manager
         this.recordingManager = new RecordingManager(
                 recordButton,
                 stopButton,
@@ -569,7 +509,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 () -> statisticsManager.onRecordingStarted()
         );
 
-        // Response Mode Manager
         this.responseModeManager = new ResponseModeManager(
                 responseModeToggleGroup,
                 playResponseButton,
@@ -581,7 +520,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 this::updateStatusLabel
         );
 
-        // Analysis Manager
         this.analysisManager = new AnalysisManager(
                 analysisArea,
                 detailedAnalysisArea,
@@ -668,10 +606,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
         });
     }
 
-    // ========================================
-    // Event Handlers - Main Actions
-    // ========================================
-
     @FXML
     private void onSendMessage() {
         if (state.isClosed()) {
@@ -686,7 +620,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
             return;
         }
 
-        // Add user message
         if (!text.isEmpty()) {
             messagesManager.addUserMessage(text);
             inputField.clear();
@@ -708,13 +641,8 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 Platform.runLater(() -> {
                     messagesManager.addAIMessage(response.getFullResponse());
 
-                    // ВАЖНО: Передаем ответ, но НЕ запускаем автоматическую озвучку
-                    // responseModeManager.onNewResponse(response.getFullResponse()); // УДАЛИТЬ!
-
-                    // Вместо этого просто сохраняем ответ
                     state.setLastBotResponse(response.getFullResponse());
 
-                    // Обновляем кнопку воспроизведения
                     responseModeManager.updatePlayButtonVisibility();
 
                     if (response.getSpeechAnalysis() != null) {
@@ -723,7 +651,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
                     showLoadingIndicator(false);
 
-                    // Clear audio file after processing
                     if (state.hasAudioFile()) {
                         state.clearCurrentAudioFile();
                     }
@@ -740,10 +667,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
         });
     }
 
-    // ========================================
-    // Event Handlers - Recording
-    // ========================================
-
     @FXML
     private void onStartRecording() {
         recordingManager.startRecording();
@@ -754,10 +677,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
         recordingManager.stopRecording();
     }
 
-    // ========================================
-    // Event Handlers - Analysis
-    // ========================================
-
     @FXML
     private void onAnalyzeAudio() {
         analysisManager.analyzeCurrentAudio(inputField.getText().trim());
@@ -767,10 +686,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
     private void onPronunciationTraining() {
         analysisManager.showPronunciationTrainer();
     }
-
-    // ========================================
-    // Event Handlers - Speech Recognition
-    // ========================================
 
     @FXML
     private void testSpeechRecognition() {
@@ -823,10 +738,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
         }
     }
 
-    // ========================================
-    // Event Handlers - TTS
-    // ========================================
-
     @FXML
     private void onTestGoogleTTS() {
         if (textToSpeechService == null) {
@@ -857,7 +768,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 );
             }
         } else {
-            // Если это не Google Cloud TTS (например, демо-режим)
             ErrorHandler.showInfo("Тест Google Cloud TTS",
                     "⚠️ В данный момент используется демо-режим TTS.\n\n" +
                             "Google Cloud TTS не настроен или недоступен.\n" +
@@ -925,10 +835,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
     private void onPlayResponse() {
         responseModeManager.playLastResponse();
     }
-
-    // ========================================
-    // Event Handlers - History & Navigation
-    // ========================================
 
     @FXML
     private void onShowHistory() {
@@ -1017,10 +923,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 "Настройки будут доступны в следующей версии");
     }
 
-    // ========================================
-    // Helper Methods
-    // ========================================
-
     private void showTextWindow(String title, String content, int width, int height) {
         TextArea textArea = new TextArea(content);
         textArea.setEditable(false);
@@ -1041,17 +943,11 @@ public class ChatBotController implements Initializable, AutoCloseable {
         textStage.show();
     }
 
-    // ========================================
-    // Lifecycle
-    // ========================================
-
     public void setStage(Stage stage) {
         this.stage = stage;
         stage.setOnCloseRequest(event -> close());
 
-        // Update analysis manager with stage
         if (analysisManager != null) {
-            // Recreate analysis manager with stage
             this.analysisManager = new AnalysisManager(
                     analysisArea,
                     detailedAnalysisArea,
@@ -1074,8 +970,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
     public void close() {
         if (state.setClosed(true)) {
             logger.info("Закрытие ChatBotController...");
-
-            // Stop all ongoing operations
             if (responseModeManager != null) {
                 responseModeManager.stopSpeaking();
             }
@@ -1092,7 +986,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 textToSpeechService.stopSpeaking();
             }
 
-            // Close resources
             ErrorHandler.safeClose(resourceManager, "ResourceManager");
 
             logger.info("ChatBotController закрыт");

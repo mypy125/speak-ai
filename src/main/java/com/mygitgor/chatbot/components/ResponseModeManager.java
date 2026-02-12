@@ -1,7 +1,6 @@
 package com.mygitgor.chatbot.components;
 
 import com.mygitgor.error.ErrorHandler;
-import com.mygitgor.service.GoogleCloudTextToSpeechService;
 import com.mygitgor.service.components.ResponseMode;
 import com.mygitgor.service.interfaces.ITTSService;
 import com.mygitgor.state.ChatBotState;
@@ -10,24 +9,32 @@ import javafx.scene.control.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class ResponseModeManager {
     private static final Logger logger = LoggerFactory.getLogger(ResponseModeManager.class);
 
-    // UI Elements
     private final ToggleGroup responseModeToggleGroup;
     private final Button playResponseButton;
     private final ToggleButton textToggle;
     private final ToggleButton voiceToggle;
     private final Label statusLabel;
 
-    // Dependencies
     private final ChatBotState state;
     private final ITTSService ttsService;
     private final Runnable onStatusUpdate;
 
-    // State
-    private CompletableFuture<Void> currentSpeechFuture;
+    private final AtomicReference<CompletableFuture<Void>> currentSpeechFuture = new AtomicReference<>(null);
+    private final AtomicBoolean isSpeechPlaying = new AtomicBoolean(false);
+
+    private final ExecutorService speechControlExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "Speech-Control");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     public ResponseModeManager(
             ToggleGroup responseModeToggleGroup,
@@ -84,7 +91,7 @@ public class ResponseModeManager {
         playResponseButton.setTooltip(new Tooltip("Прослушать ответ"));
 
         playResponseButton.setOnAction(event -> {
-            if (state.isPlayingSpeech()) {
+            if (isSpeechPlaying.get() || state.isPlayingSpeech()) {
                 stopSpeaking();
             } else {
                 playLastResponse();
@@ -120,7 +127,6 @@ public class ResponseModeManager {
             }
         }
 
-        // Update toggle button styles
         updateToggleButtonStyles();
     }
 
@@ -167,28 +173,47 @@ public class ResponseModeManager {
             return;
         }
 
+        if (!isSpeechPlaying.compareAndSet(false, true)) {
+            logger.debug("Озвучка уже выполняется, игнорируем повторный запрос");
+            return;
+        }
+
         state.setPlayingSpeech(true);
-        updatePlayButtonState();
 
-        currentSpeechFuture = ttsService.speakAsync(response);
+        Platform.runLater(() -> {
+            updatePlayButtonState();
+            logger.info("▶️ Запуск озвучки...");
+        });
 
-        currentSpeechFuture.thenRun(() -> {
+        CompletableFuture<Void> oldFuture = currentSpeechFuture.getAndSet(null);
+        if (oldFuture != null && !oldFuture.isDone()) {
+            oldFuture.cancel(true);
+        }
+
+        CompletableFuture<Void> future = ttsService.speakAsync(response);
+        currentSpeechFuture.set(future);
+
+        future.whenComplete((result, throwable) -> {
+            isSpeechPlaying.set(false);
+            state.setPlayingSpeech(false);
+
             Platform.runLater(() -> {
-                state.setPlayingSpeech(false);
                 updatePlayButtonState();
-                logger.info("✅ Озвучка завершена");
-            });
-        }).exceptionally(throwable -> {
-            Platform.runLater(() -> {
-                state.setPlayingSpeech(false);
-                updatePlayButtonState();
-                if (!(throwable instanceof java.util.concurrent.CancellationException)) {
-                    logger.error("Ошибка озвучки", throwable);
-                    ErrorHandler.showError("Ошибка озвучки",
-                            throwable.getMessage());
+
+                if (throwable == null) {
+                    logger.info("✅ Озвучка завершена");
+                } else {
+                    Throwable cause = throwable.getCause() != null ? throwable.getCause() : throwable;
+
+                    if (cause instanceof CancellationException) {
+                        logger.debug("Озвучка отменена пользователем");
+                    } else {
+                        logger.error("Ошибка озвучки: {}", cause.getMessage());
+                        ErrorHandler.showError("Ошибка озвучки",
+                                "Не удалось воспроизвести речь: " + cause.getMessage());
+                    }
                 }
             });
-            return null;
         });
     }
 
@@ -200,59 +225,103 @@ public class ResponseModeManager {
 
         if (playResponseButton != null) {
             boolean shouldShow = isVoiceMode && hasResponse && ttsAvailable;
-            playResponseButton.setVisible(shouldShow);
-            playResponseButton.setManaged(shouldShow);
+            Platform.runLater(() -> {
+                playResponseButton.setVisible(shouldShow);
+                playResponseButton.setManaged(shouldShow);
 
-            if (shouldShow) {
-                updatePlayButtonState();
-            }
+                if (shouldShow) {
+                    updatePlayButtonState();
+                }
+            });
         }
     }
 
     public void stopSpeaking() {
-        if (ttsService != null) {
-            ttsService.stopSpeaking();
+        if (!isSpeechPlaying.compareAndSet(true, false)) {
+            return;
         }
-        if (currentSpeechFuture != null && !currentSpeechFuture.isDone()) {
-            currentSpeechFuture.cancel(true);
-        }
+
         state.setPlayingSpeech(false);
-        updatePlayButtonState();
-        logger.info("⏹️ Озвучка остановлена");
+        Platform.runLater(() -> {
+            updatePlayButtonState();
+            logger.info("⏹️ Озвучка остановлена");
+        });
+
+        speechControlExecutor.submit(() -> {
+            if (ttsService != null) {
+                ttsService.stopSpeaking();
+            }
+
+            CompletableFuture<Void> future = currentSpeechFuture.getAndSet(null);
+            if (future != null && !future.isDone()) {
+                future.cancel(true);
+            }
+        });
     }
 
     private void updatePlayButtonState() {
         if (playResponseButton == null) return;
 
-        boolean isSpeaking = state.isPlayingSpeech();
+        boolean isSpeaking = isSpeechPlaying.get() || state.isPlayingSpeech();
 
         if (isSpeaking) {
             playResponseButton.setText("⏸️ Остановить");
-            playResponseButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white;");
+            playResponseButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;");
             playResponseButton.setTooltip(new Tooltip("Остановить озвучку"));
         } else {
             playResponseButton.setText("▶️ Прослушать");
-            playResponseButton.setStyle("");
+            playResponseButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;");
             playResponseButton.setTooltip(new Tooltip("Прослушать ответ"));
         }
+        playResponseButton.setDisable(false);
     }
 
     public void onNewResponse(String response) {
         state.setLastBotResponse(response);
 
-        updateUIMode(state.getCurrentResponseMode());
+        Platform.runLater(() -> {
+            updateUIMode(state.getCurrentResponseMode());
+        });
 
         logger.debug("Новый ответ сохранен, режим: {}", state.getCurrentResponseMode());
     }
 
     public void reset() {
-        stopSpeaking();
+        isSpeechPlaying.set(false);
         state.setLastBotResponse("");
         state.setPlayingSpeech(false);
-        updateUIMode(state.getCurrentResponseMode());
+
+        CompletableFuture<Void> future = currentSpeechFuture.getAndSet(null);
+        if (future != null && !future.isDone()) {
+            future.cancel(true);
+        }
+
+        if (ttsService != null) {
+            ttsService.stopSpeaking();
+        }
+
+        Platform.runLater(() -> {
+            updateUIMode(state.getCurrentResponseMode());
+            updatePlayButtonState();
+        });
     }
 
     public ResponseMode getCurrentMode() {
         return state.getCurrentResponseMode();
+    }
+
+    public void shutdown() {
+        logger.info("Завершение работы ResponseModeManager...");
+        reset();
+        speechControlExecutor.shutdown();
+        try {
+            if (!speechControlExecutor.awaitTermination(500, TimeUnit.MILLISECONDS)) {
+                speechControlExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            speechControlExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+        logger.info("ResponseModeManager завершил работу");
     }
 }

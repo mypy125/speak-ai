@@ -20,6 +20,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import javazoom.jl.player.Player;
+import java.util.concurrent.*;
 
 public class GoogleCloudTextToSpeechService implements ITTSService {
     private static final Logger logger = LoggerFactory.getLogger(GoogleCloudTextToSpeechService.class);
@@ -83,7 +85,7 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
 
     // Константы
     private static final int MAX_TEXT_LENGTH = 5000;
-    private static final int SAFE_TEXT_LENGTH = 4800; // Оставляем запас 200 байт
+    private static final int SAFE_TEXT_LENGTH = 4800;
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 30000;
     private static final String TTS_API_URL = "https://texttospeech.googleapis.com/v1/text:synthesize";
@@ -113,6 +115,14 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
     private CompletableFuture<Void> currentSpeechFuture;
     private volatile boolean serviceAvailable = false;
 
+    // ========== НОВЫЕ ПОЛЯ ДЛЯ УПРАВЛЕНИЯ ВОСПРОИЗВЕДЕНИЕМ ==========
+    private volatile Player currentPlayer;
+    private volatile Thread playbackThread;
+    private volatile Process playbackProcess;
+    private final Object playerLock = new Object();
+    private volatile boolean isStopping = false;
+    // ==============================================================
+
     public GoogleCloudTextToSpeechService(String apiKeyOrCredentials) {
         logger.info("Инициализация Google Cloud TTS Service...");
 
@@ -120,7 +130,6 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
             throw new IllegalArgumentException("API ключ или путь к файлу учетных данных обязателен");
         }
 
-        // Определяем метод аутентификации
         initializeAuthentication(apiKeyOrCredentials);
 
         this.executorService = Executors.newSingleThreadExecutor(r -> {
@@ -129,7 +138,6 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
             return thread;
         });
 
-        // Проверяем доступность асинхронно
         checkAvailabilityAsync();
 
         logger.info("Google Cloud TTS Service инициализирован с методом аутентификации: {}", authMethod);
@@ -140,7 +148,6 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
     }
 
     private static String detectCredentialsFromEnvironment() {
-        // 1. Проверяем переменную окружения GOOGLE_APPLICATION_CREDENTIALS
         String credentialsPath = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
         if (credentialsPath != null && !credentialsPath.trim().isEmpty()) {
             File file = new File(credentialsPath);
@@ -150,14 +157,12 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
             }
         }
 
-        // 2. Проверяем файл в текущей директории
         File localFile = new File("google-credentials.json");
         if (localFile.exists()) {
             logger.info("Обнаружен локальный файл учетных данных: google-credentials.json");
             return "google-credentials.json";
         }
 
-        // 3. Проверяем application.properties
         try {
             Properties props = new Properties();
             props.load(GoogleCloudTextToSpeechService.class.getResourceAsStream("/application.properties"));
@@ -170,7 +175,6 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
             logger.debug("Не удалось прочитать application.properties: {}", e.getMessage());
         }
 
-        // 4. Проверяем gcloud CLI
         try {
             Process process = new ProcessBuilder("gcloud", "auth", "print-access-token").start();
             if (process.waitFor(3, TimeUnit.SECONDS) && process.exitValue() == 0) {
@@ -186,16 +190,13 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
 
     private void initializeAuthentication(String apiKeyOrCredentials) {
         if (apiKeyOrCredentials.equals("gcloud")) {
-            // Аутентификация через gcloud CLI
             this.authMethod = AuthMethod.ACCESS_TOKEN;
             logger.info("Используется аутентификация через gcloud CLI");
 
         } else if (apiKeyOrCredentials.endsWith(".json")) {
-            // Файл учетных данных Service Account
             try {
                 File credentialsFile = new File(apiKeyOrCredentials);
                 if (!credentialsFile.exists()) {
-                    // Пробуем загрузить из classpath
                     InputStream is = getClass().getResourceAsStream("/" + apiKeyOrCredentials);
                     if (is != null) {
                         this.credentials = GoogleCredentials.fromStream(is)
@@ -217,7 +218,6 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
             }
 
         } else if (apiKeyOrCredentials.startsWith("CREDENTIALS_FILE")) {
-            // Переменная окружения GOOGLE_APPLICATION_CREDENTIALS
             String credentialsPath = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
             if (credentialsPath != null && !credentialsPath.trim().isEmpty()) {
                 initializeAuthentication(credentialsPath);
@@ -226,16 +226,12 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
             }
 
         } else {
-            // Простой API ключ
             this.apiKey = apiKeyOrCredentials;
             this.authMethod = AuthMethod.API_KEY;
             logger.info("Используется API ключ Google Cloud");
         }
     }
 
-    /**
-     * Получение токена доступа
-     */
     private String getAccessToken() throws IOException {
         switch (authMethod) {
             case SERVICE_ACCOUNT:
@@ -244,9 +240,7 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
                     return credentials.getAccessToken().getTokenValue();
                 }
                 break;
-
             case ACCESS_TOKEN:
-                // Получаем токен через gcloud CLI
                 try {
                     Process process = new ProcessBuilder("gcloud", "auth", "print-access-token").start();
                     StringBuilder output = new StringBuilder();
@@ -257,7 +251,6 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
                             output.append(line.trim());
                         }
                     }
-
                     if (process.waitFor(5, TimeUnit.SECONDS) && process.exitValue() == 0) {
                         return output.toString();
                     }
@@ -265,14 +258,11 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
                     logger.error("Ошибка получения токена через gcloud: {}", e.getMessage());
                 }
                 break;
-
             case API_KEY:
-                return null; // API ключ не требует токена
-
+                return null;
             default:
                 throw new IOException("Метод аутентификации не настроен");
         }
-
         return null;
     }
 
@@ -280,11 +270,8 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         executorService.submit(() -> {
             try {
                 logger.debug("Проверка доступности Google Cloud TTS API...");
-
-                // Простой тестовый запрос
                 byte[] testAudio = callGoogleTTSAPI("test", currentVoice.getVoiceName(),
                         currentSpeed, currentPitch, currentVolumeGainDb);
-
                 if (testAudio.length > 100) {
                     serviceAvailable = true;
                     logger.info("✅ Google Cloud TTS API доступен (получено {} байт)", testAudio.length);
@@ -297,12 +284,9 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
                     serviceAvailable = false;
                     logger.warn("⚠️ Получен слишком маленький ответ от Google Cloud API: {} байт", testAudio.length);
                 }
-
             } catch (Exception e) {
                 serviceAvailable = false;
                 logger.error("❌ Google Cloud TTS недоступен: {}", e.getMessage());
-
-                // Детальный анализ ошибки
                 analyzeGoogleError(e);
             }
         });
@@ -310,7 +294,6 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
 
     private void analyzeGoogleError(Exception e) {
         String errorMessage = e.getMessage();
-
         if (errorMessage.contains("PERMISSION_DENIED")) {
             logger.error("""
                 🔴 ОШИБКА ДОСТУПА (Permission Denied):
@@ -319,14 +302,7 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
                 1. Service Account имеет роль 'Cloud Text-to-Speech User'
                 2. Text-to-Speech API включен в проекте
                 3. Проект активен и не заблокирован
-                
-                Как исправить:
-                1. Перейдите в Google Cloud Console: https://console.cloud.google.com/
-                2. Выберите проект: gen-lang-client-0629044890
-                3. Включите Text-to-Speech API в разделе 'APIs & Services'
-                4. В разделе 'IAM & Admin' добавьте роль для service account
                 """);
-
         } else if (errorMessage.contains("UNAUTHENTICATED") || errorMessage.contains("401")) {
             logger.error("""
                 🔐 ОШИБКА АУТЕНТИФИКАЦИИ:
@@ -335,13 +311,7 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
                 1. Неверный или просроченный API ключ
                 2. Неверный файл учетных данных
                 3. Service Account не имеет доступа к проекту
-                
-                Как исправить:
-                1. Проверьте корректность файла google-credentials.json
-                2. Убедитесь, что Service Account активен
-                3. Попробуйте сгенерировать новый ключ
                 """);
-
         } else if (errorMessage.contains("RESOURCE_EXHAUSTED") || errorMessage.contains("429")) {
             logger.error("""
                 ⚠️ ПРЕВЫШЕНЫ КВОТЫ ИСПОЛЬЗОВАНИЯ:
@@ -353,7 +323,6 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
                 
                 Бесплатный лимит: 1 млн символов в месяц
                 """);
-
         } else if (errorMessage.contains("NOT_FOUND") || errorMessage.contains("404")) {
             logger.error("""
                 🔍 API НЕ НАЙДЕН:
@@ -366,12 +335,8 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         }
     }
 
-    /**
-     * Вызов Google Cloud TTS API
-     */
     private byte[] callGoogleTTSAPI(String text, String voiceName,
                                     float speed, float pitch, float volumeGainDb) throws IOException {
-        // Ограничиваем текст
         if (text.length() > SAFE_TEXT_LENGTH) {
             logger.warn("Текст слишком длинный ({} символов), сокращаем до {} символов",
                     text.length(), SAFE_TEXT_LENGTH);
@@ -379,8 +344,6 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         }
 
         String apiUrl = TTS_API_URL;
-
-        // Добавляем API ключ если используется
         if (authMethod == AuthMethod.API_KEY && apiKey != null) {
             apiUrl += "?key=" + apiKey;
         }
@@ -388,7 +351,6 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         logger.debug("Google TTS запрос: голос={}, скорость={}, текст={} символов, auth={}",
                 voiceName, speed, text.length(), authMethod);
 
-        // Строим JSON запрос
         JSONObject audioConfig = new JSONObject();
         audioConfig.put("audioEncoding", "MP3");
         audioConfig.put("speakingRate", speed);
@@ -396,7 +358,7 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         audioConfig.put("volumeGainDb", volumeGainDb);
 
         JSONObject voice = new JSONObject();
-        voice.put("languageCode", voiceName.substring(0, 5)); // Например "en-US"
+        voice.put("languageCode", voiceName.substring(0, 5));
         voice.put("name", voiceName);
 
         JSONObject input = new JSONObject();
@@ -413,12 +375,10 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         try {
             URL url = new URL(apiUrl);
             connection = (HttpURLConnection) url.openConnection();
-
             connection.setRequestMethod("POST");
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
             connection.setRequestProperty("Accept", "application/json");
 
-            // Добавляем авторизацию если нужно
             if (authMethod == AuthMethod.SERVICE_ACCOUNT || authMethod == AuthMethod.ACCESS_TOKEN) {
                 String token = getAccessToken();
                 if (token != null) {
@@ -432,47 +392,20 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
             connection.setReadTimeout(READ_TIMEOUT_MS);
             connection.setDoOutput(true);
 
-            // Отправляем запрос
             try (OutputStream os = connection.getOutputStream()) {
                 os.write(requestJson.getBytes(StandardCharsets.UTF_8));
                 os.flush();
             }
 
-            // Получаем ответ
             int responseCode = connection.getResponseCode();
             logger.debug("HTTP Response Code: {}", responseCode);
 
             if (responseCode != HttpURLConnection.HTTP_OK) {
                 String errorResponse = readErrorResponse(connection);
                 logger.error("Google Cloud API Error {}: {}", responseCode, errorResponse);
-
-                // Парсим JSON ошибки
-                try {
-                    JSONObject errorJson = new JSONObject(errorResponse);
-                    JSONObject error = errorJson.optJSONObject("error");
-                    if (error != null) {
-                        String message = error.optString("message", "Unknown error");
-                        String status = error.optString("status", "");
-
-                        if (status.equals("PERMISSION_DENIED")) {
-                            throw new IOException("Доступ запрещен. Service Account не имеет прав: " + message);
-                        } else if (status.equals("UNAUTHENTICATED")) {
-                            throw new IOException("Ошибка аутентификации: " + message);
-                        } else if (status.equals("RESOURCE_EXHAUSTED")) {
-                            throw new IOException("Превышены квоты использования: " + message);
-                        } else if (status.equals("NOT_FOUND")) {
-                            throw new IOException("API не найден: " + message);
-                        } else {
-                            throw new IOException("Google Cloud API Error: " + status + " - " + message);
-                        }
-                    }
-                } catch (Exception e) {
-                    // Если не JSON, возвращаем как есть
-                    throw new IOException("Google Cloud API Error: " + responseCode + " - " + errorResponse);
-                }
+                throw new IOException("Google Cloud API Error: " + responseCode + " - " + errorResponse);
             }
 
-            // Читаем ответ
             StringBuilder response = new StringBuilder();
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
@@ -482,11 +415,8 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
                 }
             }
 
-            // Парсим JSON ответа и извлекаем аудио
             JSONObject jsonResponse = new JSONObject(response.toString());
             String audioContent = jsonResponse.getString("audioContent");
-
-            // Декодируем base64 в байты
             byte[] audioData = java.util.Base64.getDecoder().decode(audioContent);
             logger.info("✅ Получено {} байт аудио от Google Cloud TTS", audioData.length);
 
@@ -507,7 +437,6 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         if (errorStream == null) {
             return "No error response body";
         }
-
         try (BufferedReader errorReader = new BufferedReader(
                 new InputStreamReader(errorStream, StandardCharsets.UTF_8))) {
             StringBuilder errorResponse = new StringBuilder();
@@ -521,13 +450,7 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         }
     }
 
-    /**
-     * Получение текущей громкости в децибелах
-     * @return текущая громкость в dB
-     */
-    public float getCurrentVolumeGainDb() {
-        return currentVolumeGainDb;
-    }
+    public float getCurrentVolumeGainDb() { return currentVolumeGainDb; }
 
     public void setVolumeGainDb(float volumeGainDb) {
         if (volumeGainDb < -96.0f || volumeGainDb > 16.0f) {
@@ -537,16 +460,10 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         logger.info("Установлена громкость: {} dB", volumeGainDb);
     }
 
-    /**
-     * Установка языка озвучки
-     * @param languageCode код языка (например, "en-US", "ru-RU")
-     */
     public void setLanguage(String languageCode) {
         if (languageCode == null || languageCode.trim().isEmpty()) {
             throw new IllegalArgumentException("Код языка не может быть пустым");
         }
-
-        // Проверяем, есть ли голос для этого языка
         boolean found = false;
         for (GoogleVoice voice : GoogleVoice.values()) {
             if (voice.getLanguageCode().equalsIgnoreCase(languageCode)) {
@@ -554,17 +471,12 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
                 break;
             }
         }
-
         if (!found) {
             logger.warn("Для языка {} нет доступных голосов. Доступные языки: en-US, ru-RU", languageCode);
             return;
         }
-
         this.currentLanguage = languageCode;
         logger.info("Установлен язык озвучки: {}", languageCode);
-
-        // Если текущий голос не соответствует выбранному языку,
-        // меняем на первый доступный голос для этого языка
         if (!currentVoice.getLanguageCode().equalsIgnoreCase(languageCode)) {
             for (GoogleVoice voice : GoogleVoice.values()) {
                 if (voice.getLanguageCode().equalsIgnoreCase(languageCode)) {
@@ -576,9 +488,7 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
     }
 
     @Override
-    public boolean isAvailable() {
-        return serviceAvailable;
-    }
+    public boolean isAvailable() { return serviceAvailable; }
 
     public Map<String, String> getAvailableVoices() {
         Map<String, String> voices = new HashMap<>();
@@ -593,7 +503,6 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         return voices;
     }
 
-    // Геттеры для текущей конфигурации
     public GoogleVoice getCurrentVoice() { return currentVoice; }
     public float getCurrentSpeed() { return currentSpeed; }
     public float getCurrentPitch() { return currentPitch; }
@@ -604,12 +513,9 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
     @Override
     public void close() {
         if (closed) return;
-
         closed = true;
         logger.info("Закрытие Google Cloud TTS Service...");
-
         stopSpeaking();
-
         if (executorService != null && !executorService.isShutdown()) {
             try {
                 executorService.shutdown();
@@ -621,14 +527,14 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
                 Thread.currentThread().interrupt();
             }
         }
-
         logger.info("Google Cloud TTS Service закрыт");
     }
 
     @Override
     public CompletableFuture<Void> speakAsync(String text) {
         if (closed) {
-            throw new IllegalStateException("Google Cloud TTS Service закрыт");
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException("Google Cloud TTS Service закрыт"));
         }
 
         CompletableFuture<Void> future = new CompletableFuture<>();
@@ -649,38 +555,31 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
     }
 
     private void speakInternal(String text, CompletableFuture<Void> future) {
+        isStopping = false;
+
         try {
             String cleanText = cleanTextForSpeech(text);
 
-            // ========== ПРОВЕРКА ДЛИНЫ И ОБРЕЗКА ТЕКСТА ==========
-            // Проверяем размер текста в байтах (UTF-8)
             byte[] textBytes = cleanText.getBytes(StandardCharsets.UTF_8);
-
             if (textBytes.length > SAFE_TEXT_LENGTH) {
                 logger.warn("⚠️ Текст слишком длинный ({} байт). Лимит: {} байт. Обрезаем...",
                         textBytes.length, SAFE_TEXT_LENGTH);
 
-                // Обрезаем до безопасного размера
                 String trimmed = new String(textBytes, 0, SAFE_TEXT_LENGTH, StandardCharsets.UTF_8);
-
-                // Находим последнее полное предложение для более аккуратной обрезки
                 int lastPeriod = trimmed.lastIndexOf('.');
                 int lastQuestion = trimmed.lastIndexOf('?');
                 int lastExclamation = trimmed.lastIndexOf('!');
                 int lastSentence = Math.max(Math.max(lastPeriod, lastQuestion), lastExclamation);
 
                 if (lastSentence > trimmed.length() / 2) {
-                    // Обрезаем по последнему предложению
                     cleanText = trimmed.substring(0, lastSentence + 1) +
                             "\n\n[Текст сокращен из-за ограничения длины Google TTS]";
                 } else {
-                    // Если нет хорошего предложения, обрезаем по последнему слову
                     int lastSpace = trimmed.lastIndexOf(' ');
                     if (lastSpace > trimmed.length() / 2) {
                         cleanText = trimmed.substring(0, lastSpace) +
                                 "... [Текст сокращен из-за ограничения длины Google TTS]";
                     } else {
-                        // Простая обрезка
                         cleanText = trimmed + "... [Текст сокращен]";
                     }
                 }
@@ -688,25 +587,43 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
                 logger.info("Текст обрезан с {} до {} байт, {} символов",
                         textBytes.length, cleanText.getBytes(StandardCharsets.UTF_8).length, cleanText.length());
             }
-            // ========== КОНЕЦ ПРОВЕРКИ ДЛИНЫ ==========
 
             logger.info("Google Cloud TTS: Озвучка текста ({} символов, {} байт), голос: {}, скорость: {}, язык: {}",
                     cleanText.length(), cleanText.getBytes(StandardCharsets.UTF_8).length,
                     currentVoice.getDescription(), currentSpeed, currentLanguage);
 
-            // Генерация речи
+            if (isStopping || Thread.currentThread().isInterrupted()) {
+                logger.info("Озвучка отменена перед генерацией");
+                if (future != null && !future.isDone()) {
+                    future.completeExceptionally(new CancellationException("Озвучка отменена"));
+                }
+                return;
+            }
+
             byte[] audioData = callGoogleTTSAPI(cleanText, currentVoice.getVoiceName(),
                     currentSpeed, currentPitch, currentVolumeGainDb);
 
-            // Воспроизведение
+            if (isStopping || Thread.currentThread().isInterrupted()) {
+                logger.info("Озвучка отменена после генерации");
+                if (future != null && !future.isDone()) {
+                    future.completeExceptionally(new CancellationException("Озвучка отменена"));
+                }
+                return;
+            }
+
             playAudio(audioData);
 
-            if (future != null && !future.isDone()) {
+            if (!isStopping && future != null && !future.isDone()) {
                 future.complete(null);
             }
 
             logger.info("Google Cloud TTS: Озвучка завершена успешно");
 
+        } catch (CancellationException e) {
+            logger.info("⏹️ Озвучка отменена");
+            if (future != null && !future.isDone()) {
+                future.completeExceptionally(e);
+            }
         } catch (Exception e) {
             logger.error("Ошибка при озвучке текста", e);
             if (future != null && !future.isDone()) {
@@ -722,47 +639,114 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         Files.write(tempFile, audioData);
 
         try {
-            // Используем JLayer для воспроизведения MP3
-            javazoom.jl.player.Player player = new javazoom.jl.player.Player(
-                    new FileInputStream(tempFile.toFile()));
+            stopCurrentPlayback();
 
-            // Воспроизводим в отдельном потоке
-            Thread playbackThread = new Thread(() -> {
-                try {
-                    player.play();
-                } catch (Exception e) {
-                    logger.error("Ошибка при воспроизведении", e);
-                }
-            });
-            playbackThread.setDaemon(true);
-            playbackThread.start();
+            synchronized (playerLock) {
+                FileInputStream fis = new FileInputStream(tempFile.toFile());
+                currentPlayer = new Player(fis);
 
-            // Ждем начала воспроизведения
-            Thread.sleep(500);
+                playbackThread = new Thread(() -> {
+                    try {
+                        currentPlayer.play();
+                        logger.debug("Воспроизведение завершено");
+                    } catch (javazoom.jl.decoder.JavaLayerException e) {
+                        if (isStopping) {
+                            logger.debug("Воспроизведение прервано пользователем");
+                        } else {
+                            logger.error("Ошибка при воспроизведении", e);
+                        }
+                    } catch (Exception e) {
+                        if (!isStopping) {
+                            logger.error("Ошибка при воспроизведении", e);
+                        }
+                    } finally {
+                        synchronized (playerLock) {
+                            if (Thread.currentThread() == playbackThread) {
+                                playbackThread = null;
+                                currentPlayer = null;
+                            }
+                        }
+                        try {
+                            fis.close();
+                        } catch (IOException e) {
+                            logger.debug("Ошибка при закрытии файла: {}", e.getMessage());
+                        }
+                    }
+                });
+
+                playbackThread.setDaemon(true);
+                playbackThread.setName("TTS-Playback-Thread");
+                playbackThread.start();
+            }
+
+            Thread.sleep(200);
 
         } catch (NoClassDefFoundError e) {
             logger.warn("JLayer не найден, используем системный плеер");
 
-            // Fallback на системный плеер
-            String os = System.getProperty("os.name").toLowerCase();
-            ProcessBuilder pb;
+            stopCurrentPlayback();
 
-            if (os.contains("linux")) {
-                pb = new ProcessBuilder("mpg123", "-q", tempFile.toString());
-            } else if (os.contains("mac")) {
-                pb = new ProcessBuilder("afplay", tempFile.toString());
-            } else if (os.contains("win")) {
-                pb = new ProcessBuilder("cmd", "/c", "start", tempFile.toString());
-            } else {
-                pb = new ProcessBuilder("play", tempFile.toString());
+            synchronized (playerLock) {
+                String os = System.getProperty("os.name").toLowerCase();
+                ProcessBuilder pb;
+
+                if (os.contains("linux")) {
+                    pb = new ProcessBuilder("mpg123", "-q", tempFile.toString());
+                } else if (os.contains("mac")) {
+                    pb = new ProcessBuilder("afplay", tempFile.toString());
+                } else if (os.contains("win")) {
+                    pb = new ProcessBuilder("cmd", "/c", "start", tempFile.toString());
+                } else {
+                    pb = new ProcessBuilder("play", tempFile.toString());
+                }
+
+                playbackProcess = pb.start();
             }
 
-            Process process = pb.start();
-            process.waitFor(30, TimeUnit.SECONDS);
-
         } finally {
-            // Удаляем временный файл
-            Files.deleteIfExists(tempFile);
+            CompletableFuture.runAsync(() -> {
+                try {
+                    Thread.sleep(30000);
+                    Files.deleteIfExists(tempFile);
+                } catch (Exception ex) {
+                    logger.debug("Не удалось удалить временный файл: {}", ex.getMessage());
+                }
+            });
+        }
+    }
+
+    private void stopCurrentPlayback() {
+        synchronized (playerLock) {
+            if (currentPlayer != null) {
+                try {
+                    currentPlayer.close();
+                    logger.debug("JLayer Player остановлен");
+                } catch (Exception e) {
+                    logger.debug("Ошибка при остановке JLayer Player: {}", e.getMessage());
+                } finally {
+                    currentPlayer = null;
+                }
+            }
+
+            if (playbackThread != null && playbackThread.isAlive()) {
+                playbackThread.interrupt();
+                playbackThread = null;
+            }
+
+            if (playbackProcess != null && playbackProcess.isAlive()) {
+                playbackProcess.destroy();
+                try {
+                    if (!playbackProcess.waitFor(500, TimeUnit.MILLISECONDS)) {
+                        playbackProcess.destroyForcibly();
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    playbackProcess.destroyForcibly();
+                } finally {
+                    playbackProcess = null;
+                }
+                logger.debug("Системный плеер остановлен");
+            }
         }
     }
 
@@ -770,9 +754,9 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         if (closed) {
             throw new IllegalStateException("Google Cloud TTS Service закрыт");
         }
-
         try {
-            speakInternal(text, null);
+            CompletableFuture<Void> future = speakAsync(text);
+            future.get(30, TimeUnit.SECONDS);
         } catch (Exception e) {
             logger.error("Ошибка при озвучке", e);
             throw new RuntimeException("Ошибка озвучки: " + e.getMessage(), e);
@@ -781,14 +765,19 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
 
     @Override
     public void stopSpeaking() {
-        logger.info("Остановка Google Cloud TTS...");
+        logger.info("⏹️ Остановка Google Cloud TTS...");
+        isStopping = true;
+
+        stopCurrentPlayback();
+        
         if (currentSpeechFuture != null && !currentSpeechFuture.isDone()) {
             currentSpeechFuture.cancel(true);
             currentSpeechFuture = null;
         }
+
+        logger.info("✅ Google Cloud TTS остановлен");
     }
 
-    // Методы настройки
     public void setVoice(GoogleVoice voice) {
         this.currentVoice = voice;
         this.currentLanguage = voice.getLanguageCode();
@@ -823,7 +812,6 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         if (text == null) return "";
 
         String cleaned = text
-                // Удаляем markdown и форматирование
                 .replaceAll("#+\\s*", "")
                 .replaceAll("\\*\\*", "")
                 .replaceAll("\\*", "")
@@ -831,22 +819,15 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
                 .replaceAll("_", "")
                 .replaceAll("\\[.*?\\]\\(.*?\\)", "")
                 .replaceAll("<[^>]*>", "")
-
-                // Удаляем эмодзи и спецсимволы
                 .replaceAll("[🤖🎤📝📊🗣️✅⚠️🔴🔊▶️🏆🎉👍💪📚🔧❤️✨🌟🔥💡🎯📅❌ℹ️]", "")
-
-                // Удаляем целые секции с рекомендациями для экономии места
                 .replaceAll("(?s)## 🎯 ПЕРСОНАЛИЗИРОВАННЫЕ РЕКОМЕНДАЦИИ:.*?(?=##|$)", "")
                 .replaceAll("(?s)## 📅 НЕДЕЛЬНЫЙ ПЛАН ОБУЧЕНИЯ:.*?(?=##|$)", "")
                 .replaceAll("(?s)## 🎯 Упражнение для практики:.*?(?=##|$)", "")
                 .replaceAll("ℹ️ \\*.*?\\*", "")
-
-                // Удаляем повторяющиеся пробелы и переносы
                 .replaceAll("\\s+", " ")
                 .replaceAll("\\n{3,}", "\n\n")
                 .trim();
 
-        // Если текст все еще слишком длинный, берем только первую часть
         if (cleaned.length() > 4000) {
             int firstSentence = cleaned.indexOf('.');
             if (firstSentence > 200) {

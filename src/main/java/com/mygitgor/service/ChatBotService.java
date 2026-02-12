@@ -19,30 +19,27 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.util.List;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.Map;
 
 public class ChatBotService implements IChatBotService, ISpeechRecognitionService, ITTSService, AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(ChatBotService.class);
 
-    // Core services
     private final AiService aiService;
     private final IAudioAnalysisService audioAnalysisService;
     private final IRecommendationService recommendationService;
     private ITTSService ttsService;
     private final SpeechServiceManager speechServiceManager;
 
-    // Managers
     private final ConversationManager conversationManager;
     private final ResponseFormatter responseFormatter;
     private final TextCleanerService textCleaner;
 
-    // State
     private volatile boolean closed = false;
 
-    // ========================================
-    // Constructor
-    // ========================================
+    private volatile boolean isSpeaking = false;
+    private final Object speechLock = new Object();
 
     public ChatBotService(AiService aiService,
                           IAudioAnalysisService audioAnalysisService,
@@ -54,7 +51,6 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
         this.recommendationService = recommendationService;
         this.ttsService = ttsService;
 
-        // Initialize managers
         this.speechServiceManager = new SpeechServiceManager(speechRecorder);
         this.conversationManager = new ConversationManager();
         this.responseFormatter = new ResponseFormatter();
@@ -66,10 +62,6 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
                 speechRecorder.getClass().getSimpleName());
     }
 
-    // ========================================
-    // IChatBotService Implementation
-    // ========================================
-
     @Override
     public ChatResponse processUserInput(String text, String audioFilePath, ResponseMode responseMode) {
         checkClosed();
@@ -79,10 +71,8 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
                     text != null ? text.substring(0, Math.min(50, text.length())) + "..." : "null",
                     audioFilePath, responseMode);
 
-            // Convert response mode
             ResponseFormatter.ResponseMode mode = convertResponseMode(responseMode);
 
-            // Process audio if present
             String processedText = text;
             EnhancedSpeechAnalysis speechAnalysis = null;
 
@@ -92,16 +82,13 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
                 speechAnalysis = result.getAnalysis();
             }
 
-            // Fallback for empty text
             if (processedText == null || processedText.trim().isEmpty()) {
                 processedText = AppConstants.DEFAULT_SPEECH_TEXT;
             }
 
-            // Get AI responses
             String textAnalysis = aiService.analyzeText(processedText);
             String botResponse = aiService.generateBotResponse(processedText, speechAnalysis);
 
-            // Generate recommendations
             List<RecommendationEngine.PersonalizedRecommendation> recommendations = null;
             RecommendationEngine.WeeklyLearningPlan weeklyPlan = null;
 
@@ -110,18 +97,15 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
                 weeklyPlan = recommendationService.generateWeeklyPlan(speechAnalysis);
             }
 
-            // Save conversation
             conversationManager.saveConversation(processedText, botResponse,
                     speechAnalysis, audioFilePath);
 
-            // Format response
             String fullResponse = responseFormatter.formatResponse(
                     botResponse, textAnalysis, speechAnalysis,
                     recommendations, weeklyPlan, mode,
                     conversationManager.getCurrentUser()
             );
 
-            // Speak if voice mode
             if (responseMode == ResponseMode.VOICE && ttsService != null && ttsService.isAvailable()) {
                 speakResponseAsync(fullResponse);
             }
@@ -134,9 +118,6 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
         }
     }
 
-    /**
-     * Асинхронная озвучка текста (из IChatBotService)
-     */
     @Override
     public CompletableFuture<Void> speakTextAsync(String text) {
         checkClosed();
@@ -158,8 +139,11 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
     public void stopSpeaking() {
         if (ttsService != null) {
             ttsService.stopSpeaking();
-            logger.info("Озвучка остановлена");
         }
+        synchronized (speechLock) {
+            isSpeaking = false;
+        }
+        logger.info("Озвучка остановлена");
     }
 
     @Override
@@ -189,10 +173,6 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
         return aiService != null && aiService.isAvailable() && !closed;
     }
 
-    // ========================================
-    // ITTSService Implementation
-    // ========================================
-
     @Override
     public CompletableFuture<Void> speakAsync(String text) {
         checkClosed();
@@ -215,10 +195,8 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
         logger.info("Закрытие ChatBotService...");
         closed = true;
 
-        // Stop current operations
         stopSpeaking();
 
-        // Close services
         ErrorHandler.safeClose(speechServiceManager.getService(), "SpeechToTextService");
         ErrorHandler.safeClose(ttsService, "TTSService");
         if (aiService instanceof AutoCloseable) {
@@ -227,10 +205,6 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
 
         logger.info("ChatBotService закрыт");
     }
-
-    // ========================================
-    // ISpeechRecognitionService Implementation
-    // ========================================
 
     @Override
     public String recognizeSpeechInRealTime() {
@@ -279,13 +253,6 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
         return speechServiceManager.getCurrentSpeechLanguageName();
     }
 
-    // ========================================
-    // Additional Public Methods
-    // ========================================
-
-    /**
-     * Синхронная озвучка текста (для обратной совместимости)
-     */
     public void speakText(String text) {
         checkClosed();
         if (ttsService == null) {
@@ -338,10 +305,6 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
         return closed;
     }
 
-    // ========================================
-    // Private Helper Methods
-    // ========================================
-
     private void checkClosed() {
         if (closed) {
             throw new IllegalStateException("ChatBotService закрыт");
@@ -356,7 +319,6 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
 
     private SpeechProcessingResult processAudio(String audioFilePath, String originalText) {
         try {
-            // 1. Speech recognition
             SpeechToTextService.SpeechRecognitionResult recognition =
                     speechServiceManager.transcribe(audioFilePath);
 
@@ -364,7 +326,6 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
                     ? recognition.getText()
                     : (originalText != null && !originalText.isEmpty() ? originalText : AppConstants.DEFAULT_SPEECH_TEXT);
 
-            // 2. Audio analysis
             EnhancedSpeechAnalysis analysis =
                     audioAnalysisService.analyzeAudio(audioFilePath, recognizedText);
 
@@ -384,35 +345,60 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
             return;
         }
 
-        stopSpeaking();
+        synchronized (speechLock) {
+            if (isSpeaking) {
+                logger.debug("Озвучка уже выполняется, игнорируем новый запрос");
+                return;
+            }
+            isSpeaking = true;
+        }
 
         CompletableFuture.runAsync(() -> {
             try {
                 Thread.sleep(AppConstants.TTS_DELAY_MS);
                 String cleanText = textCleaner.cleanForSpeech(response);
-                if (!cleanText.isEmpty()) {
+                if (!cleanText.isEmpty() && !closed) {
                     ttsService.speakAsync(cleanText)
-                            .thenRun(() -> logger.info("✅ Озвучка завершена"))
+                            .thenRun(() -> {
+                                synchronized (speechLock) {
+                                    isSpeaking = false;
+                                }
+                                if (!closed) {
+                                    logger.info("✅ Озвучка завершена");
+                                }
+                            })
                             .exceptionally(e -> {
-                                logger.warn("Ошибка озвучки: {}", e.getMessage());
+                                synchronized (speechLock) {
+                                    isSpeaking = false;
+                                }
+                                if (!(e instanceof CancellationException) &&
+                                        !(e.getCause() instanceof CancellationException)) {
+                                    logger.warn("Ошибка озвучки: {}", e.getMessage());
+                                }
                                 return null;
                             });
+                } else {
+                    synchronized (speechLock) {
+                        isSpeaking = false;
+                    }
                 }
             } catch (InterruptedException e) {
+                synchronized (speechLock) {
+                    isSpeaking = false;
+                }
                 Thread.currentThread().interrupt();
+                logger.debug("Озвучка прервана");
             }
         });
     }
+
+
 
     private ChatResponse createErrorResponse(String errorMessage) {
         String message = "Извините, произошла ошибка: " + errorMessage +
                 "\nПожалуйста, попробуйте еще раз.";
         return new ChatResponse(message, null, null, null);
     }
-
-    // ========================================
-    // Inner Classes
-    // ========================================
 
     private static class SpeechProcessingResult {
         private final String text;
