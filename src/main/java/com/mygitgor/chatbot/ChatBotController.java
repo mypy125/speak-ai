@@ -24,6 +24,7 @@ import javafx.application.Platform;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
+import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
@@ -40,6 +41,8 @@ import java.text.SimpleDateFormat;
 import java.util.List;
 import java.util.ResourceBundle;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class ChatBotController implements Initializable, AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(ChatBotController.class);
@@ -124,6 +127,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
     private AnalysisManager analysisManager;
     private ThreadPoolManager threadPoolManager;
 
+    private final AtomicBoolean isShuttingDown = new AtomicBoolean(false);
+    private final AtomicReference<CompletableFuture<Void>> currentOperation = new AtomicReference<>(null);
+
     @Override
     public void initialize(URL location, ResourceBundle resources) {
         logger.info("Инициализация ChatBotController");
@@ -138,8 +144,10 @@ public class ChatBotController implements Initializable, AutoCloseable {
             return null;
         }, e -> {
             logger.error("Критическая ошибка при инициализации", e);
-            ErrorHandler.showError("Ошибка инициализации",
-                    "Не удалось инициализировать приложение: " + e.getMessage());
+            Platform.runLater(() -> {
+                ErrorHandler.showError("Ошибка инициализации",
+                        "Не удалось инициализировать приложение: " + e.getMessage());
+            });
             return null;
         }, "Ошибка инициализации контроллера");
     }
@@ -233,45 +241,51 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
             if (ttsStatusLabel != null) {
                 ttsStatusLabel.setText("⚠️ Демо-режим TTS");
-                ttsStatusLabel.setStyle("-fx-text-fill: #f39c12;");
+                ttsStatusLabel.setStyle("-fx-text-fill: #f39c12; -fx-font-weight: bold;");
             }
             if (ttsStatusIndicator != null) {
                 ttsStatusIndicator.setFill(Color.ORANGE);
             }
             if (ttsModeLabel != null) {
                 ttsModeLabel.setText("Демо-режим TTS");
+                ttsModeLabel.setStyle("-fx-text-fill: #f39c12; -fx-font-weight: bold;");
             }
             if (ttsInfoTextArea != null) {
-                ttsInfoTextArea.setText("""
-                ⚠️ TTS В ДЕМО-РЕЖИМЕ
-
-                Google Cloud TTS не настроен или недоступен.
-
-                📋 ЧТОБЫ ВКЛЮЧИТЬ РЕАЛЬНУЮ ОЗВУЧКУ:
-
-                1. Получите файл учетных данных:
-                   • Перейдите в Google Cloud Console
-                   • Создайте Service Account
-                   • Скачайте ключ в формате JSON
-                   • Переименуйте в google-credentials.json
-
-                2. Поместите файл в одну из папок:
-                   • Корень проекта
-                   • src/main/resources/
-                   • Укажите путь в переменной GOOGLE_APPLICATION_CREDENTIALS
-
-                3. Включите Text-to-Speech API в Google Cloud Console
-
-                4. Перезапустите приложение
-
-                🔧 ТЕКУЩИЙ СТАТУС:
-                • Режим: Демо (без звука)
-                • Функция: Только логирование
-                """);
+                ttsInfoTextArea.setText(getDemoTTSInfoText());
             }
         });
 
         return demoServices;
+    }
+
+    private String getDemoTTSInfoText() {
+        return """
+            ⚠️ TTS В ДЕМО-РЕЖИМЕ
+            =======================
+            
+            Google Cloud TTS не настроен или недоступен.
+            
+            📋 ЧТОБЫ ВКЛЮЧИТЬ РЕАЛЬНУЮ ОЗВУЧКУ:
+            
+            1. Получите файл учетных данных:
+               • Перейдите в Google Cloud Console
+               • Создайте Service Account
+               • Скачайте ключ в формате JSON
+               • Переименуйте в google-credentials.json
+            
+            2. Поместите файл в одну из папок:
+               • Корень проекта
+               • src/main/resources/
+               • Укажите путь в переменной GOOGLE_APPLICATION_CREDENTIALS
+            
+            3. Включите Text-to-Speech API в Google Cloud Console
+            
+            4. Перезапустите приложение
+            
+            🔧 ТЕКУЩИЙ СТАТУС:
+            • Режим: Демо (без звука)
+            • Функция: Только логирование
+            """;
     }
 
     private void showTTSConnectionSuccess(GoogleCloudTextToSpeechService service) {
@@ -437,7 +451,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
             String fullPath = path.startsWith("./") ?
                     projectRoot + path.substring(1) : path;
 
-            java.io.File file = new java.io.File(fullPath);
+            File file = new File(fullPath);
             logger.debug("Проверка пути: {} -> {}", fullPath, file.exists());
 
             if (file.exists() && file.canRead()) {
@@ -543,6 +557,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
     private void setupUI() {
         setupInputField();
         updateStatusLabel();
+        setupButtonStyles();
     }
 
     private void setupInputField() {
@@ -558,6 +573,20 @@ public class ChatBotController implements Initializable, AutoCloseable {
                         onSendMessage();
                     }
                     break;
+            }
+        });
+    }
+
+    private void setupButtonStyles() {
+        Platform.runLater(() -> {
+            if (sendButton != null) {
+                sendButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
+            }
+            if (clearButton != null) {
+                clearButton.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
+            }
+            if (historyButton != null) {
+                historyButton.setStyle("-fx-background-color: #34495e; -fx-text-fill: white;");
             }
         });
     }
@@ -598,7 +627,10 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 ? "✅ ИИ-сервис доступен"
                 : "⚠️ Демо-режим";
 
-        Platform.runLater(() -> statusLabel.setText(status));
+        Platform.runLater(() -> {
+            statusLabel.setText(status);
+            statusLabel.setStyle("-fx-font-weight: bold;");
+        });
     }
 
     private void showLoadingIndicator(boolean show) {
@@ -609,13 +641,16 @@ public class ChatBotController implements Initializable, AutoCloseable {
             }
             if (sendButton != null) {
                 sendButton.setDisable(show);
+                sendButton.setStyle(show ?
+                        "-fx-background-color: #95a5a6; -fx-text-fill: white;" :
+                        "-fx-background-color: #3498db; -fx-text-fill: white;");
             }
         });
     }
 
     @FXML
     private void onSendMessage() {
-        if (state.isClosed()) {
+        if (state.isClosed() || isShuttingDown.get()) {
             ErrorHandler.showError("Ошибка", "Приложение закрывается");
             return;
         }
@@ -643,7 +678,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
         statisticsManager.onMessageSent();
         showLoadingIndicator(true);
 
-        CompletableFuture.runAsync(() -> {
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
             try {
                 ChatBotService.ChatResponse response = chatBotService.processUserInput(
                         finalText,
@@ -655,9 +690,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
                 Platform.runLater(() -> {
                     messagesManager.addAIMessage(finalResponse.getFullResponse());
-
                     state.setLastBotResponse(finalResponse.getFullResponse());
-
                     responseModeManager.updatePlayButtonVisibility();
 
                     if (finalResponse.getSpeechAnalysis() != null) {
@@ -679,33 +712,51 @@ public class ChatBotController implements Initializable, AutoCloseable {
                     showLoadingIndicator(false);
                 });
             }
-        });
+        }, threadPoolManager.getBackgroundExecutor());
+
+        currentOperation.set(future);
     }
 
     @FXML
     private void onStartRecording() {
+        if (state.isClosed() || isShuttingDown.get()) {
+            ErrorHandler.showError("Ошибка", "Приложение закрывается");
+            return;
+        }
         recordingManager.startRecording();
     }
 
     @FXML
     private void onStopRecording() {
+        if (state.isClosed() || isShuttingDown.get()) {
+            ErrorHandler.showError("Ошибка", "Приложение закрывается");
+            return;
+        }
         recordingManager.stopRecording();
     }
 
     @FXML
     private void onAnalyzeAudio() {
+        if (state.isClosed() || isShuttingDown.get()) {
+            ErrorHandler.showError("Ошибка", "Приложение закрывается");
+            return;
+        }
         String inputText = inputField.getText().trim();
         analysisManager.analyzeCurrentAudio(inputText);
     }
 
     @FXML
     private void onPronunciationTraining() {
+        if (state.isClosed() || isShuttingDown.get()) {
+            ErrorHandler.showError("Ошибка", "Приложение закрывается");
+            return;
+        }
         analysisManager.showPronunciationTrainer();
     }
 
     @FXML
     private void testSpeechRecognition() {
-        if (state.isClosed()) {
+        if (state.isClosed() || isShuttingDown.get()) {
             ErrorHandler.showError("Ошибка", "Приложение закрывается");
             return;
         }
@@ -714,7 +765,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
     @FXML
     private void testMicrophone() {
-        if (state.isClosed()) {
+        if (state.isClosed() || isShuttingDown.get()) {
             ErrorHandler.showError("Ошибка", "Приложение закрывается");
             return;
         }
@@ -723,7 +774,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
     @FXML
     private void onMicrophoneRecognition() {
-        if (state.isClosed()) {
+        if (state.isClosed() || isShuttingDown.get()) {
             ErrorHandler.showError("Ошибка", "Приложение закрывается");
             return;
         }
@@ -732,6 +783,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
     @FXML
     private void toggleSpeechPanel() {
+        if (speechControlPanel == null) return;
         speechRecognitionUIManager.togglePanel();
 
         if (speechRecognitionUIManager.isPanelVisible() && ttsControlPanel != null) {
@@ -843,16 +895,25 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
     @FXML
     private void onStopSpeaking() {
-        responseModeManager.stopSpeaking();
+        if (responseModeManager != null) {
+            responseModeManager.stopSpeaking();
+        }
     }
 
     @FXML
     private void onPlayResponse() {
-        responseModeManager.playLastResponse();
+        if (responseModeManager != null) {
+            responseModeManager.playLastResponse();
+        }
     }
 
     @FXML
     private void onShowHistory() {
+        if (state.isClosed() || isShuttingDown.get()) {
+            ErrorHandler.showError("Ошибка", "Приложение закрывается");
+            return;
+        }
+
         List<Conversation> history = chatBotService.getConversationHistory();
 
         if (history.isEmpty()) {
@@ -953,14 +1014,17 @@ public class ChatBotController implements Initializable, AutoCloseable {
             textStage.initOwner(stage);
         }
 
-        javafx.scene.Scene scene = new javafx.scene.Scene(scrollPane, width, height);
+        Scene scene = new Scene(scrollPane, width, height);
         textStage.setScene(scene);
         textStage.show();
     }
 
     public void setStage(Stage stage) {
         this.stage = stage;
-        stage.setOnCloseRequest(event -> close());
+        stage.setOnCloseRequest(event -> {
+            event.consume();
+            close();
+        });
 
         if (analysisManager != null) {
             this.analysisManager = new AnalysisManager(
@@ -983,33 +1047,51 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
     @Override
     public void close() {
-        if (state.setClosed(true)) {
-            logger.info("Закрытие ChatBotController...");
-
-            if (responseModeManager != null) {
-                responseModeManager.stopSpeaking();
-            }
-
-            if (speechRecognitionUIManager != null) {
-                speechRecognitionUIManager.cancelCurrentTest();
-            }
-
-            if (recordingManager != null && recordingManager.isRecording()) {
-                recordingManager.stopRecording();
-            }
-
-            if (textToSpeechService != null) {
-                textToSpeechService.stopSpeaking();
-            }
-
-            ErrorHandler.safeClose(resourceManager, "ResourceManager");
-
-            if (threadPoolManager != null) {
-                threadPoolManager.shutdown();
-            }
-
-            logger.info("ChatBotController закрыт");
+        if (!isShuttingDown.compareAndSet(false, true)) {
+            return;
         }
+
+        logger.info("Закрытие ChatBotController...");
+
+        CompletableFuture<Void> operation = currentOperation.getAndSet(null);
+        if (operation != null && !operation.isDone()) {
+            operation.cancel(true);
+        }
+
+        if (responseModeManager != null) {
+            responseModeManager.stopSpeaking();
+            responseModeManager.shutdown();
+        }
+
+        if (speechRecognitionUIManager != null) {
+            speechRecognitionUIManager.cancelCurrentTest();
+        }
+
+        if (recordingManager != null && recordingManager.isRecording()) {
+            recordingManager.forceStop();
+        }
+
+        if (textToSpeechService != null) {
+            textToSpeechService.stopSpeaking();
+        }
+
+        if (analysisManager != null) {
+            analysisManager.cancelAnalysis();
+        }
+
+        ErrorHandler.safeClose(resourceManager, "ResourceManager");
+
+        if (threadPoolManager != null) {
+            threadPoolManager.shutdown();
+        }
+
+        Platform.runLater(() -> {
+            if (stage != null) {
+                stage.close();
+            }
+        });
+
+        logger.info("ChatBotController закрыт");
     }
 
     @FXML

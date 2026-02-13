@@ -4,6 +4,7 @@ import com.mygitgor.service.ChatBotService;
 import com.mygitgor.config.AppConstants;
 import com.mygitgor.error.ErrorHandler;
 import com.mygitgor.service.SpeechToTextService;
+import com.mygitgor.utils.ThreadPoolManager;
 import javafx.application.Platform;
 import javafx.scene.control.*;
 import javafx.scene.layout.VBox;
@@ -11,13 +12,19 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import javafx.scene.control.*;
+import java.io.File;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class SpeechRecognitionUIManager {
     private static final Logger logger = LoggerFactory.getLogger(SpeechRecognitionUIManager.class);
 
-    // ========================================
-    // UI Elements
-    // ========================================
+    private static final int STATUS_CLEAR_DELAY_SECONDS = 2;
+    private static final int DEBOUNCE_DELAY_MS = 300;
 
     private final VBox speechControlPanel;
     private final ComboBox<String> serviceTypeComboBox;
@@ -30,19 +37,15 @@ public class SpeechRecognitionUIManager {
     private final Label microphoneStatusLabel;
     private final Button microphoneButton;
 
-    // ========================================
-    // Dependencies
-    // ========================================
-
     private final ChatBotService chatBotService;
     private final Runnable onStatusUpdate;
 
-    // ========================================
-    // State
-    // ========================================
+    private final AtomicBoolean isTesting = new AtomicBoolean(false);
+    private final AtomicReference<CompletableFuture<Void>> currentTest = new AtomicReference<>(null);
 
-    private boolean isTesting = false;
-    private CompletableFuture<Void> currentTest;
+    private final ThreadPoolManager threadPoolManager;
+    private final ExecutorService backgroundExecutor;
+    private final ScheduledExecutorService scheduledExecutor;
 
     public SpeechRecognitionUIManager(
             VBox speechControlPanel,
@@ -71,12 +74,12 @@ public class SpeechRecognitionUIManager {
         this.chatBotService = chatBotService;
         this.onStatusUpdate = onStatusUpdate;
 
+        this.threadPoolManager = ThreadPoolManager.getInstance();
+        this.backgroundExecutor = threadPoolManager.getBackgroundExecutor();
+        this.scheduledExecutor = threadPoolManager.getScheduledExecutor();
+
         initializeUI();
     }
-
-    // ========================================
-    // Initialization
-    // ========================================
 
     private void initializeUI() {
         if (!areUIElementsValid()) {
@@ -88,7 +91,6 @@ public class SpeechRecognitionUIManager {
         setupMicrophoneSensitivitySlider();
         setupLanguageComboBox();
 
-        // Initial status update
         updateServiceStatus(AppConstants.DEFAULT_SPEECH_SERVICE);
     }
 
@@ -98,18 +100,16 @@ public class SpeechRecognitionUIManager {
                 microphoneSensitivitySlider != null;
     }
 
-    // ========================================
-    // Setup Methods
-    // ========================================
-
     private void setupServiceTypeComboBox() {
-        serviceTypeComboBox.getItems().addAll(
-                "MOCK - Тестовый режим",
-                "VOSK - Оффлайн распознавание",
-                "WHISPER - OpenAI Whisper",
-                "GOOGLE - Google Speech API"
-        );
-        serviceTypeComboBox.setValue(AppConstants.DEFAULT_SPEECH_SERVICE);
+        Platform.runLater(() -> {
+            serviceTypeComboBox.getItems().addAll(
+                    "MOCK - Тестовый режим",
+                    "VOSK - Оффлайн распознавание",
+                    "WHISPER - OpenAI Whisper",
+                    "GOOGLE - Google Speech API"
+            );
+            serviceTypeComboBox.setValue(AppConstants.DEFAULT_SPEECH_SERVICE);
+        });
 
         serviceTypeComboBox.setOnAction(event -> {
             String selected = serviceTypeComboBox.getValue();
@@ -119,40 +119,68 @@ public class SpeechRecognitionUIManager {
     }
 
     private void setupMicrophoneSensitivitySlider() {
-        microphoneSensitivitySlider.setMin(AppConstants.MIN_MICROPHONE_SENSITIVITY);
-        microphoneSensitivitySlider.setMax(AppConstants.MAX_MICROPHONE_SENSITIVITY);
-        microphoneSensitivitySlider.setValue(AppConstants.DEFAULT_MICROPHONE_SENSITIVITY);
+        Platform.runLater(() -> {
+            microphoneSensitivitySlider.setMin(AppConstants.MIN_MICROPHONE_SENSITIVITY);
+            microphoneSensitivitySlider.setMax(AppConstants.MAX_MICROPHONE_SENSITIVITY);
+            microphoneSensitivitySlider.setValue(AppConstants.DEFAULT_MICROPHONE_SENSITIVITY);
+
+            if (sensitivityLabel != null) {
+                sensitivityLabel.setText(String.format("%.1f",
+                        AppConstants.DEFAULT_MICROPHONE_SENSITIVITY));
+            }
+        });
+
+        AtomicReference<Double> lastSensitivity = new AtomicReference<>(
+                AppConstants.DEFAULT_MICROPHONE_SENSITIVITY
+        );
 
         microphoneSensitivitySlider.valueProperty().addListener((obs, oldVal, newVal) -> {
             double sensitivity = Math.round(newVal.doubleValue() * 10) / 10.0;
-            if (sensitivityLabel != null) {
-                sensitivityLabel.setText(String.format("%.1f", sensitivity));
-            }
-            chatBotService.setMicrophoneSensitivity(sensitivity);
-        });
 
-        // Initial sensitivity label
-        if (sensitivityLabel != null) {
-            sensitivityLabel.setText(String.format("%.1f",
-                    AppConstants.DEFAULT_MICROPHONE_SENSITIVITY));
-        }
+            if (sensitivityLabel != null) {
+                Platform.runLater(() -> sensitivityLabel.setText(String.format("%.1f", sensitivity)));
+            }
+
+            lastSensitivity.set(sensitivity);
+
+            scheduledExecutor.schedule(() -> {
+                double currentSensitivity = lastSensitivity.get();
+                chatBotService.setMicrophoneSensitivity(currentSensitivity);
+                logger.debug("Чувствительность микрофона обновлена: {}", currentSensitivity);
+            }, DEBOUNCE_DELAY_MS, TimeUnit.MILLISECONDS);
+        });
     }
 
     private void setupLanguageComboBox() {
-        languageComboBox.setVisible(false);
-        languageComboBox.setDisable(true);
+        Platform.runLater(() -> {
+            languageComboBox.setVisible(false);
+            languageComboBox.setDisable(true);
+        });
 
-        // Load languages asynchronously
-        CompletableFuture.runAsync(this::loadLanguages);
+        CompletableFuture.runAsync(this::loadLanguages, backgroundExecutor);
 
         languageComboBox.setOnAction(event -> {
             String selected = languageComboBox.getValue();
             if (selected != null) {
                 try {
                     String languageCode = extractLanguageCode(selected);
-                    chatBotService.switchSpeechLanguage(languageCode);
-                    updateServiceStatus(serviceTypeComboBox.getValue());
-                    logger.info("Язык распознавания изменен на: {}", languageCode);
+
+                    CompletableFuture.runAsync(() -> {
+                        chatBotService.switchSpeechLanguage(languageCode);
+                        logger.info("Язык распознавания изменен на: {}", languageCode);
+
+                        Platform.runLater(() -> {
+                            updateServiceStatus(serviceTypeComboBox.getValue());
+                        });
+                    }, backgroundExecutor).exceptionally(throwable -> {
+                        logger.error("Ошибка при смене языка", throwable);
+                        Platform.runLater(() -> {
+                            ErrorHandler.showError("Ошибка",
+                                    "Не удалось изменить язык: " + throwable.getMessage());
+                        });
+                        return null;
+                    });
+
                 } catch (Exception e) {
                     logger.error("Ошибка при обработке выбора языка", e);
                     ErrorHandler.showError("Ошибка",
@@ -165,6 +193,7 @@ public class SpeechRecognitionUIManager {
     private void loadLanguages() {
         try {
             Map<String, String> languages = chatBotService.getSupportedLanguagesWithNames();
+
             Platform.runLater(() -> {
                 languageComboBox.getItems().clear();
 
@@ -174,7 +203,13 @@ public class SpeechRecognitionUIManager {
 
                 String currentLangName = chatBotService.getCurrentSpeechLanguageName();
                 String currentLangCode = chatBotService.getCurrentSpeechLanguage();
-                languageComboBox.setValue(currentLangName + " (" + currentLangCode + ")");
+
+                String currentItem = currentLangName + " (" + currentLangCode + ")";
+                if (languageComboBox.getItems().contains(currentItem)) {
+                    languageComboBox.setValue(currentItem);
+                } else if (!languageComboBox.getItems().isEmpty()) {
+                    languageComboBox.setValue(languageComboBox.getItems().get(0));
+                }
 
                 languageComboBox.setVisible(true);
                 languageComboBox.setDisable(false);
@@ -183,12 +218,12 @@ public class SpeechRecognitionUIManager {
             });
         } catch (Exception e) {
             logger.error("Ошибка при загрузке языков", e);
+            Platform.runLater(() -> {
+                languageComboBox.setVisible(false);
+                languageComboBox.setDisable(true);
+            });
         }
     }
-
-    // ========================================
-    // Public Methods
-    // ========================================
 
     public void updateServiceStatus(String serviceInfo) {
         if (speechServiceStatusLabel == null) return;
@@ -199,7 +234,7 @@ public class SpeechRecognitionUIManager {
             boolean languageDisabled = isLanguageDisabled(serviceInfo);
 
             speechServiceStatusLabel.setText(statusText);
-            speechServiceStatusLabel.setStyle(statusStyle);
+            speechServiceStatusLabel.setStyle(statusStyle + " -fx-font-weight: bold;");
 
             if (languageComboBox != null) {
                 languageComboBox.setDisable(languageDisabled);
@@ -208,15 +243,14 @@ public class SpeechRecognitionUIManager {
     }
 
     public void startMicrophoneTest() {
-        if (isTesting) {
+        if (!isTesting.compareAndSet(false, true)) {
             logger.warn("Тестирование уже выполняется");
             return;
         }
 
-        isTesting = true;
         updateMicrophoneTestUI(true);
 
-        currentTest = CompletableFuture.runAsync(() -> {
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
             try {
                 logger.info("Начало тестирования микрофона...");
                 chatBotService.testMicrophone(AppConstants.TEST_RECORDING_DURATION_SECONDS);
@@ -236,39 +270,55 @@ public class SpeechRecognitionUIManager {
                             "Не удалось протестировать микрофон: " + e.getMessage());
                 });
             } finally {
-                isTesting = false;
+                isTesting.set(false);
                 Platform.runLater(() -> updateMicrophoneTestUI(false));
             }
-        });
+        }, backgroundExecutor);
+
+        currentTest.set(future);
+
+        scheduledExecutor.schedule(() -> {
+            if (!future.isDone()) {
+                future.cancel(true);
+                isTesting.set(false);
+                Platform.runLater(() -> {
+                    updateMicrophoneTestUI(false);
+                    updateMicrophoneStatus("⏱️ Таймаут", "warning");
+                });
+                logger.warn("Таймаут теста микрофона");
+            }
+        }, 10, TimeUnit.SECONDS);
     }
 
     public void startSpeechRecognitionTest(String testAudioPath) {
-        if (isTesting) {
+        if (!isTesting.compareAndSet(false, true)) {
             logger.warn("Тестирование уже выполняется");
             return;
         }
 
-        java.io.File testFile = new java.io.File(testAudioPath);
+        File testFile = new File(testAudioPath);
         if (!testFile.exists()) {
+            isTesting.set(false);
             ErrorHandler.showWarning("Тест", "Сначала запишите тестовое аудио");
             return;
         }
 
-        isTesting = true;
         updateSpeechTestUI(true);
+        updateStatus("🔍 Тестирование распознавания...");
 
-        currentTest = CompletableFuture.runAsync(() -> {
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
             try {
-                updateStatus("🔍 Тестирование распознавания...");
-
                 long startTime = System.currentTimeMillis();
                 SpeechToTextService service = chatBotService.getSpeechToTextService();
                 SpeechToTextService.SpeechRecognitionResult result =
                         service.transcribe(testAudioPath);
                 long elapsedTime = System.currentTimeMillis() - startTime;
 
+                final SpeechToTextService.SpeechRecognitionResult finalResult = result;
+                final long finalElapsedTime = elapsedTime;
+
                 Platform.runLater(() -> {
-                    showRecognitionResult(result, elapsedTime);
+                    showRecognitionResult(finalResult, finalElapsedTime);
                     updateServiceStatus(serviceTypeComboBox.getValue());
                 });
 
@@ -280,30 +330,46 @@ public class SpeechRecognitionUIManager {
                     updateServiceStatus(serviceTypeComboBox.getValue());
                 });
             } finally {
-                isTesting = false;
+                isTesting.set(false);
                 Platform.runLater(() -> updateSpeechTestUI(false));
             }
-        });
+        }, backgroundExecutor);
+
+        currentTest.set(future);
+
+        scheduledExecutor.schedule(() -> {
+            if (!future.isDone()) {
+                future.cancel(true);
+                isTesting.set(false);
+                Platform.runLater(() -> {
+                    updateSpeechTestUI(false);
+                    updateStatus("⏱️ Таймаут");
+                });
+                logger.warn("Таймаут теста распознавания");
+            }
+        }, 30, TimeUnit.SECONDS);
     }
 
     public void startMicrophoneRecognition(TextArea inputField) {
-        if (isTesting) {
+        if (!isTesting.compareAndSet(false, true)) {
             logger.warn("Распознавание уже выполняется");
             return;
         }
 
-        isTesting = true;
+        final TextArea finalInputField = inputField;
+
         updateMicrophoneRecognitionUI(true);
+        updateMicrophoneStatus("🎤 Говорите...", "recording");
 
-        currentTest = CompletableFuture.runAsync(() -> {
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
             try {
-                updateMicrophoneStatus("🎤 Говорите...", "recording");
-
                 String recognizedText = chatBotService.recognizeSpeechInRealTime();
 
+                final String finalText = recognizedText;
+
                 Platform.runLater(() -> {
-                    if (recognizedText != null && !recognizedText.trim().isEmpty()) {
-                        insertRecognizedText(inputField, recognizedText);
+                    if (finalText != null && !finalText.trim().isEmpty()) {
+                        insertRecognizedText(finalInputField, finalText);
                         updateMicrophoneStatus("✓ Распознано", "success");
                     } else {
                         updateMicrophoneStatus("✗ Не распознано", "error");
@@ -318,64 +384,82 @@ public class SpeechRecognitionUIManager {
                             "Не удалось распознать речь: " + e.getMessage());
                 });
             } finally {
-                isTesting = false;
+                isTesting.set(false);
                 Platform.runLater(() -> {
                     updateMicrophoneRecognitionUI(false);
-                    // Clear status after delay
-                    CompletableFuture.delayedExecutor(2, java.util.concurrent.TimeUnit.SECONDS)
-                            .execute(() -> Platform.runLater(() ->
-                                    updateMicrophoneStatus("", "none")));
+                    scheduledExecutor.schedule(() ->
+                                    Platform.runLater(() -> updateMicrophoneStatus("", "none")),
+                            STATUS_CLEAR_DELAY_SECONDS, TimeUnit.SECONDS
+                    );
                 });
             }
-        });
+        }, backgroundExecutor);
+
+        currentTest.set(future);
+
+        scheduledExecutor.schedule(() -> {
+            if (!future.isDone()) {
+                future.cancel(true);
+                isTesting.set(false);
+                Platform.runLater(() -> {
+                    updateMicrophoneRecognitionUI(false);
+                    updateMicrophoneStatus("⏱️ Таймаут", "warning");
+                });
+                logger.warn("Таймаут распознавания речи");
+            }
+        }, 10, TimeUnit.SECONDS);
     }
 
     public void cancelCurrentTest() {
-        if (currentTest != null && !currentTest.isDone()) {
-            currentTest.cancel(true);
-            isTesting = false;
+        CompletableFuture<Void> test = currentTest.getAndSet(null);
+        if (test != null && !test.isDone()) {
+            test.cancel(true);
+        }
+
+        isTesting.set(false);
+
+        Platform.runLater(() -> {
             updateMicrophoneTestUI(false);
             updateSpeechTestUI(false);
             updateMicrophoneRecognitionUI(false);
             updateMicrophoneStatus("⏹️ Прервано", "warning");
-            logger.info("Текущее тестирование отменено");
-        }
+        });
+
+        logger.info("Текущее тестирование отменено");
     }
 
     public void togglePanel() {
         if (speechControlPanel == null) return;
 
-        boolean isVisible = speechControlPanel.isVisible();
-        speechControlPanel.setVisible(!isVisible);
-        speechControlPanel.setManaged(!isVisible);
+        Platform.runLater(() -> {
+            boolean isVisible = speechControlPanel.isVisible();
+            speechControlPanel.setVisible(!isVisible);
+            speechControlPanel.setManaged(!isVisible);
+        });
 
-        logger.info("Панель распознавания речи {}", isVisible ? "скрыта" : "показана");
+        logger.info("Панель распознавания речи {}",
+                speechControlPanel.isVisible() ? "показана" : "скрыта");
     }
 
     public boolean isPanelVisible() {
         return speechControlPanel != null && speechControlPanel.isVisible();
     }
 
-    // ========================================
-    // Private Helper Methods
-    // ========================================
-
     private String extractLanguageCode(String selectedItem) {
-        return selectedItem.substring(
-                selectedItem.lastIndexOf("(") + 1,
-                selectedItem.lastIndexOf(")")
-        );
+        int start = selectedItem.lastIndexOf("(") + 1;
+        int end = selectedItem.lastIndexOf(")");
+        return selectedItem.substring(start, end);
     }
 
     private String getStatusText(String serviceInfo) {
         if (serviceInfo.contains("MOCK")) {
             return "🔧 Тестовый режим";
         } else if (serviceInfo.contains("WHISPER")) {
-            return "✅ Whisper API (требуется ключ)";
+            return "✅ Whisper API";
         } else if (serviceInfo.contains("GOOGLE")) {
-            return "✅ Google Speech API (требуется ключ)";
+            return "✅ Google Speech API";
         } else if (serviceInfo.contains("VOSK")) {
-            return "📁 Оффлайн распознавание (требуется модель)";
+            return "📁 Vosk оффлайн";
         }
         return "⚙️ Неизвестный сервис";
     }
@@ -397,50 +481,52 @@ public class SpeechRecognitionUIManager {
 
     private void updateMicrophoneTestUI(boolean testing) {
         if (testMicrophoneButton != null) {
-            testMicrophoneButton.setDisable(testing);
-            testMicrophoneButton.setText(testing ? "🔄 Тестирование..." : "🎤 Тест микрофона");
+            Platform.runLater(() -> {
+                testMicrophoneButton.setDisable(testing);
+                testMicrophoneButton.setText(testing ? "🔄 Тестирование..." : "🎤 Тест микрофона");
+            });
         }
     }
 
     private void updateSpeechTestUI(boolean testing) {
         if (testSpeechButton != null) {
-            testSpeechButton.setDisable(testing);
-            testSpeechButton.setText(testing ? "🔄 Тестирование..." : "🔊 Тест распознавания");
+            Platform.runLater(() -> {
+                testSpeechButton.setDisable(testing);
+                testSpeechButton.setText(testing ? "🔄 Тестирование..." : "🔊 Тест распознавания");
+            });
         }
     }
 
     private void updateMicrophoneRecognitionUI(boolean active) {
         if (microphoneButton != null) {
-            microphoneButton.setDisable(active);
-            microphoneButton.setText(active ? "🔴" : "🎤");
-            microphoneButton.setStyle(active ?
-                    "-fx-background-color: #e74c3c;" : "");
+            Platform.runLater(() -> {
+                microphoneButton.setDisable(active);
+                microphoneButton.setText(active ? "🔴" : "🎤");
+                microphoneButton.setStyle(active ?
+                        "-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-font-weight: bold;" :
+                        "-fx-background-color: #3498db; -fx-text-fill: white; -fx-font-weight: bold;");
+            });
         }
     }
 
     private void updateMicrophoneStatus(String status, String type) {
         if (microphoneStatusLabel == null) return;
 
-        String color;
-        switch (type) {
-            case "success":
-                color = "#27ae60";
-                break;
-            case "error":
-                color = "#e74c3c";
-                break;
-            case "recording":
-                color = "#e74c3c";
-                break;
-            case "warning":
-                color = "#f39c12";
-                break;
-            default:
-                color = "#7f8c8d";
-        }
+        String color = switch (type) {
+            case "success" -> "#27ae60";
+            case "error" -> "#e74c3c";
+            case "recording" -> "#e74c3c";
+            case "warning" -> "#f39c12";
+            default -> "#7f8c8d";
+        };
 
-        microphoneStatusLabel.setText(status);
-        microphoneStatusLabel.setStyle("-fx-text-fill: " + color + ";");
+        final String finalStatus = status;
+        final String finalStyle = "-fx-text-fill: " + color + "; -fx-font-weight: bold;";
+
+        Platform.runLater(() -> {
+            microphoneStatusLabel.setText(finalStatus);
+            microphoneStatusLabel.setStyle(finalStyle);
+        });
     }
 
     private void updateStatus(String status) {
@@ -453,23 +539,25 @@ public class SpeechRecognitionUIManager {
     private void insertRecognizedText(TextArea inputField, String text) {
         if (inputField == null) return;
 
-        String currentText = inputField.getText();
-        if (!currentText.isEmpty() && !currentText.matches(".*[.!?\\s]$")) {
-            currentText += " ";
-        }
-        inputField.setText(currentText + text);
-        inputField.positionCaret(inputField.getText().length());
+        Platform.runLater(() -> {
+            String currentText = inputField.getText();
+            if (!currentText.isEmpty() && !currentText.matches(".*[.!?\\s]$")) {
+                currentText += " ";
+            }
+            inputField.setText(currentText + text);
+            inputField.positionCaret(inputField.getText().length());
+        });
     }
 
     private void showRecognitionResult(SpeechToTextService.SpeechRecognitionResult result,
                                        long elapsedTime) {
         String message = String.format(
                 "Результат теста:\n\n" +
-                        "Текст: %s\n" +
-                        "Уверенность: %.1f%%\n" +
-                        "Время: %d мс\n" +
-                        "Сервис: %s\n" +
-                        "Язык: %s",
+                        "📝 Текст: %s\n" +
+                        "📊 Уверенность: %.1f%%\n" +
+                        "⏱️ Время: %d мс\n" +
+                        "🔧 Сервис: %s\n" +
+                        "🌐 Язык: %s",
                 result.getText(),
                 result.getConfidence() * 100,
                 elapsedTime,
@@ -483,10 +571,6 @@ public class SpeechRecognitionUIManager {
     private void showTestResult(String title, String message) {
         ErrorHandler.showInfo(title, message);
     }
-
-    // ========================================
-    // Getters
-    // ========================================
 
     public String getSelectedServiceType() {
         return serviceTypeComboBox != null ?
@@ -505,6 +589,6 @@ public class SpeechRecognitionUIManager {
     }
 
     public boolean isTesting() {
-        return isTesting;
+        return isTesting.get();
     }
 }

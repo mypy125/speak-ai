@@ -22,22 +22,34 @@ public class ChatBotState {
 
     private final Statistics statistics = new Statistics();
 
-    // ========================================
-    // Statistics inner class
-    // ========================================
-
     public static class Statistics {
         private final AtomicInteger messagesCount = new AtomicInteger(0);
         private final AtomicInteger analysisCount = new AtomicInteger(0);
         private final AtomicInteger recordingsCount = new AtomicInteger(0);
 
-        public int incrementMessages() { return messagesCount.incrementAndGet(); }
-        public int incrementAnalysis() { return analysisCount.incrementAndGet(); }
-        public int incrementRecordings() { return recordingsCount.incrementAndGet(); }
+        public int incrementMessages() {
+            return messagesCount.incrementAndGet();
+        }
 
-        public int getMessagesCount() { return messagesCount.get(); }
-        public int getAnalysisCount() { return analysisCount.get(); }
-        public int getRecordingsCount() { return recordingsCount.get(); }
+        public int incrementAnalysis() {
+            return analysisCount.incrementAndGet();
+        }
+
+        public int incrementRecordings() {
+            return recordingsCount.incrementAndGet();
+        }
+
+        public int getMessagesCount() {
+            return messagesCount.get();
+        }
+
+        public int getAnalysisCount() {
+            return analysisCount.get();
+        }
+
+        public int getRecordingsCount() {
+            return recordingsCount.get();
+        }
 
         public void reset() {
             messagesCount.set(0);
@@ -52,11 +64,17 @@ public class ChatBotState {
             snapshot.recordingsCount.set(this.recordingsCount.get());
             return snapshot;
         }
+
+        @Override
+        public String toString() {
+            return String.format("Statistics{messages=%d, analysis=%d, recordings=%d}",
+                    messagesCount.get(), analysisCount.get(), recordingsCount.get());
+        }
     }
 
-    // ========================================
-    // State getters/setters
-    // ========================================
+    public ChatBotState() {
+        logger.debug("ChatBotState инициализирован");
+    }
 
     public boolean isClosed() {
         return closed.get();
@@ -110,7 +128,11 @@ public class ChatBotState {
     }
 
     public String setLastBotResponse(String response) {
-        return lastBotResponse.getAndSet(response);
+        String previous = lastBotResponse.getAndSet(response);
+        if (response != null && !response.equals(previous)) {
+            logger.debug("Последний ответ бота обновлен (длина: {})", response.length());
+        }
+        return previous;
     }
 
     public ResponseMode getCurrentResponseMode() {
@@ -130,31 +152,34 @@ public class ChatBotState {
     }
 
     public String setCurrentAudioFile(String file) {
-        return currentAudioFile.getAndSet(file);
+        String previous = currentAudioFile.getAndSet(file);
+        if (file != null && !file.equals(previous)) {
+            logger.debug("Текущий аудиофайл: {}", file);
+        }
+        return previous;
     }
 
     public void clearCurrentAudioFile() {
-        currentAudioFile.set(null);
+        String previous = currentAudioFile.getAndSet(null);
+        if (previous != null) {
+            logger.debug("Аудиофайл очищен: {}", previous);
+        }
     }
-
-    // ========================================
-    // Statistics methods
-    // ========================================
 
     public Statistics getStatistics() {
         return statistics.snapshot();
     }
 
-    public void incrementMessagesCount() {
-        statistics.incrementMessages();
+    public int incrementMessagesCount() {
+        return statistics.incrementMessages();
     }
 
-    public void incrementAnalysisCount() {
-        statistics.incrementAnalysis();
+    public int incrementAnalysisCount() {
+        return statistics.incrementAnalysis();
     }
 
-    public void incrementRecordingsCount() {
-        statistics.incrementRecordings();
+    public int incrementRecordingsCount() {
+        return statistics.incrementRecordings();
     }
 
     public void resetStatistics() {
@@ -162,22 +187,19 @@ public class ChatBotState {
         logger.info("Статистика сброшена");
     }
 
-    // ========================================
-    // Utility methods
-    // ========================================
-
     public boolean canSendMessage() {
-        return !isClosed() &&
-                (hasTextInput() || hasAudioFile());
+        return !isClosed() && (hasTextInput() || hasAudioFile());
     }
 
     public boolean hasTextInput() {
-        return false; // Will be set by controller
+        // Этот метод должен быть переопределен контроллером
+        // или получать значение извне
+        return false;
     }
 
     public boolean hasAudioFile() {
-        return currentAudioFile.get() != null &&
-                !currentAudioFile.get().isEmpty();
+        String file = currentAudioFile.get();
+        return file != null && !file.isEmpty();
     }
 
     public void reset() {
@@ -186,5 +208,41 @@ public class ChatBotState {
         setPlayingSpeech(false);
         setRecording(false);
         logger.debug("Состояние сброшено");
+    }
+
+    public void resetAll() {
+        reset();
+        setCurrentResponseMode(ResponseMode.TEXT);
+        setAiServiceAvailable(false);
+        logger.debug("Полный сброс состояния выполнен");
+    }
+
+    public String getStateString() {
+        return String.format(
+                "ChatBotState{closed=%s, playingSpeech=%s, aiAvailable=%s, recording=%s, mode=%s, hasAudio=%s}",
+                closed.get(), isPlayingSpeech.get(), isAiServiceAvailable.get(),
+                isRecording.get(), currentResponseMode.get(), hasAudioFile()
+        );
+    }
+
+    public boolean isActive() {
+        return !closed.get();
+    }
+
+    public boolean canStartRecording() {
+        return isActive() && !isRecording.get();
+    }
+
+    public boolean canStopRecording() {
+        return isRecording.get();
+    }
+
+    public boolean canPlaySpeech() {
+        return isActive() && !isPlayingSpeech.get() &&
+                lastBotResponse.get() != null && !lastBotResponse.get().isEmpty();
+    }
+
+    public boolean canStopSpeech() {
+        return isPlayingSpeech.get();
     }
 }
