@@ -3,55 +3,61 @@ package com.mygitgor.analysis;
 import com.mygitgor.model.EnhancedSpeechAnalysis;
 import com.mygitgor.service.interfaces.IRecommendationService;
 import com.mygitgor.service.AudioAnalyzer;
+import com.mygitgor.utils.ThreadPoolManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 public class PronunciationTrainer implements IRecommendationService, AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(PronunciationTrainer.class);
 
+    private static final int WEAK_PHONEME_THRESHOLD = 70;
+    private static final int MAX_WEAK_PHONEMES = 3;
+    private static final int ANALYSIS_TIMEOUT_SECONDS = 30;
+    private static final float HIGH_PRIORITY_IMPROVEMENT = 25.0f;
+    private static final float MEDIUM_PRIORITY_IMPROVEMENT = 18.0f;
+    private static final float LOW_PRIORITY_IMPROVEMENT = 10.0f;
+
     private final AudioAnalyzer audioAnalyzer;
     private final Map<String, String> phonemeExamples;
-    private volatile boolean closed = false;
+
+    private final AtomicBoolean closed = new AtomicBoolean(false);
+    private final AtomicReference<CompletableFuture<?>> currentOperation = new AtomicReference<>(null);
+
+    private final ThreadPoolManager threadPoolManager;
+    private final ExecutorService backgroundExecutor;
 
     public PronunciationTrainer() {
+        this.threadPoolManager = ThreadPoolManager.getInstance();
+        this.backgroundExecutor = threadPoolManager.getBackgroundExecutor();
         this.audioAnalyzer = new AudioAnalyzer();
         this.phonemeExamples = createPhonemeExamples();
+
         logger.info("Инициализирован тренажер произношения");
     }
-
-    // ========================================
-    // IRecommendationService Implementation
-    // ========================================
 
     @Override
     public List<RecommendationEngine.PersonalizedRecommendation> generateRecommendations(EnhancedSpeechAnalysis analysis) {
         logger.info("Генерация персонализированных рекомендаций на основе анализа");
 
+        if (analysis == null || closed.get()) {
+            return Collections.emptyList();
+        }
+
         List<RecommendationEngine.PersonalizedRecommendation> recommendations = new ArrayList<>();
 
-        if (analysis == null) {
-            return recommendations;
-        }
-
         // Рекомендации на основе слабых фонем
-        if (analysis.getPhonemeScores() != null && !analysis.getPhonemeScores().isEmpty()) {
-            List<String> weakPhonemes = analysis.getPhonemeScores().entrySet().stream()
-                    .filter(e -> e.getValue() < 70)
-                    .sorted(Map.Entry.comparingByValue())
-                    .limit(3)
-                    .map(Map.Entry::getKey)
-                    .collect(Collectors.toList());
-
-            if (!weakPhonemes.isEmpty()) {
-                recommendations.add(createPhonemeRecommendation(weakPhonemes, analysis));
-            }
-        }
+        addPhonemeRecommendations(analysis, recommendations);
 
         // Рекомендации на основе произношения
-        if (analysis.getPronunciationScore() < 70) {
+        if (analysis.getPronunciationScore() < WEAK_PHONEME_THRESHOLD) {
             recommendations.add(createPronunciationRecommendation(analysis));
         }
 
@@ -61,7 +67,7 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
         }
 
         // Рекомендации на основе интонации
-        if (analysis.getIntonationScore() < 70) {
+        if (analysis.getIntonationScore() < WEAK_PHONEME_THRESHOLD) {
             recommendations.add(createIntonationRecommendation(analysis));
         }
 
@@ -74,62 +80,119 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
         return recommendations;
     }
 
+    private void addPhonemeRecommendations(EnhancedSpeechAnalysis analysis,
+                                           List<RecommendationEngine.PersonalizedRecommendation> recommendations) {
+        if (analysis.getPhonemeScores() == null || analysis.getPhonemeScores().isEmpty()) {
+            return;
+        }
+
+        List<String> weakPhonemes = analysis.getPhonemeScores().entrySet().stream()
+                .filter(e -> e.getValue() < WEAK_PHONEME_THRESHOLD)
+                .sorted(Map.Entry.comparingByValue())
+                .limit(MAX_WEAK_PHONEMES)
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
+
+        if (!weakPhonemes.isEmpty()) {
+            recommendations.add(createPhonemeRecommendation(weakPhonemes, analysis));
+        }
+    }
+
     @Override
     public RecommendationEngine.WeeklyLearningPlan generateWeeklyPlan(EnhancedSpeechAnalysis analysis) {
         logger.info("Генерация недельного плана обучения");
 
-        RecommendationEngine.WeeklyLearningPlan plan = new RecommendationEngine.WeeklyLearningPlan();
-
-        // Определяем целевой уровень на основе текущей оценки
-        double overallScore = analysis.getOverallScore();
-        String targetLevel;
-        float expectedImprovement;
-        String weeklyGoal;
-
-        if (overallScore < 60) {
-            targetLevel = "A2 (Элементарный)";
-            expectedImprovement = 15.0f;
-            weeklyGoal = "Освоить базовые звуки и простые фразы";
-        } else if (overallScore < 75) {
-            targetLevel = "B1 (Средний)";
-            expectedImprovement = 12.0f;
-            weeklyGoal = "Улучшить произношение сложных звуков и беглость речи";
-        } else if (overallScore < 85) {
-            targetLevel = "B2 (Выше среднего)";
-            expectedImprovement = 8.0f;
-            weeklyGoal = "Работа над интонацией и естественностью речи";
-        } else {
-            targetLevel = "C1 (Продвинутый)";
-            expectedImprovement = 5.0f;
-            weeklyGoal = "Совершенствование акцента и сложных фонетических конструкций";
+        if (analysis == null || closed.get()) {
+            return createEmptyPlan();
         }
 
-        plan.setTargetLevel(targetLevel);
-        plan.setExpectedImprovement(expectedImprovement);
-        plan.setWeeklyGoal(weeklyGoal);
+        RecommendationEngine.WeeklyLearningPlan plan = new RecommendationEngine.WeeklyLearningPlan();
 
-        // Создаем расписание на неделю
+        double overallScore = analysis.getOverallScore();
+        PlanConfig config = determinePlanConfig(overallScore);
+
+        plan.setTargetLevel(config.targetLevel);
+        plan.setExpectedImprovement(config.expectedImprovement);
+        plan.setWeeklyGoal(config.weeklyGoal);
+
         List<RecommendationEngine.DailySchedule> schedule = createWeeklySchedule(analysis);
         plan.setSchedule(schedule);
 
-        logger.info("Недельный план создан: цель='{}', улучшение={}%", weeklyGoal, expectedImprovement);
+        logger.info("Недельный план создан: цель='{}', улучшение={}%",
+                config.weeklyGoal, config.expectedImprovement);
 
+        return plan;
+    }
+
+    private PlanConfig determinePlanConfig(double overallScore) {
+        if (overallScore < 60) {
+            return new PlanConfig(
+                    "A2 (Элементарный)",
+                    15.0f,
+                    "Освоить базовые звуки и простые фразы"
+            );
+        } else if (overallScore < 75) {
+            return new PlanConfig(
+                    "B1 (Средний)",
+                    12.0f,
+                    "Улучшить произношение сложных звуков и беглость речи"
+            );
+        } else if (overallScore < 85) {
+            return new PlanConfig(
+                    "B2 (Выше среднего)",
+                    8.0f,
+                    "Работа над интонацией и естественностью речи"
+            );
+        } else {
+            return new PlanConfig(
+                    "C1 (Продвинутый)",
+                    5.0f,
+                    "Совершенствование акцента и сложных фонетических конструкций"
+            );
+        }
+    }
+
+    private RecommendationEngine.WeeklyLearningPlan createEmptyPlan() {
+        RecommendationEngine.WeeklyLearningPlan plan = new RecommendationEngine.WeeklyLearningPlan();
+        plan.setTargetLevel("Не определен");
+        plan.setExpectedImprovement(0.0f);
+        plan.setWeeklyGoal("Нет данных для анализа");
+        plan.setSchedule(Collections.emptyList());
         return plan;
     }
 
     private RecommendationEngine.PersonalizedRecommendation createPhonemeRecommendation(
             List<String> weakPhonemes, EnhancedSpeechAnalysis analysis) {
 
+        String description = formatPhonemeDescription(weakPhonemes);
+        List<String> exercises = generatePhonemeExercises(weakPhonemes, analysis);
+
+        return new RecommendationEngine.PersonalizedRecommendation(
+                generateId("PHON"),
+                "🔊 Тренировка проблемных звуков",
+                description,
+                "Высокий",
+                exercises,
+                HIGH_PRIORITY_IMPROVEMENT
+        );
+    }
+
+    private String formatPhonemeDescription(List<String> weakPhonemes) {
         StringBuilder desc = new StringBuilder("Сосредоточьтесь на этих звуках: ");
         for (int i = 0; i < weakPhonemes.size(); i++) {
             if (i > 0) desc.append(", ");
             desc.append("/").append(weakPhonemes.get(i)).append("/");
         }
+        return desc.toString();
+    }
 
+    private List<String> generatePhonemeExercises(List<String> weakPhonemes, EnhancedSpeechAnalysis analysis) {
         List<String> exercises = new ArrayList<>();
+
         for (String phoneme : weakPhonemes) {
-            PronunciationExercise exercise = createExercise(phoneme,
-                    analysis.getPronunciationScore() < 60 ? "beginner" : "intermediate");
+            String difficulty = analysis.getPronunciationScore() < 60 ? "beginner" : "intermediate";
+            PronunciationExercise exercise = createExercise(phoneme, difficulty);
+
             if (exercise.getExamples() != null && !exercise.getExamples().isEmpty()) {
                 exercises.addAll(exercise.getExamples().stream()
                         .limit(2)
@@ -137,88 +200,89 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
             }
         }
 
-        return new RecommendationEngine.PersonalizedRecommendation(
-                "PHON_" + System.currentTimeMillis(),
-                "🔊 Тренировка проблемных звуков",
-                desc.toString(),
-                "Высокий",
-                exercises,
-                25.0f
-        );
+        return exercises;
     }
 
     private RecommendationEngine.PersonalizedRecommendation createPronunciationRecommendation(
             EnhancedSpeechAnalysis analysis) {
-
-        List<String> exercises = new ArrayList<>();
-        exercises.add("Повторяйте минимальные пары: ship/sheep, live/leave, bit/beat");
-        exercises.add("Практикуйте звук 'th' в словах: think, this, that, through");
-        exercises.add("Записывайте себя и сравнивайте с произношением носителей");
-        exercises.add("Используйте технику 'shadowing' - повторяйте за диктором");
-
         return new RecommendationEngine.PersonalizedRecommendation(
-                "PRON_" + System.currentTimeMillis(),
+                generateId("PRON"),
                 "🎯 Улучшение общего произношения",
                 "Ваше общее произношение нуждается в улучшении. Сосредоточьтесь на базовых звуках и их различении.",
                 "Высокий",
-                exercises,
+                createPronunciationExercises(),
                 20.0f
+        );
+    }
+
+    private List<String> createPronunciationExercises() {
+        return Arrays.asList(
+                "Повторяйте минимальные пары: ship/sheep, live/leave, bit/beat",
+                "Практикуйте звук 'th' в словах: think, this, that, through",
+                "Записывайте себя и сравнивайте с произношением носителей",
+                "Используйте технику 'shadowing' - повторяйте за диктором"
         );
     }
 
     private RecommendationEngine.PersonalizedRecommendation createFluencyRecommendation(
             EnhancedSpeechAnalysis analysis) {
-
-        List<String> exercises = new ArrayList<>();
-        exercises.add("Техника 'shadowing': повторяйте за диктором без пауз");
-        exercises.add("Читайте вслух, постепенно увеличивая темп");
-        exercises.add("Говорите на таймер: 1 минута без остановки на любую тему");
-        exercises.add("Практикуйте скороговорки для улучшения артикуляции");
-
         return new RecommendationEngine.PersonalizedRecommendation(
-                "FLU_" + System.currentTimeMillis(),
+                generateId("FLU"),
                 "⚡ Развитие беглости речи",
                 "Работайте над скоростью и плавностью речи. Уменьшите количество и длительность пауз.",
                 "Средний",
-                exercises,
-                18.0f
+                createFluencyExercises(),
+                MEDIUM_PRIORITY_IMPROVEMENT
+        );
+    }
+
+    private List<String> createFluencyExercises() {
+        return Arrays.asList(
+                "Техника 'shadowing': повторяйте за диктором без пауз",
+                "Читайте вслух, постепенно увеличивая темп",
+                "Говорите на таймер: 1 минута без остановки на любую тему",
+                "Практикуйте скороговорки для улучшения артикуляции"
         );
     }
 
     private RecommendationEngine.PersonalizedRecommendation createIntonationRecommendation(
             EnhancedSpeechAnalysis analysis) {
-
-        List<String> exercises = new ArrayList<>();
-        exercises.add("Практикуйте повышение тона в вопросах");
-        exercises.add("Выделяйте ключевые слова в предложении голосом");
-        exercises.add("Слушайте и имитируйте интонацию носителей");
-        exercises.add("Читайте диалоги с разными эмоциями");
-
         return new RecommendationEngine.PersonalizedRecommendation(
-                "INT_" + System.currentTimeMillis(),
+                generateId("INT"),
                 "🎵 Улучшение интонации",
                 "Работайте над интонационными паттернами английского языка.",
                 "Средний",
-                exercises,
+                createIntonationExercises(),
                 15.0f
+        );
+    }
+
+    private List<String> createIntonationExercises() {
+        return Arrays.asList(
+                "Практикуйте повышение тона в вопросах",
+                "Выделяйте ключевые слова в предложении голосом",
+                "Слушайте и имитируйте интонацию носителей",
+                "Читайте диалоги с разными эмоциями"
         );
     }
 
     private RecommendationEngine.PersonalizedRecommendation createVolumeRecommendation(
             EnhancedSpeechAnalysis analysis) {
-
-        List<String> exercises = new ArrayList<>();
-        exercises.add("Говорите с разным расстоянием до микрофона");
-        exercises.add("Практикуйте изменение громкости в пределах одного предложения");
-        exercises.add("Записывайте себя и анализируйте уровень громкости");
-
         return new RecommendationEngine.PersonalizedRecommendation(
-                "VOL_" + System.currentTimeMillis(),
+                generateId("VOL"),
                 "🔊 Контроль громкости",
                 "Работайте над стабильностью и адекватностью громкости речи.",
                 "Низкий",
-                exercises,
-                10.0f
+                createVolumeExercises(),
+                LOW_PRIORITY_IMPROVEMENT
+        );
+    }
+
+    private List<String> createVolumeExercises() {
+        return Arrays.asList(
+                "Говорите с разным расстоянием до микрофона",
+                "Практикуйте изменение громкости в пределах одного предложения",
+                "Записывайте себя и анализируйте уровень громкости"
         );
     }
 
@@ -239,25 +303,30 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
         int baseDuration = analysis.getOverallScore() < 70 ? 30 : 20;
 
         for (int i = 0; i < days.length; i++) {
-            RecommendationEngine.DailySchedule day = new RecommendationEngine.DailySchedule();
-            day.setDay(days[i]);
-            day.setFocus(focuses[i % focuses.length]);
-            day.setDurationMinutes(baseDuration + (i % 3) * 5);
-
-            List<String> exercises = new ArrayList<>();
-            exercises.add("Разминка: повторение звуков - 5 минут");
-            exercises.add("Основная практика: " + focuses[i % focuses.length] + " - 15 минут");
-            exercises.add("Запись и анализ своей речи - 5 минут");
-            day.setExercises(exercises);
-
-            List<String> tips = new ArrayList<>();
-            tips.add(getDailyTip(i));
-            day.setTips(tips);
-
-            schedule.add(day);
+            schedule.add(createDailySchedule(i, days[i], focuses[i % focuses.length],
+                    baseDuration + (i % 3) * 5));
         }
 
         return schedule;
+    }
+
+    private RecommendationEngine.DailySchedule createDailySchedule(int index, String day,
+                                                                   String focus, int duration) {
+        RecommendationEngine.DailySchedule schedule = new RecommendationEngine.DailySchedule();
+        schedule.setDay(day);
+        schedule.setFocus(focus);
+        schedule.setDurationMinutes(duration);
+        schedule.setExercises(createDailyExercises(focus));
+        schedule.setTips(Collections.singletonList(getDailyTip(index)));
+        return schedule;
+    }
+
+    private List<String> createDailyExercises(String focus) {
+        return Arrays.asList(
+                "Разминка: повторение звуков - 5 минут",
+                "Основная практика: " + focus + " - 15 минут",
+                "Запись и анализ своей речи - 5 минут"
+        );
     }
 
     private String getDailyTip(int day) {
@@ -273,14 +342,35 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
         return tips[day % tips.length];
     }
 
-    // ========================================
-    // Existing PronunciationTrainer Methods
-    // ========================================
+    private String generateId(String prefix) {
+        return prefix + "_" + System.currentTimeMillis() + "_" + Thread.currentThread().getId();
+    }
+
+    public CompletableFuture<PronunciationResult> checkPronunciationAsync(String audioFilePath,
+                                                                          String targetPhoneme) {
+        if (closed.get()) {
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException("PronunciationTrainer закрыт"));
+        }
+
+        CompletableFuture<PronunciationResult> future = CompletableFuture.supplyAsync(() ->
+                checkPronunciation(audioFilePath, targetPhoneme), backgroundExecutor);
+
+        currentOperation.set(future);
+
+        threadPoolManager.getScheduledExecutor().schedule(() -> {
+            if (!future.isDone()) {
+                future.cancel(true);
+                logger.warn("Таймаут проверки произношения для звука {}", targetPhoneme);
+            }
+        }, ANALYSIS_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        return future;
+    }
 
     private Map<String, String> createPhonemeExamples() {
         Map<String, String> examples = new HashMap<>();
 
-        // Гласные звуки английского языка
         examples.put("iː", "sheep, see, eat");
         examples.put("ɪ", "ship, sit, pin");
         examples.put("e", "bed, head, said");
@@ -294,7 +384,6 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
         examples.put("ɜː", "bird, learn, turn");
         examples.put("ə", "about, banana, supply");
 
-        // Дифтонги
         examples.put("eɪ", "day, make, rain");
         examples.put("aɪ", "my, time, eye");
         examples.put("ɔɪ", "boy, join, toy");
@@ -304,7 +393,6 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
         examples.put("eə", "hair, care, there");
         examples.put("ʊə", "tour, sure, pure");
 
-        // Согласные
         examples.put("p", "pen, stop, apple");
         examples.put("b", "big, baby, rubber");
         examples.put("t", "tea, letter, time");
@@ -333,9 +421,6 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
         return examples;
     }
 
-    /**
-     * Создание упражнения на произношение
-     */
     public PronunciationExercise createExercise(String phoneme, String difficulty) {
         PronunciationExercise exercise = new PronunciationExercise();
         exercise.setTargetPhoneme(phoneme);
@@ -349,10 +434,15 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
         return exercise;
     }
 
-    /**
-     * Проверка произношения звука
-     */
     public PronunciationResult checkPronunciation(String audioFilePath, String targetPhoneme) {
+        if (closed.get()) {
+            PronunciationResult result = new PronunciationResult();
+            result.setTargetPhoneme(targetPhoneme);
+            result.setScore(0);
+            result.setFeedback("Тренажер произношения закрыт");
+            return result;
+        }
+
         PronunciationResult result = new PronunciationResult();
         result.setTargetPhoneme(targetPhoneme);
 
@@ -363,10 +453,8 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
             );
 
             result.setAnalysis(analysis);
-
             double phonemeScore = evaluatePhoneme(targetPhoneme, analysis);
             result.setScore(phonemeScore);
-
             result.setFeedback(generatePhonemeFeedback(targetPhoneme, phonemeScore, analysis));
 
             logger.debug("Проверка произношения звука {}: оценка {:.1f}",
@@ -384,18 +472,13 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
     private double evaluatePhoneme(String phoneme, EnhancedSpeechAnalysis analysis) {
         double baseScore = analysis.getPronunciationScore();
 
-        switch (phoneme) {
-            case "θ": case "ð":
-                return baseScore * 0.8;
-            case "r":
-                return baseScore * 0.85;
-            case "w": case "v":
-                return baseScore * 0.9;
-            case "æ": case "ʌ":
-                return baseScore * 0.75;
-            default:
-                return baseScore;
-        }
+        return switch (phoneme) {
+            case "θ", "ð" -> baseScore * 0.8;
+            case "r" -> baseScore * 0.85;
+            case "w", "v" -> baseScore * 0.9;
+            case "æ", "ʌ" -> baseScore * 0.75;
+            default -> baseScore;
+        };
     }
 
     private String generateInstructions(String phoneme, String difficulty) {
@@ -523,10 +606,16 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
 
     @Override
     public void close() {
-        if (closed) return;
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
 
         logger.info("Закрытие PronunciationTrainer...");
-        closed = true;
+
+        CompletableFuture<?> operation = currentOperation.getAndSet(null);
+        if (operation != null && !operation.isDone()) {
+            operation.cancel(true);
+        }
 
         if (audioAnalyzer != null && !audioAnalyzer.isClosed()) {
             try {
@@ -540,14 +629,21 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
     }
 
     public boolean isClosed() {
-        return closed;
+        return closed.get();
     }
 
-    // ====================== ВСПОМОГАТЕЛЬНЫЕ КЛАССЫ ======================
+    private static class PlanConfig {
+        final String targetLevel;
+        final float expectedImprovement;
+        final String weeklyGoal;
 
-    /**
-     * Упражнение на произношение
-     */
+        PlanConfig(String targetLevel, float expectedImprovement, String weeklyGoal) {
+            this.targetLevel = targetLevel;
+            this.expectedImprovement = expectedImprovement;
+            this.weeklyGoal = weeklyGoal;
+        }
+    }
+
     public static class PronunciationExercise {
         private String targetPhoneme;
         private String difficulty;
@@ -577,7 +673,6 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
         private String feedback;
         private EnhancedSpeechAnalysis analysis;
 
-        // Getters and Setters
         public String getTargetPhoneme() { return targetPhoneme; }
         public void setTargetPhoneme(String targetPhoneme) { this.targetPhoneme = targetPhoneme; }
         public double getScore() { return score; }
