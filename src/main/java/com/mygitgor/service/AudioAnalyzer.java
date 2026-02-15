@@ -373,8 +373,6 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
         logger.debug("Сгенерировано рекомендаций: {}", recommendations.size());
     }
 
-    // ====================== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ======================
-
     private double calculateRMS(double[] samples) {
         double sum = 0;
         for (double sample : samples) {
@@ -384,13 +382,13 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
     }
 
     private double[] analyzeFrequencyBands(double[] samples, int sampleRate) {
-        double[] bands = new double[3]; // низкие, средние, высокие
+        double[] bands = new double[3];
 
         for (double sample : samples) {
             double absSample = Math.abs(sample);
-            bands[0] += absSample * 0.5; // Низкие частоты
-            bands[1] += absSample * 0.3; // Средние частоты
-            bands[2] += absSample * 0.2; // Высокие частоты
+            bands[0] += absSample * 0.5;
+            bands[1] += absSample * 0.3;
+            bands[2] += absSample * 0.2;
         }
 
         double total = bands[0] + bands[1] + bands[2];
@@ -404,7 +402,7 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
     }
 
     private boolean detectVoicePresence(double[] samples, int sampleRate) {
-        int windowSize = sampleRate / 100; // 10 мс
+        int windowSize = sampleRate / 100;
         int voiceFrames = 0;
         int totalFrames = samples.length / windowSize;
 
@@ -428,7 +426,7 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
 
     private List<PauseInfo> detectPauses(double[] samples, int sampleRate) {
         List<PauseInfo> pauses = new ArrayList<>();
-        int windowSize = sampleRate / 100; // 10 мс
+        int windowSize = sampleRate / 100;
         double silenceThreshold = MIN_VOLUME_THRESHOLD * 0.5;
 
         boolean inPause = false;
@@ -438,7 +436,6 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
             int start = i * windowSize;
             int end = Math.min(start + windowSize, samples.length);
 
-            // Расчет энергии в окне
             double energy = 0;
             for (int j = start; j < end; j++) {
                 energy += samples[j] * samples[j];
@@ -468,10 +465,8 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
     }
 
     private double calculateSpeakingRate(AudioData audioData, List<PauseInfo> pauses) {
-        // Эмуляция: предполагаем среднюю длину слова и вычисляем WPM
         double speakingDuration = audioData.duration;
 
-        // Вычитаем длительность пауз
         double totalPauseDuration = pauses.stream()
                 .mapToDouble(p -> p.duration)
                 .sum();
@@ -489,7 +484,7 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
 
     private double analyzeRhythm(double[] samples, List<PauseInfo> pauses) {
         if (pauses.size() < 2) {
-            return 0.5; // нейтральная оценка
+            return 0.5;
         }
 
         double[] pauseDurations = pauses.stream()
@@ -522,7 +517,6 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
             start = pause.endIndex;
         }
 
-        // Последняя фраза
         if (start < samples.length) {
             int[] phrase = {start, samples.length};
             phrases.add(phrase);
@@ -568,7 +562,7 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
     }
 
     private double calculateVolumeStability(double[] samples) {
-        int windowSize = samples.length / 100; // 100 окон
+        int windowSize = samples.length / 100;
         if (windowSize < 10) {
             return 0.5;
         }
@@ -644,8 +638,6 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
         }
     }
 
-    // ====================== ВСПОМОГАТЕЛЬНЫЕ КЛАССЫ ======================
-
     private static class AudioData {
         double[] samples;
         int sampleRate;
@@ -656,7 +648,7 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
     private static class PauseInfo {
         int startIndex;
         int endIndex;
-        double duration; // в секундах
+        double duration;
 
         PauseInfo(int start, int end, double duration) {
             this.startIndex = start;
@@ -670,7 +662,6 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
             int n = samples.length;
             double[] spectrum = new double[n / 2];
 
-            // Простая эмуляция спектра для демонстрации
             for (int i = 0; i < spectrum.length; i++) {
                 spectrum[i] = Math.random() * 0.1;
             }

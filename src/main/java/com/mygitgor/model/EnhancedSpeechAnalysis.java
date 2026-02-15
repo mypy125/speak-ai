@@ -59,22 +59,18 @@ public class EnhancedSpeechAnalysis extends SpeechAnalysis {
         return Collections.unmodifiableList(warnings);
     }
 
-    // Переопределяем getOverallScore для использования нашего поля
     @Override
     public double getOverallScore() {
         if (overallScore > 0) {
             return overallScore;
         }
-        // Если overallScore не установлен, вычисляем среднее
         return (pronunciationScore + fluencyScore + grammarScore + vocabularyScore) / 4.0;
     }
 
-    // Добавляем setter для overallScore
     public void setOverallScore(float overallScore) {
         this.overallScore = overallScore;
     }
 
-    // Переопределяем сеттеры родительского класса для правильной типизации
     @Override
     public void setPronunciationScore(double pronunciationScore) {
         this.pronunciationScore = (float) pronunciationScore;
@@ -95,12 +91,10 @@ public class EnhancedSpeechAnalysis extends SpeechAnalysis {
         this.vocabularyScore = (float) vocabularyScore;
     }
 
-    // Метод для установки анализа длительности (из SpeechAnalysis)
     public void setAnalysisDuration(float analysisDuration) {
         this.analysisDuration = analysisDuration;
     }
 
-    // Метод для установки уровня громкости
     public void setVolumeLevel(float volumeLevel) {
         this.volumeLevel = volumeLevel;
     }
@@ -163,7 +157,6 @@ public class EnhancedSpeechAnalysis extends SpeechAnalysis {
         return report.toString();
     }
 
-    // Getters and Setters
     public float getIntonationScore() { return intonationScore; }
     public void setIntonationScore(float intonationScore) { this.intonationScore = intonationScore; }
 

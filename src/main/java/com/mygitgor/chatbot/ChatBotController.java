@@ -1,8 +1,8 @@
 package com.mygitgor.chatbot;
 
-import com.mygitgor.ai.AIServiceFactory;
-import com.mygitgor.ai.AiService;
-import com.mygitgor.ai.MockAiService;
+import com.mygitgor.ai.*;
+import com.mygitgor.ai.strategy.core.LearningMode;
+import com.mygitgor.ai.strategy.core.LearningResponse;
 import com.mygitgor.analysis.PronunciationTrainer;
 import com.mygitgor.chatbot.components.*;
 import com.mygitgor.config.AppConstants;
@@ -10,6 +10,8 @@ import com.mygitgor.config.ServicesConfig;
 import com.mygitgor.error.ErrorHandler;
 import com.mygitgor.error.ServiceInitializationException;
 import com.mygitgor.model.Conversation;
+import com.mygitgor.model.EnhancedSpeechAnalysis;
+import com.mygitgor.model.User;
 import com.mygitgor.service.ChatBotService;
 import com.mygitgor.service.AudioAnalyzer;
 import com.mygitgor.service.DemoTextToSpeechService;
@@ -39,10 +41,13 @@ import java.net.URL;
 import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.List;
+import java.util.Optional;
 import java.util.ResourceBundle;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.*;
 
 public class ChatBotController implements Initializable, AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(ChatBotController.class);
@@ -107,6 +112,22 @@ public class ChatBotController implements Initializable, AutoCloseable {
     @FXML private Label analysisCountLabel;
     @FXML private Label recordingsCountLabel;
 
+    // ========================================
+    // Learning Mode Controls
+    // ========================================
+    @FXML private ComboBox<LearningMode> learningModeComboBox;
+    @FXML private Button switchModeButton;
+    @FXML private Label currentModeLabel;
+    @FXML private ProgressBar modeProgressBar;
+    @FXML private TextArea modeInfoArea;
+    @FXML private VBox learningModePanel;
+    @FXML private Label modeStatusLabel;
+    @FXML private Label modeProgressLabel;
+    @FXML private TextArea modeStatsArea;
+
+    // ========================================
+    // Services & Managers
+    // ========================================
     private ChatBotService chatBotService;
     private ITTSService textToSpeechService;
     private SpeechRecorder speechRecorder;
@@ -127,8 +148,17 @@ public class ChatBotController implements Initializable, AutoCloseable {
     private AnalysisManager analysisManager;
     private ThreadPoolManager threadPoolManager;
 
+    // Learning Strategy Components
+    private LearningStrategyFactory learningStrategyFactory;
+    private LearningModeManager learningModeManager;
+    private LearningMode currentLearningMode = LearningMode.CONVERSATION;
+
     private final AtomicBoolean isShuttingDown = new AtomicBoolean(false);
     private final AtomicReference<CompletableFuture<Void>> currentOperation = new AtomicReference<>(null);
+
+    // ========================================
+    // Initialization
+    // ========================================
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
@@ -137,8 +167,13 @@ public class ChatBotController implements Initializable, AutoCloseable {
         ErrorHandler.handle(() -> {
             initializeComponents();
             setupServices();
+            setupLearningStrategies();
             setupManagers();
             setupUI();
+            setupLearningModeUI();
+            Platform.runLater(() -> {
+                updateModeStats();
+            });
             showWelcomeMessage();
             logger.info("ChatBotController успешно инициализирован");
             return null;
@@ -192,6 +227,163 @@ public class ChatBotController implements Initializable, AutoCloseable {
         state.setAiServiceAvailable(aiService.isAvailable());
 
         logger.info("Все сервисы успешно инициализированы");
+    }
+
+    private void setupLearningStrategies() {
+        try {
+            this.learningStrategyFactory = new LearningStrategyFactory(
+                    chatBotService,
+                    pronunciationTrainer,
+                    audioAnalyzer
+            );
+
+            this.learningModeManager = new LearningModeManager(learningStrategyFactory);
+
+            logger.info("Learning strategies initialized: {} modes available",
+                    learningStrategyFactory.getAvailableStrategies().size());
+        } catch (Exception e) {
+            logger.error("Ошибка при инициализации стратегий обучения", e);
+        }
+    }
+
+    private void setupLearningModeUI() {
+        Platform.runLater(() -> {
+            if (learningModeComboBox != null) {
+                learningModeComboBox.getItems().addAll(LearningMode.values());
+                learningModeComboBox.setValue(currentLearningMode);
+                learningModeComboBox.setCellFactory(this::createModeCell);
+                learningModeComboBox.setButtonCell(createModeCell(null));
+            }
+
+            if (switchModeButton != null) {
+                switchModeButton.setOnAction(e -> switchLearningMode());
+            }
+
+            if (currentModeLabel != null) {
+                updateCurrentModeDisplay();
+            }
+        });
+    }
+
+    private ListCell<LearningMode> createModeCell(ListView<LearningMode> param) {
+        return new ListCell<>() {
+            @Override
+            protected void updateItem(LearningMode mode, boolean empty) {
+                super.updateItem(mode, empty);
+                if (empty || mode == null) {
+                    setText(null);
+                } else {
+                    setText(mode.getDisplayName());
+                    setTooltip(new Tooltip(mode.getDescription()));
+                }
+            }
+        };
+    }
+
+    @FXML
+    private void switchLearningMode() {
+        if (learningModeComboBox == null || learningModeManager == null) {
+            logger.warn("LearningModeManager не инициализирован");
+            return;
+        }
+
+        LearningMode newMode = learningModeComboBox.getValue();
+        if (newMode == null) {
+            ErrorHandler.showWarning("Внимание", "Выберите режим обучения");
+            return;
+        }
+
+        if (newMode == currentLearningMode) {
+            logger.debug("Режим {} уже активен", newMode);
+            return;
+        }
+
+        String userId = chatBotService.getCurrentUserIdSafely();
+        if (userId == null) {
+            ErrorHandler.showError("Ошибка", "Не удалось определить пользователя");
+            return;
+        }
+
+        logger.info("Смена режима обучения для пользователя {}: {} -> {}",
+                userId, currentLearningMode, newMode);
+
+        showLoadingIndicator(true);
+
+        learningModeManager.switchMode(userId, newMode)
+                .thenAccept(response -> {
+                    currentLearningMode = newMode;
+                    Platform.runLater(() -> {
+                        try {
+                            updateCurrentModeDisplay();
+                            messagesManager.addAIMessage(formatModeSwitchMessage(response));
+                            showLoadingIndicator(false);
+
+                            if (modeProgressBar != null) {
+                                modeProgressBar.setProgress(response.getProgress() / 100.0);
+                            }
+                            if (modeInfoArea != null) {
+                                modeInfoArea.setText(formatModeInfo(response));
+                            }
+                        } catch (Exception e) {
+                            logger.error("Ошибка при обновлении UI после смены режима", e);
+                            showLoadingIndicator(false);
+                        }
+                    });
+                })
+                .exceptionally(throwable -> {
+                    logger.error("Ошибка при смене режима", throwable);
+                    Platform.runLater(() -> {
+                        ErrorHandler.showError("Ошибка",
+                                "Не удалось сменить режим обучения: " + throwable.getMessage());
+                        showLoadingIndicator(false);
+                    });
+                    return null;
+                });
+    }
+
+    private String formatModeSwitchMessage(LearningResponse response) {
+        return String.format("""
+            ### 🔄 Режим изменен
+            
+            **Новый режим:** %s
+            
+            **Описание:** %s
+            
+            **Следующее задание:**
+            %s
+            
+            **Прогресс:** %.1f%%
+            
+            %s
+            """,
+                currentLearningMode.getDisplayName(),
+                currentLearningMode.getDescription(),
+                response.getNextTask() != null ? response.getNextTask().getDescription() : "Начните практику!",
+                response.getProgress(),
+                formatRecommendations(response.getRecommendations())
+        );
+    }
+
+    private String formatRecommendations(List<String> recommendations) {
+        if (recommendations == null || recommendations.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder sb = new StringBuilder("\n**Рекомендации:**\n");
+        recommendations.forEach(r -> sb.append("• ").append(r).append("\n"));
+        return sb.toString();
+    }
+
+    private String formatModeInfo(LearningResponse response) {
+        return String.format("""
+            Режим: %s
+            Прогресс: %.1f%%
+            Заданий выполнено: %d
+            """,
+                currentLearningMode.getDisplayName(),
+                response.getProgress(),
+                response.getNextTask() != null ? 1 : 0
+        );
     }
 
     private ITTSService initializeTTSService() {
@@ -588,6 +780,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
             if (historyButton != null) {
                 historyButton.setStyle("-fx-background-color: #34495e; -fx-text-fill: white;");
             }
+            if (switchModeButton != null) {
+                switchModeButton.setStyle("-fx-background-color: #9b59b6; -fx-text-fill: white;");
+            }
         });
     }
 
@@ -596,22 +791,33 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 ? "Google Cloud TTS (WaveNet)"
                 : "TTS недоступен";
 
-        ResponseMode currentMode = state.getCurrentResponseMode();
-        String modeText = currentMode == ResponseMode.VOICE ? "🔊 Голосовой" : "📝 Текстовый";
+        ResponseMode currentResponseMode = state.getCurrentResponseMode();
+        String responseModeText = currentResponseMode == ResponseMode.VOICE ? "🔊 Голосовой" : "📝 Текстовый";
 
         String welcomeMessage = String.format("""
             🌟 Добро пожаловать в SpeakAI!
             
             Текущий режим: %s
             Режим ответа: %s
+            Режим обучения: %s
             
             Как это работает:
-            1. Напишите сообщение или нажмите кнопку записи 🎤
-            2. Получите анализ речи и рекомендации
-            3. Используйте тренажер произношения для проблемных звуков
+            1. Выберите режим обучения в панели справа
+            2. Напишите сообщение или нажмите кнопку записи 🎤
+            3. Получите анализ речи и рекомендации
+            4. Используйте тренажер произношения для проблемных звуков
+            
+            Доступные режимы обучения:
+            • 💬 Conversation - разговорная практика
+            • 🔊 Pronunciation - тренировка произношения
+            • 📚 Grammar - изучение грамматики
+            • 🎯 Exercise - выполнение упражнений
+            • 📖 Vocabulary - расширение словарного запаса
+            • ✍️ Writing - практика письма
+            • 🎧 Listening - развитие аудирования
             
             Давайте начнем! ✨
-            """, ttsMode, modeText);
+            """, ttsMode, responseModeText, currentLearningMode.getDisplayName());
 
         messagesManager.addAIMessage(welcomeMessage);
 
@@ -644,6 +850,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 sendButton.setStyle(show ?
                         "-fx-background-color: #95a5a6; -fx-text-fill: white;" :
                         "-fx-background-color: #3498db; -fx-text-fill: white;");
+            }
+            if (switchModeButton != null) {
+                switchModeButton.setDisable(show);
             }
         });
     }
@@ -678,34 +887,173 @@ public class ChatBotController implements Initializable, AutoCloseable {
         statisticsManager.onMessageSent();
         showLoadingIndicator(true);
 
-        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+        String userId = getCurrentUserIdSafely();
+
+        if (userId.trim().isEmpty()) {
+            logger.error("Не удалось получить userId даже после создания временного");
+            userId = "temp_" + System.currentTimeMillis();
+            logger.warn("Создан временный ID в контроллере: {}", userId);
+        }
+
+        logger.debug("Используется userId: {}", userId);
+
+        CompletableFuture<Void> future;
+
+        if (learningModeManager != null) {
+            logger.debug("Обработка через LearningModeManager для пользователя {}", userId);
+            future = processWithLearningMode(userId, finalText, finalAudioFile);
+        } else {
+            logger.debug("Обработка через ChatBotService (обычный режим)");
+            future = processWithChatBotService(finalText, finalAudioFile, finalResponseMode);
+        }
+
+        currentOperation.set(future);
+    }
+
+    private String getCurrentUserIdSafely() {
+        try {
+            if (chatBotService != null) {
+                String userId = chatBotService.getCurrentUserIdSafely();
+                if (userId != null && !userId.trim().isEmpty()) {
+                    return userId;
+                }
+
+                User user = chatBotService.getCurrentUser();
+                if (user != null) {
+                    return String.valueOf(user.getId());
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Ошибка в getCurrentUserIdSafely", e);
+        }
+
+        String tempId = "temp_" + System.currentTimeMillis();
+        logger.warn("Создан временный ID в контроллере: {}", tempId);
+        return tempId;
+    }
+
+    private String formatLearningResponse(LearningResponse response) {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("### 🤖 AI Репетитор\n\n");
+        sb.append(response.getMessage()).append("\n\n");
+
+        if (response.getNextTask() != null) {
+            sb.append("**📋 Следующее задание:**\n");
+            sb.append(response.getNextTask().getDescription()).append("\n\n");
+        }
+
+        if (response.getRecommendations() != null && !response.getRecommendations().isEmpty()) {
+            sb.append("**💡 Рекомендации:**\n");
+            response.getRecommendations().forEach(r -> sb.append("• ").append(r).append("\n"));
+            sb.append("\n");
+        }
+
+        sb.append(String.format("**📊 Прогресс в режиме %s:** %.1f%%",
+                currentLearningMode.getDisplayName(), response.getProgress()));
+
+        Platform.runLater(() -> {
+            updateCurrentModeDisplay();
+            updateModeStats();
+        });
+
+        return sb.toString();
+    }
+
+    /**
+     * Обработка сообщения через LearningModeManager
+     */
+    private CompletableFuture<Void> processWithLearningMode(String userId, String text, String audioFile) {
+        return learningModeManager.processInput(userId, text, Optional.ofNullable(audioFile))
+                .thenAccept(response -> {
+                    Platform.runLater(() -> {
+                        try {
+                            messagesManager.addAIMessage(formatLearningResponse(response));
+                            state.setLastBotResponse(response.getMessage());
+
+                            if (modeProgressBar != null) {
+                                modeProgressBar.setProgress(response.getProgress() / 100.0);
+                            }
+
+                            // ВАЖНО: Добавляем анализ аудио, если есть файл
+                            if (audioFile != null && !audioFile.isEmpty()) {
+                                analyzeAudioWithManagers(audioFile, text);
+                            }
+
+                            responseModeManager.updatePlayButtonVisibility();
+                            showLoadingIndicator(false);
+
+                            if (state.hasAudioFile()) {
+                                state.clearCurrentAudioFile();
+                            }
+
+                            logger.debug("Сообщение успешно обработано через LearningModeManager");
+                        } catch (Exception e) {
+                            logger.error("Ошибка при обработке ответа от LearningModeManager", e);
+                            showLoadingIndicator(false);
+                            ErrorHandler.showError("Ошибка",
+                                    "Не удалось обработать ответ: " + e.getMessage());
+                        }
+                    });
+                })
+                .exceptionally(throwable -> {
+                    logger.error("Ошибка при обработке сообщения через LearningModeManager", throwable);
+                    Platform.runLater(() -> {
+                        ErrorHandler.showError("Ошибка",
+                                "Не удалось обработать сообщение в режиме обучения: " + throwable.getMessage());
+                        showLoadingIndicator(false);
+                    });
+                    return null;
+                });
+    }
+
+    /**
+     * Обычная обработка сообщения через ChatBotService
+     */
+    private CompletableFuture<Void> processWithChatBotService(String text, String audioFile,
+                                                              ResponseMode responseMode) {
+        return CompletableFuture.runAsync(() -> {
             try {
                 ChatBotService.ChatResponse response = chatBotService.processUserInput(
-                        finalText,
-                        finalAudioFile,
-                        finalResponseMode
+                        text,
+                        audioFile,
+                        responseMode
                 );
 
                 final ChatBotService.ChatResponse finalResponse = response;
+                final String finalAudioFile = audioFile;
+                final String finalText = text;
 
                 Platform.runLater(() -> {
-                    messagesManager.addAIMessage(finalResponse.getFullResponse());
-                    state.setLastBotResponse(finalResponse.getFullResponse());
-                    responseModeManager.updatePlayButtonVisibility();
+                    try {
+                        messagesManager.addAIMessage(finalResponse.getFullResponse());
+                        state.setLastBotResponse(finalResponse.getFullResponse());
 
-                    if (finalResponse.getSpeechAnalysis() != null) {
-                        analysisManager.processAnalysisResponse(finalResponse);
-                    }
+                        // Анализ речи через существующий механизм
+                        if (finalResponse.getSpeechAnalysis() != null) {
+                            analysisManager.processAnalysisResponse(finalResponse);
+                        }
+                        // Альтернативный анализ для аудио
+                        else if (finalAudioFile != null && !finalAudioFile.isEmpty()) {
+                            analyzeAudioWithManagers(finalAudioFile, finalText);
+                        }
 
-                    showLoadingIndicator(false);
+                        responseModeManager.updatePlayButtonVisibility();
+                        showLoadingIndicator(false);
 
-                    if (state.hasAudioFile()) {
-                        state.clearCurrentAudioFile();
+                        if (state.hasAudioFile()) {
+                            state.clearCurrentAudioFile();
+                        }
+
+                        logger.debug("Сообщение успешно обработано через ChatBotService");
+                    } catch (Exception e) {
+                        logger.error("Ошибка при обновлении UI после получения ответа", e);
+                        showLoadingIndicator(false);
                     }
                 });
 
             } catch (Exception e) {
-                logger.error("Ошибка при обработке сообщения", e);
+                logger.error("Ошибка при обработке сообщения через ChatBotService", e);
                 Platform.runLater(() -> {
                     ErrorHandler.showError("Ошибка",
                             "Не удалось обработать сообщение: " + e.getMessage());
@@ -713,8 +1061,177 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 });
             }
         }, threadPoolManager.getBackgroundExecutor());
+    }
 
-        currentOperation.set(future);
+    /**
+     * Анализ аудио с использованием существующих менеджеров
+     */
+    private void analyzeAudioWithManagers(String audioFile, String text) {
+        if (audioFile == null || audioFile.isEmpty()) {
+            logger.debug("Нет аудиофайла для анализа");
+            return;
+        }
+
+        logger.debug("Запуск анализа аудио: {}", audioFile);
+
+        // Показываем индикатор анализа
+        Platform.runLater(() -> {
+            if (analysisProgress != null) {
+                analysisProgress.setVisible(true);
+            }
+            if (detailedAnalysisArea != null) {
+                detailedAnalysisArea.setVisible(true);
+            }
+        });
+
+        // Запускаем анализ асинхронно
+        CompletableFuture.runAsync(() -> {
+            try {
+                // Используем AudioAnalyzer для анализа
+                EnhancedSpeechAnalysis analysis = audioAnalyzer.analyzeAudio(audioFile, text);
+
+                Platform.runLater(() -> {
+                    // Обновляем UI с результатами анализа
+                    if (analysisArea != null) {
+                        analysisArea.setText(analysis.getSummary());
+                    }
+
+                    if (detailedAnalysisArea != null && analysis.getDetailedReport() != null) {
+                        detailedAnalysisArea.setText(analysis.getDetailedReport());
+                        detailedAnalysisArea.setVisible(true);
+                    }
+
+                    // Обновляем метку слабой фонемы
+                    updatePhonemeLabel(analysis);
+
+                    // Обновляем кнопки
+                    if (analyzeButton != null) {
+                        analyzeButton.setDisable(false);
+                    }
+                    if (pronunciationButton != null) {
+                        pronunciationButton.setDisable(false);
+                        updatePronunciationButtonText(analysis);
+                    }
+
+                    // Обновляем рекомендации
+                    updateRecommendationsFromAnalysis(analysis);
+
+                    // Увеличиваем счетчик анализов
+                    if (statisticsManager != null) {
+                        statisticsManager.onAnalysisPerformed();
+                    }
+
+                    // Скрываем индикатор анализа
+                    if (analysisProgress != null) {
+                        analysisProgress.setVisible(false);
+                    }
+
+                    logger.info("Анализ аудио завершен. Общий балл: {}/100",
+                            String.format("%.1f", analysis.getOverallScore()));
+                });
+
+            } catch (Exception e) {
+                logger.error("Ошибка при анализе аудио", e);
+                Platform.runLater(() -> {
+                    ErrorHandler.showError("Ошибка анализа",
+                            "Не удалось выполнить анализ аудио: " + e.getMessage());
+                    if (analysisProgress != null) {
+                        analysisProgress.setVisible(false);
+                    }
+                });
+            }
+        }, threadPoolManager.getBackgroundExecutor());
+    }
+
+    /**
+     * Обновление метки слабой фонемы
+     */
+    private void updatePhonemeLabel(EnhancedSpeechAnalysis analysis) {
+        if (phonemeLabel == null) return;
+
+        if (analysis.getPhonemeScores() != null && !analysis.getPhonemeScores().isEmpty()) {
+            analysis.getPhonemeScores().entrySet().stream()
+                    .min(Map.Entry.comparingByValue())
+                    .ifPresent(entry -> {
+                        String phoneme = "/" + entry.getKey() + "/";
+                        float score = entry.getValue();
+
+                        String text = String.format("🔊 Слабая фонема: %s (%.1f/100)", phoneme, score);
+                        phonemeLabel.setText(text);
+                        phonemeLabel.setVisible(true);
+                        phonemeLabel.setStyle("-fx-text-fill: #e67e22; -fx-font-weight: bold;");
+                    });
+        } else {
+            phonemeLabel.setVisible(false);
+        }
+    }
+
+    /**
+     * Обновление текста кнопки тренажера
+     */
+    private void updatePronunciationButtonText(EnhancedSpeechAnalysis analysis) {
+        if (pronunciationButton == null) return;
+
+        if (analysis.getPhonemeScores() != null && !analysis.getPhonemeScores().isEmpty()) {
+            long weakPhonemesCount = analysis.getPhonemeScores().values().stream()
+                    .filter(score -> score < 70)
+                    .count();
+
+            if (weakPhonemesCount > 0) {
+                pronunciationButton.setText("🎯 Тренажер (" + weakPhonemesCount + " проблем)");
+                pronunciationButton.setStyle("-fx-background-color: #e67e22; -fx-text-fill: white;");
+            } else {
+                pronunciationButton.setText("✅ Тренажер произношения");
+                pronunciationButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white;");
+            }
+        }
+    }
+
+    /**
+     * Обновление рекомендаций на основе анализа
+     */
+    private void updateRecommendationsFromAnalysis(EnhancedSpeechAnalysis analysis) {
+        if (recommendationsArea == null) return;
+
+        StringBuilder recText = new StringBuilder();
+
+        if (analysis.getOverallScore() < 70) {
+            recText.append("📋 **ОСНОВНЫЕ РЕКОМЕНДАЦИИ:**\n\n");
+        } else {
+            recText.append("📋 **РЕКОМЕНДАЦИИ ПО УЛУЧШЕНИЮ:**\n\n");
+        }
+
+        if (analysis.getRecommendations() != null && !analysis.getRecommendations().isEmpty()) {
+            analysis.getRecommendations().forEach(rec ->
+                    recText.append("• ").append(rec).append("\n"));
+        } else {
+            // Стандартные рекомендации если нет специфических
+            if (analysis.getPronunciationScore() < 75) {
+                recText.append("• 🔊 Уделите внимание произношению сложных звуков\n");
+            }
+            if (analysis.getFluencyScore() < 70) {
+                recText.append("• ⚡ Работайте над беглостью речи - меньше пауз\n");
+            }
+            if (analysis.getIntonationScore() < 70) {
+                recText.append("• 🎵 Улучшайте интонацию в вопросах и утверждениях\n");
+            }
+            if (analysis.getVolumeScore() < 70) {
+                recText.append("• 🔊 Говорите громче и увереннее\n");
+            }
+        }
+
+        // Добавляем рекомендации по слабым фонемам
+        if (analysis.getPhonemeScores() != null && !analysis.getPhonemeScores().isEmpty()) {
+            recText.append("\n**🔊 ПРОБЛЕМНЫЕ ЗВУКИ:**\n");
+            analysis.getPhonemeScores().entrySet().stream()
+                    .filter(e -> e.getValue() < 70)
+                    .limit(3)
+                    .forEach(e -> recText.append("• /").append(e.getKey())
+                            .append("/ - ").append(String.format("%.1f", e.getValue()))
+                            .append("/100\n"));
+        }
+
+        recommendationsArea.setText(recText.toString());
     }
 
     @FXML
@@ -986,6 +1503,15 @@ public class ChatBotController implements Initializable, AutoCloseable {
                • Google Cloud WaveNet
                • Настройка голоса, скорости, тона
             
+            6. Режимы обучения
+               • 💬 Conversation - разговорная практика
+               • 🔊 Pronunciation - тренировка произношения
+               • 📚 Grammar - изучение грамматики
+               • 🎯 Exercise - выполнение упражнений
+               • 📖 Vocabulary - расширение словарного запаса
+               • ✍️ Writing - практика письма
+               • 🎧 Listening - развитие аудирования
+            
             📞 КОНТАКТЫ:
             support@speakai.com
             """;
@@ -1079,6 +1605,13 @@ public class ChatBotController implements Initializable, AutoCloseable {
             analysisManager.cancelAnalysis();
         }
 
+        if (learningModeManager != null && chatBotService.getCurrentUser() != null) {
+            String userId = chatBotService.getCurrentUserId();
+            if (userId != null) {
+                learningModeManager.clearUserSession(userId);
+            }
+        }
+
         ErrorHandler.safeClose(resourceManager, "ResourceManager");
 
         if (threadPoolManager != null) {
@@ -1097,5 +1630,89 @@ public class ChatBotController implements Initializable, AutoCloseable {
     @FXML
     public void onTestTTS(ActionEvent actionEvent) {
         onTestGoogleTTS();
+    }
+
+    @FXML
+    private void toggleLearningModePanel() {
+        if (learningModePanel == null) return;
+
+        boolean isVisible = learningModePanel.isVisible();
+        learningModePanel.setVisible(!isVisible);
+        learningModePanel.setManaged(!isVisible);
+
+        if (isVisible) {
+            updateModeStats();
+        } else {
+            if (speechControlPanel != null) {
+                speechControlPanel.setVisible(false);
+                speechControlPanel.setManaged(false);
+            }
+            if (ttsControlPanel != null) {
+                ttsControlPanel.setVisible(false);
+                ttsControlPanel.setManaged(false);
+            }
+        }
+
+        logger.info("Панель обучения {}", isVisible ? "скрыта" : "показана");
+    }
+
+    private void updateModeStats() {
+        if (learningModeManager == null || modeStatsArea == null) return;
+
+        String userId = getCurrentUserIdSafely();
+
+        learningModeManager.analyzeOverallProgress(userId)
+                .thenAccept(progress -> {
+                    Platform.runLater(() -> {
+                        StringBuilder stats = new StringBuilder();
+                        progress.forEach((mode, value) ->
+                                stats.append(String.format("• %s: %.1f%%\n",
+                                        mode.getDisplayName(), value)));
+
+                        if (stats.isEmpty()) {
+                            stats.append("Нет данных. Начните обучение!");
+                        }
+
+                        modeStatsArea.setText(stats.toString());
+                    });
+                })
+                .exceptionally(throwable -> {
+                    logger.error("Ошибка при получении статистики", throwable);
+                    Platform.runLater(() ->
+                            modeStatsArea.setText("Ошибка загрузки статистики"));
+                    return null;
+                });
+    }
+
+    private void updateCurrentModeDisplay() {
+        if (currentModeLabel != null) {
+            currentModeLabel.setText(currentLearningMode.getDisplayName());
+            currentModeLabel.setTooltip(new Tooltip(currentLearningMode.getDescription()));
+        }
+
+        if (modeStatusLabel != null) {
+            modeStatusLabel.setText("✅ Активен");
+        }
+
+        if (modeProgressLabel != null && modeProgressBar != null) {
+            double progress = getCurrentModeProgress();
+            modeProgressBar.setProgress(progress / 100.0);
+            modeProgressLabel.setText(String.format("%.1f%%", progress));
+        }
+    }
+
+    private double getCurrentModeProgress() {
+        if (learningModeManager == null) return 0;
+
+        String userId = getCurrentUserIdSafely();
+
+        try {
+            return learningModeManager.analyzeOverallProgress(userId)
+                    .thenApply(progress -> progress.getOrDefault(currentLearningMode, 0.0))
+                    .get(1, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            logger.debug("Не удалось получить прогресс: {}", e.getMessage());
+            return 0;
+        }
     }
 }

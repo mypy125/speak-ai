@@ -23,21 +23,18 @@ public class ConversationManager {
     }
 
     public User getOrCreateDefaultUser() {
-        if (currentUser != null) {
-            return currentUser;
-        }
-
         try {
-            // Сначала ищем существующего пользователя
             User user = userDao.getUserByEmail("demo@speakai.com");
 
             if (user == null) {
-                // Создаем нового пользователя
                 user = createDefaultUser();
                 User createdUser = userDao.createUser(user);
                 if (createdUser != null) {
                     user = createdUser;
-                    logger.info("Создан новый пользователь с ID: {}", user.getId());
+                    logger.info("Создан новый пользователь в БД с ID: {}", user.getId());
+                } else {
+                    logger.warn("Не удалось создать пользователя в БД");
+                    return createTemporaryUser();
                 }
             } else {
                 logger.info("Найден существующий пользователь с ID: {}", user.getId());
@@ -48,8 +45,7 @@ public class ConversationManager {
 
         } catch (Exception e) {
             logger.error("Ошибка при работе с пользователем", e);
-            // Возвращаем временного пользователя без сохранения в БД
-            return createDefaultUser();
+            return createTemporaryUser();
         }
     }
 
@@ -116,7 +112,34 @@ public class ConversationManager {
     }
 
     public User getCurrentUser() {
+        if (currentUser != null) {
+            return currentUser;
+        }
+
+        try {
+            currentUser = getOrCreateDefaultUser();
+            if (currentUser != null) {
+                logger.debug("Получен пользователь из БД с ID: {}", currentUser.getId());
+                return currentUser;
+            }
+        } catch (Exception e) {
+            logger.error("Ошибка при получении пользователя из БД", e);
+        }
+
+        currentUser = createTemporaryUser();
+        logger.info("Создан временный пользователь с ID: {}", currentUser.getId());
         return currentUser;
+    }
+
+    private User createTemporaryUser() {
+        User user = new User();
+        user.setId(-1 * (int)(System.currentTimeMillis() % 10000));
+        user.setUsername("Guest_" + System.currentTimeMillis());
+        user.setEmail("guest_" + System.currentTimeMillis() + "@temp.com");
+        user.setLanguageLevel("B1");
+        user.setNativeLanguage("Russian");
+        user.setCreatedAt(new Date());
+        return user;
     }
 
     public void setCurrentUser(User user) {

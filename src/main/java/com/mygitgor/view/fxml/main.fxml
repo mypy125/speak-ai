@@ -42,13 +42,19 @@
 
                 <!-- Кнопки управления (компактные) -->
                 <HBox spacing="5" alignment="CENTER_RIGHT">
+                    <Button text="⚙️ LearningMode"
+                            onAction="#toggleLearningModePanel"
+                            style="-fx-font-weight: bold; -fx-font-size: 13; -fx-text-fill: #2c3e50;">
+                        <tooltip><Tooltip text="Настройки распознавания речи"/></tooltip>
+                    </Button>
+
                     <Button text="⚙️ Speech"
                             onAction="#toggleSpeechPanel"
                             style="-fx-font-weight: bold; -fx-font-size: 13; -fx-text-fill: #2c3e50;">
                         <tooltip><Tooltip text="Настройки распознавания речи"/></tooltip>
                     </Button>
 
-                    <Button text="🎤 TTS"
+                    <Button text="⚙️ TTS"
                             onAction="#toggleTTSPanel"
                             style="-fx-font-weight: bold; -fx-font-size: 13; -fx-text-fill: #2c3e50;">
                         <tooltip><Tooltip text="Настройки озвучки"/></tooltip>
@@ -67,7 +73,100 @@
                 </HBox>
             </HBox>
 
-            <!-- Выпадающая панель TTS -->
+            <!-- Выпадающая панель режимов обучения -->
+            <VBox fx:id="learningModePanel" visible="false" managed="false" spacing="10"
+                  styleClass="card">
+
+                <HBox spacing="10" alignment="CENTER_LEFT">
+                    <Label text="🎯 Режимы обучения"
+                           styleClass="label-title"/>
+                    <Region HBox.hgrow="ALWAYS"/>
+                    <Button text="✕"
+                            onAction="#toggleLearningModePanel"
+                            style="-fx-background-color: transparent; -fx-text-fill: #666666; -fx-font-size: 12px;">
+                        <tooltip><Tooltip text="Скрыть панель обучения"/></tooltip>
+                    </Button>
+                </HBox>
+
+                <GridPane hgap="10" vgap="8">
+                    <columnConstraints>
+                        <ColumnConstraints halignment="RIGHT" minWidth="120" prefWidth="120"/>
+                        <ColumnConstraints halignment="LEFT" hgrow="ALWAYS"/>
+                    </columnConstraints>
+
+                    <!-- Текущий режим -->
+                    <Label text="Текущий режим:" GridPane.rowIndex="0" GridPane.columnIndex="0"
+                           style="-fx-text-fill: #666666; -fx-font-weight: 600;"/>
+                    <HBox spacing="5" GridPane.rowIndex="0" GridPane.columnIndex="1">
+                        <Label fx:id="currentModeLabel" text="Разговорная практика"
+                               style="-fx-font-weight: bold; -fx-text-fill: #9b59b6;"/>
+                        <Region HBox.hgrow="ALWAYS"/>
+                        <Label fx:id="modeStatusLabel" text="✅ Активен"
+                               style="-fx-font-size: 11px; -fx-text-fill: #27ae60;"/>
+                    </HBox>
+
+                    <!-- Выбор режима -->
+                    <Label text="Выберите режим:" GridPane.rowIndex="1" GridPane.columnIndex="0"
+                           style="-fx-text-fill: #666666; -fx-font-weight: 600;"/>
+                    <HBox spacing="5" GridPane.rowIndex="1" GridPane.columnIndex="1">
+                        <ComboBox fx:id="learningModeComboBox"
+                                  prefWidth="250"
+                                  promptText="Выберите режим обучения..."/>
+                        <Button fx:id="switchModeButton" text="Переключить"
+                                style="-fx-background-color: #9b59b6; -fx-text-fill: white;
+                           -fx-background-radius: 20; -fx-padding: 6 12;"
+                                onAction="#switchLearningMode">
+                            <tooltip><Tooltip text="Сменить режим обучения"/></tooltip>
+                        </Button>
+                    </HBox>
+
+                    <!-- Прогресс в режиме -->
+                    <Label text="Прогресс:" GridPane.rowIndex="2" GridPane.columnIndex="0"
+                           style="-fx-text-fill: #666666; -fx-font-weight: 600;"/>
+                    <VBox spacing="5" GridPane.rowIndex="2" GridPane.columnIndex="1">
+                        <ProgressBar fx:id="modeProgressBar" prefWidth="200" progress="0.0"
+                                     style="-fx-accent: #9b59b6;"/>
+                        <Label fx:id="modeProgressLabel" text="0%"
+                               style="-fx-font-size: 11px; -fx-text-fill: #9b59b6; -fx-font-weight: bold;"/>
+                    </VBox>
+                </GridPane>
+
+                <!-- Информация о режиме -->
+                <VBox spacing="5" style="-fx-padding: 10 0 0 0;">
+                    <Label text="📋 Описание режима:" styleClass="label-subtitle"/>
+                    <TextArea fx:id="modeInfoArea"
+                              editable="false"
+                              wrapText="true"
+                              prefRowCount="3"
+                              style="-fx-font-size: 11px; -fx-background-color: #f8f9fa;
+                         -fx-border-color: #e0e0e0; -fx-border-radius: 5;"/>
+                </VBox>
+
+                <!-- Статистика по режимам -->
+                <VBox spacing="5" style="-fx-padding: 10 0 0 0;">
+                    <Label text="📊 Статистика режимов:" styleClass="label-subtitle"/>
+                    <TextArea fx:id="modeStatsArea"
+                              editable="false"
+                              wrapText="true"
+                              prefRowCount="4"
+                              style="-fx-font-size: 11px; -fx-background-color: #f8f9fa;
+                         -fx-border-color: #e0e0e0; -fx-border-radius: 5;"/>
+                </VBox>
+
+                <!-- Доступные режимы -->
+                <VBox spacing="5" style="-fx-padding: 10 0 0 0;">
+                    <Label text="🎯 Доступные режимы:" styleClass="label-subtitle"/>
+                    <FlowPane hgap="8" vgap="8">
+                        <Label text="💬 Conversation" styleClass="badge" style="-fx-background-color: #3498db20; -fx-text-fill: #3498db;"/>
+                        <Label text="🔊 Pronunciation" styleClass="badge" style="-fx-background-color: #e74c3c20; -fx-text-fill: #e74c3c;"/>
+                        <Label text="📚 Grammar" styleClass="badge" style="-fx-background-color: #27ae6020; -fx-text-fill: #27ae60;"/>
+                        <Label text="🎯 Exercise" styleClass="badge" style="-fx-background-color: #f39c1220; -fx-text-fill: #f39c12;"/>
+                        <Label text="📖 Vocabulary" styleClass="badge" style="-fx-background-color: #9b59b620; -fx-text-fill: #9b59b6;"/>
+                        <Label text="✍️ Writing" styleClass="badge" style="-fx-background-color: #1abc9c20; -fx-text-fill: #1abc9c;"/>
+                        <Label text="🎧 Listening" styleClass="badge" style="-fx-background-color: #34495e20; -fx-text-fill: #34495e;"/>
+                    </FlowPane>
+                </VBox>
+            </VBox>
             <VBox fx:id="ttsControlPanel" visible="false" managed="false" spacing="10"
                   styleClass="card">
 

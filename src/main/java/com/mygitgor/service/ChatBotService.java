@@ -19,6 +19,7 @@ import com.mygitgor.utils.ThreadPoolManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.io.File;
+import java.util.Date;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -27,7 +28,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class ChatBotService implements IChatBotService, ISpeechRecognitionService, ITTSService, AutoCloseable {
+public class ChatBotService implements IChatBotService, ISpeechRecognitionService, AiService, ITTSService, AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(ChatBotService.class);
 
     private static final int SPEECH_TIMEOUT_SECONDS = 30;
@@ -217,6 +218,26 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
     }
 
     @Override
+    public String analyzeText(String text) {
+        return aiService.analyzeText(text);
+    }
+
+    @Override
+    public SpeechAnalysis analyzePronunciation(String text, String audioPath) {
+        return aiService.analyzePronunciation(text, audioPath);
+    }
+
+    @Override
+    public String generateBotResponse(String userMessage, SpeechAnalysis analysis) {
+        return aiService.generateBotResponse(userMessage, analysis);
+    }
+
+    @Override
+    public String generateExercise(String topic, String difficulty) {
+        return aiService.generateExercise(topic, difficulty);
+    }
+
+    @Override
     public boolean isAvailable() {
         return ttsService != null && ttsService.isAvailable() && !closed.get();
     }
@@ -294,6 +315,48 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
 
     public User getCurrentUser() {
         return conversationManager.getCurrentUser();
+    }
+
+    public String getCurrentUserId() {
+        try {
+            User user = conversationManager.getCurrentUser();
+            if (user != null) {
+                // ID теперь int, не может быть null
+                return String.valueOf(user.getId());
+            }
+        } catch (Exception e) {
+            logger.error("Ошибка при получении ID пользователя", e);
+        }
+        return null;
+    }
+
+    public String getCurrentUserIdSafely() {
+        // Пробуем получить существующего пользователя
+        String userId = getCurrentUserId();
+        if (userId != null && !userId.trim().isEmpty()) {
+            logger.debug("Получен ID существующего пользователя: {}", userId);
+            return userId;
+        }
+
+        logger.warn("Пользователь не найден, создаем временного");
+
+        // Создаем временного пользователя
+        User tempUser = createTemporaryUser();
+        conversationManager.setCurrentUser(tempUser);
+        String tempId = String.valueOf(tempUser.getId());
+        logger.info("Создан временный пользователь с ID: {}", tempId);
+        return tempId;
+    }
+
+    private User createTemporaryUser() {
+        User user = new User();
+        user.setId(-1 * (int)(System.currentTimeMillis() % 10000));
+        user.setUsername("Guest_" + System.currentTimeMillis());
+        user.setEmail("guest_" + System.currentTimeMillis() + "@temp.com");
+        user.setLanguageLevel("B1");
+        user.setNativeLanguage("Russian");
+        user.setCreatedAt(new Date());
+        return user;
     }
 
     public void setCurrentUser(User user) {

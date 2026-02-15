@@ -16,7 +16,6 @@ public class SpeechAnalysis {
     private List<String> recommendations;
     private String transcription;
 
-    // Добавляем поле для анализа длительности
     private float analysisDuration;
     private float volumeLevel;
 
@@ -69,11 +68,9 @@ public class SpeechAnalysis {
     }
 
     public double getOverallScore() {
-        // Вычисляем среднее арифметическое основных метрик
         return (pronunciationScore + fluencyScore + grammarScore + vocabularyScore) / 4.0;
     }
 
-    // Getters and Setters
     public String getText() { return text; }
     public void setText(String text) { this.text = text; }
 

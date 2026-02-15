@@ -19,7 +19,7 @@ public class User {
     private String passwordHash;
 
     @DatabaseField
-    private String languageLevel; // A1, A2, B1, B2, C1, C2
+    private String languageLevel;
 
     @DatabaseField
     private String nativeLanguage;
@@ -30,10 +30,7 @@ public class User {
     @DatabaseField
     private Date lastLogin;
 
-    // Конструкторы
-    public User() {
-        // ORMLite requires no-arg constructor
-    }
+    public User() {}
 
     public User(String username, String email, String languageLevel, String nativeLanguage) {
         this.username = username;
@@ -43,7 +40,6 @@ public class User {
         this.createdAt = new Date();
     }
 
-    // Getters and Setters
     public int getId() { return id; }
     public void setId(int id) { this.id = id; }
 

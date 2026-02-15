@@ -25,10 +25,8 @@ public class DemoTextToSpeechService implements ITTSService {
                 text != null ? text.length() : 0,
                 text != null ? text.substring(0, Math.min(50, text.length())) + "..." : "null");
 
-        // Имитируем задержку озвучки
         return CompletableFuture.runAsync(() -> {
             try {
-                // Имитация времени озвучки (примерно 100 символов в секунду)
                 int duration = text != null ? Math.max(500, text.length() * 5) : 500;
                 Thread.sleep(Math.min(duration, 3000));
                 logger.debug("✅ [ДЕМО-РЕЖИМ] Озвучка завершена");

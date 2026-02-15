@@ -550,3 +550,16 @@
 .status-away {
     -fx-fill: #f39c12;
 }
+
+.badge {
+    -fx-background-color: #e0e0e0;
+    -fx-background-radius: 12;
+    -fx-padding: 4 10;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+
+.badge-warning {
+    -fx-background-color: #f39c12;
+    -fx-text-fill: white;
+}

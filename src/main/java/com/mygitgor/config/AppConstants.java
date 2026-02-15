@@ -7,14 +7,6 @@ public final class AppConstants {
 
     private AppConstants() {}
 
-    public static final String APP_NAME = "SpeakAI";
-    public static final String APP_VERSION = "1.0.0";
-
-    public static final int MAX_MESSAGE_LENGTH = 400;
-    public static final int SCROLL_DELAY_MS = 50;
-    public static final int STATUS_MESSAGE_DURATION_MS = 3000;
-    public static final int SPEECH_COMPLETION_BUFFER_MS = 1000;
-
     public static final int RECORDING_DURATION_MS = 3000;
     public static final int TTS_DELAY_MS = 300;
     public static final int MAX_SPEECH_TEXT_LENGTH = 2000;
@@ -68,10 +60,6 @@ public final class AppConstants {
 
     public static final Color TTS_STATUS_AVAILABLE = Color.LIMEGREEN;
     public static final Color TTS_STATUS_UNAVAILABLE = Color.ORANGERED;
-    public static final Color USER_MESSAGE_COLOR = Color.rgb(52, 152, 219);
-    public static final Color AI_MESSAGE_COLOR = Color.rgb(248, 249, 250);
-    public static final Color ERROR_COLOR = Color.rgb(231, 76, 60);
-    public static final Color SUCCESS_COLOR = Color.rgb(46, 204, 113);
 
     public static final double EXCELLENT_SCORE_THRESHOLD = 90.0;
     public static final double GOOD_SCORE_THRESHOLD = 85.0;
@@ -82,20 +70,7 @@ public final class AppConstants {
     public static final double WEAK_PHONEME_THRESHOLD = 70.0;
     public static final double TRAINER_PHONEME_THRESHOLD = 80.0;
 
-    public static final double WORDS_PER_SECOND = 2.5;
-    public static final int MIN_SPEECH_DURATION_MS = 2000;
-    public static final int MAX_SPEECH_DURATION_MS = 30000;
-    public static final int DEFAULT_SPEECH_DURATION_MS = 3000;
-
     public static final String APPLICATION_PROPERTIES_PATH = "/application.properties";
     public static final String TEST_AUDIO_PATH = "recordings/test_audio.wav";
 
-    public static final Map<String, String> PROVIDER_DISPLAY_NAMES = Map.of(
-            "groq", "Groq",
-            "openai", "OpenAI GPT",
-            "deepseek", "DeepSeek",
-            "anthropic", "Anthropic Claude",
-            "together", "Together AI",
-            "ollama", "Ollama (локальный)"
-    );
 }
