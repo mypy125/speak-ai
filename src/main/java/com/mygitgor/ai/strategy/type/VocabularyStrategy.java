@@ -2,7 +2,11 @@ package com.mygitgor.ai.strategy.type;
 
 import com.mygitgor.ai.AiService;
 import com.mygitgor.ai.strategy.*;
-import com.mygitgor.ai.strategy.core.*;
+import com.mygitgor.model.LearningContext;
+import com.mygitgor.model.LearningMode;
+import com.mygitgor.model.LearningResponse;
+import com.mygitgor.model.LearningTask;
+import com.mygitgor.model.core.LearningProgress;
 import com.mygitgor.utils.ThreadPoolManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -119,8 +123,8 @@ public class VocabularyStrategy implements LearningModeStrategy {
 
             return LearningTask.builder()
                     .id("voc_" + System.currentTimeMillis())
-                    .title("Изучение слов: " + topic)
-                    .description("Изучите новые слова по теме \"" + topic + "\"")
+                    .title("Vocabulary learning: " + topic)
+                    .description("Learn new words related to \"" + topic + "\"")
                     .mode(LearningMode.VOCABULARY)
                     .difficulty(mapDifficulty(context.getCurrentLevel()))
                     .examples(newWords)
@@ -144,21 +148,22 @@ public class VocabularyStrategy implements LearningModeStrategy {
     private String buildVocabularyPrompt(String userInput, VocabularyState state,
                                          LearningContext context) {
         return String.format("""
-                Ты - AI репетитор для расширения словарного запаса.
-                
-                Текущая тема: %s
-                Уровень ученика: %.1f
-                Изучено слов: %d
-                Среднее запоминание: %.1f%%
-                
-                Сообщение ученика: %s
-                
-                Проанализируй использование слов. Дай обратную связь:
-                1. Какие слова использованы правильно
-                2. Какие слова можно улучшить
-                3. Предложи новые слова по теме
-                4. Дай примеры использования
-                """,
+            You are an AI English vocabulary tutor.
+            ALWAYS respond in English.
+
+            Current topic: %s
+            Student level: %.1f
+            Words learned: %d
+            Average retention: %.1f%%
+
+            Student message: %s
+
+            Analyze vocabulary usage and provide feedback:
+            1. Which words were used correctly
+            2. Which words can be improved
+            3. Suggest new words related to the topic
+            4. Provide example usage
+            """,
                 state.currentTopic,
                 context.getCurrentLevel(),
                 state.wordsLearned,
@@ -169,15 +174,15 @@ public class VocabularyStrategy implements LearningModeStrategy {
 
     private String formatVocabularyResponse(String aiResponse, VocabularyState state) {
         return String.format("""
-                ### 📖 Работа со словарным запасом
-                
-                %s
-                
-                **📊 Статистика:**
-                • Изучено слов: %d
-                • Текущая тема: %s
-                • Запоминание: %.1f%%
-                """,
+            ### 📖 Vocabulary Practice
+
+            %s
+
+            **📊 Statistics:**
+            • Words learned: %d
+            • Current topic: %s
+            • Retention: %.1f%%
+            """,
                 aiResponse,
                 state.wordsLearned,
                 state.currentTopic,
@@ -253,10 +258,10 @@ public class VocabularyStrategy implements LearningModeStrategy {
     private List<String> generateRecommendations(VocabularyState state) {
         List<String> recs = new ArrayList<>();
         if (state.wordsLearned < 50) {
-            recs.add("Учите по 10 новых слов каждый день");
+            recs.add("Learn 10 new words every day");
         }
         if (state.averageRetention < 60) {
-            recs.add("Повторяйте старые слова регулярно");
+            recs.add("Review previously learned words regularly");
         }
         return recs;
     }
@@ -279,8 +284,8 @@ public class VocabularyStrategy implements LearningModeStrategy {
         String nextTopic = getNextTopic(context);
         return LearningTask.builder()
                 .id("task_" + System.currentTimeMillis())
-                .title("Новая тема: " + nextTopic)
-                .description("Изучите слова по теме " + nextTopic)
+                .title("New topic: " + nextTopic)
+                .description("Learn vocabulary related to " + nextTopic)
                 .mode(LearningMode.VOCABULARY)
                 .difficulty(mapDifficulty(context.getCurrentLevel()))
                 .build();

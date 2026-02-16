@@ -1,4 +1,4 @@
-package com.mygitgor.model;
+package com.mygitgor.model.core;
 
 import com.j256.ormlite.field.DatabaseField;
 import com.j256.ormlite.table.DatabaseTable;
@@ -9,34 +9,24 @@ import com.j256.ormlite.field.DataType;
 public class Conversation {
     @DatabaseField(generatedId = true)
     private int id;
-
     @DatabaseField(foreign = true, foreignAutoRefresh = true, columnName = "user_id", canBeNull = false)
     private User user;
-
     @DatabaseField(canBeNull = false, width = 2000)
     private String userMessage;
-
     @DatabaseField(canBeNull = false, width = 4000)
     private String botResponse;
-
     @DatabaseField
     private String audioPath;
-
     @DatabaseField(width = 4000)
     private String analysisResult;
-
     @DatabaseField(width = 4000)
     private String recommendations;
-
     @DatabaseField(dataType = DataType.DATE_LONG)
     private Date timestamp;
-
     @DatabaseField
     private double pronunciationScore;
-
     @DatabaseField
     private double grammarScore;
-
     @DatabaseField
     private double vocabularyScore;
 

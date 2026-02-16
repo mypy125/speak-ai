@@ -2,7 +2,11 @@ package com.mygitgor.ai.strategy.type;
 
 import com.mygitgor.ai.AiService;
 import com.mygitgor.ai.strategy.*;
-import com.mygitgor.ai.strategy.core.*;
+import com.mygitgor.model.LearningContext;
+import com.mygitgor.model.LearningMode;
+import com.mygitgor.model.LearningResponse;
+import com.mygitgor.model.LearningTask;
+import com.mygitgor.model.core.LearningProgress;
 import com.mygitgor.utils.ThreadPoolManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -136,20 +140,22 @@ public class ConversationStrategy implements LearningModeStrategy {
     private String buildConversationPrompt(String userInput, ConversationState state,
                                            LearningContext context) {
         return String.format("""
-            Ты - дружелюбный AI репетитор для разговорной практики.
-            
-            Контекст разговора:
-            - Уровень ученика: %.1f
-            - Тема: %s
-            - История (%d сообщений): %s
-            
-            Сообщение ученика: %s
-            
-            Ответь естественно, поддерживая разговор. Задавай вопросы, чтобы 
-            стимулировать диалог. Корректируй ошибки мягко, если они есть.
-            """,
+        You are a friendly AI tutor for English conversation practice.
+        ALWAYS respond in English.
+
+        Conversation context:
+        - Student level: %.1f
+        - Topic: %s
+        - History (%d messages): %s
+
+        Student message: %s
+
+        Respond naturally and keep the conversation going.
+        Ask follow-up questions.
+        Correct mistakes gently if needed.
+        """,
                 context.getCurrentLevel(),
-                state.currentTopic != null ? state.currentTopic : "общая",
+                state.currentTopic != null ? state.currentTopic : "general",
                 state.history.size(),
                 String.join(" | ", state.history.subList(
                         Math.max(0, state.history.size() - 4), state.history.size())),

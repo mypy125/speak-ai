@@ -1,4 +1,4 @@
-package com.mygitgor.model;
+package com.mygitgor.model.core;
 
 import com.j256.ormlite.field.DatabaseField;
 import com.j256.ormlite.table.DatabaseTable;
@@ -8,28 +8,20 @@ import java.util.Date;
 public class User {
     @DatabaseField(generatedId = true)
     private int id;
-
     @DatabaseField(canBeNull = false)
     private String username;
-
     @DatabaseField(canBeNull = false, unique = true)
     private String email;
-
     @DatabaseField
     private String passwordHash;
-
     @DatabaseField
     private String languageLevel;
-
     @DatabaseField
     private String nativeLanguage;
-
     @DatabaseField
     private Date createdAt;
-
     @DatabaseField
     private Date lastLogin;
-
     public User() {}
 
     public User(String username, String email, String languageLevel, String nativeLanguage) {

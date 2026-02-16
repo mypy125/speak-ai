@@ -2,7 +2,11 @@ package com.mygitgor.ai.strategy.type;
 
 import com.mygitgor.ai.AiService;
 import com.mygitgor.ai.strategy.*;
-import com.mygitgor.ai.strategy.core.*;
+import com.mygitgor.model.LearningContext;
+import com.mygitgor.model.LearningMode;
+import com.mygitgor.model.LearningResponse;
+import com.mygitgor.model.LearningTask;
+import com.mygitgor.model.core.LearningProgress;
 import com.mygitgor.utils.ThreadPoolManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -102,8 +106,8 @@ public class ExerciseStrategy implements LearningModeStrategy {
 
             return new LearningTask.Builder()
                     .id("ex_" + System.currentTimeMillis())
-                    .title("Упражнение: " + exerciseType)
-                    .description("Выполните задание для закрепления материала")
+                    .title("Exercise: " + exerciseType)
+                    .description("Complete the task to practice your skills")
                     .mode(LearningMode.EXERCISE)
                     .difficulty(mapDifficulty(context.getCurrentLevel()))
                     .examples(getExerciseExamples(exerciseType))
@@ -129,11 +133,15 @@ public class ExerciseStrategy implements LearningModeStrategy {
     private String generateExerciseFeedback(boolean isCorrect, ExerciseState state,
                                             LearningContext context) {
         if (isCorrect) {
-            return String.format("✅ Правильно! Прогресс: %.1f%% (Выполнено: %d)",
-                    state.successRate, state.completedCount);
+            return String.format(
+                    "✅ Correct! Progress: %.1f%% (Completed: %d)",
+                    state.successRate, state.completedCount
+            );
         } else {
-            return String.format("❌ Попробуйте еще раз. Прогресс: %.1f%%",
-                    state.successRate);
+            return String.format(
+                    "❌ Try again. Progress: %.1f%%",
+                    state.successRate
+            );
         }
     }
 
@@ -160,8 +168,8 @@ public class ExerciseStrategy implements LearningModeStrategy {
     private LearningTask generateNextTask(LearningContext context, ExerciseState state) {
         return new LearningTask.Builder()
                 .id("task_" + System.currentTimeMillis())
-                .title("Следующее упражнение")
-                .description("Продолжайте практиковаться")
+                .title("Next exercise")
+                .description("Keep practicing")
                 .mode(LearningMode.EXERCISE)
                 .difficulty(mapDifficulty(context.getCurrentLevel()))
                 .build();
@@ -170,7 +178,7 @@ public class ExerciseStrategy implements LearningModeStrategy {
     private List<String> generateRecommendations(ExerciseState state) {
         List<String> recs = new ArrayList<>();
         if (state.successRate < 60) {
-            recs.add("Повторите теорию перед упражнениями");
+            recs.add("Review the theory before doing exercises");
         }
         return recs;
     }

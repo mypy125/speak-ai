@@ -2,7 +2,11 @@ package com.mygitgor.ai.strategy.type;
 
 import com.mygitgor.ai.AiService;
 import com.mygitgor.ai.strategy.*;
-import com.mygitgor.ai.strategy.core.*;
+import com.mygitgor.model.LearningContext;
+import com.mygitgor.model.LearningMode;
+import com.mygitgor.model.LearningResponse;
+import com.mygitgor.model.LearningTask;
+import com.mygitgor.model.core.LearningProgress;
 import com.mygitgor.utils.ThreadPoolManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,9 +15,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 
-/**
- * Стратегия развития аудирования
- */
 public class ListeningStrategy implements LearningModeStrategy {
     private static final Logger logger = LoggerFactory.getLogger(ListeningStrategy.class);
 
@@ -122,8 +123,8 @@ public class ListeningStrategy implements LearningModeStrategy {
 
             return LearningTask.builder()
                     .id("lis_" + System.currentTimeMillis())
-                    .title("Аудирование: " + topic)
-                    .description("Прослушайте аудио и ответьте на вопросы")
+                    .title("Listening: " + topic)
+                    .description("Listen to the audio and answer the questions")
                     .mode(LearningMode.LISTENING)
                     .difficulty(mapDifficulty(context.getCurrentLevel()))
                     .addMetadata("topic", topic)
@@ -146,19 +147,20 @@ public class ListeningStrategy implements LearningModeStrategy {
     private String buildListeningPrompt(String userInput, ListeningState state,
                                         LearningContext context) {
         return String.format("""
-                Ты - AI репетитор по аудированию.
-                
-                Тема: %s
-                Уровень ученика: %.1f
-                Понимание: %.1f%%
-                
-                Ответ ученика: %s
-                
-                Проанализируй понимание услышанного:
-                1. Насколько точно ученик понял содержание
-                2. Какие детали были упущены
-                3. Дай рекомендации по улучшению восприятия
-                """,
+            You are an AI English listening tutor.
+            ALWAYS respond in English.
+
+            Topic: %s
+            Student level: %.1f
+            Comprehension: %.1f%%
+
+            Student answer: %s
+
+            Analyze listening comprehension:
+            1. How accurately the student understood the content
+            2. What details were missed
+            3. Give recommendations to improve listening skills
+            """,
                 state.currentTopic,
                 context.getCurrentLevel(),
                 state.averageComprehension,
@@ -168,15 +170,15 @@ public class ListeningStrategy implements LearningModeStrategy {
 
     private String formatListeningResponse(String aiResponse, ListeningState state) {
         return String.format("""
-                ### 🎧 Тренировка аудирования
-                
-                %s
-                
-                **📊 Результаты:**
-                • Понимание: %.1f%%
-                • Выполнено упражнений: %d
-                • Текущая тема: %s
-                """,
+            ### 🎧 Listening Practice
+
+            %s
+
+            **📊 Results:**
+            • Comprehension: %.1f%%
+            • Exercises completed: %d
+            • Current topic: %s
+            """,
                 aiResponse,
                 state.averageComprehension,
                 state.exercisesCompleted,
@@ -243,13 +245,13 @@ public class ListeningStrategy implements LearningModeStrategy {
     private List<String> generateRecommendations(ListeningState state) {
         List<String> recs = new ArrayList<>();
         if (state.averageComprehension < 60) {
-            recs.add("Слушайте более медленные записи");
+            recs.add("Listen to slower recordings");
         }
         if (state.exercisesCompleted < 10) {
-            recs.add("Практикуйтесь регулярно, хотя бы 10 минут в день");
+            recs.add("Practice regularly, at least 10 minutes per day");
         }
         if (state.averageComprehension > 80) {
-            recs.add("Попробуйте более быстрый темп речи");
+            recs.add("Try faster speech");
         }
         return recs;
     }

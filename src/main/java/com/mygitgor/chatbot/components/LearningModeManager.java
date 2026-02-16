@@ -1,9 +1,12 @@
 package com.mygitgor.chatbot.components;
 
+import com.mygitgor.model.*;
+import com.mygitgor.model.core.LearningProgress;
+import com.mygitgor.model.core.LearningSession;
 import com.mygitgor.ai.LearningStrategyFactory;
-import com.mygitgor.ai.strategy.core.*;
 import com.mygitgor.ai.strategy.LearningModeStrategy;
-import com.mygitgor.model.EnhancedSpeechAnalysis;
+import com.mygitgor.model.core.User;
+import com.mygitgor.service.components.LearningProgressManager;
 import com.mygitgor.utils.ThreadPoolManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +20,7 @@ public class LearningModeManager {
     private static final Logger logger = LoggerFactory.getLogger(LearningModeManager.class);
 
     private final LearningStrategyFactory strategyFactory;
+    private final LearningProgressManager progressManager;
     private final ExecutorService executor;
 
     private final Map<String, UserSession> userSessions = new ConcurrentHashMap<>();
@@ -24,18 +28,21 @@ public class LearningModeManager {
     private static class UserSession {
         final String userId;
         LearningMode currentMode;
+        LearningSession currentDbSession;
         final Map<LearningMode, Double> modeProgress = new ConcurrentHashMap<>();
-        EnhancedSpeechAnalysis lastAnalysis;
         LearningContext lastContext;
+        Date sessionStart;
 
         UserSession(String userId) {
             this.userId = userId;
-            this.currentMode = LearningMode.CONVERSATION; // По умолчанию
+            this.currentMode = LearningMode.CONVERSATION;
+            this.sessionStart = new Date();
         }
     }
 
     public LearningModeManager(LearningStrategyFactory strategyFactory) {
         this.strategyFactory = strategyFactory;
+        this.progressManager = new LearningProgressManager();
         this.executor = ThreadPoolManager.getInstance().getBackgroundExecutor();
         logger.info("LearningModeManager инициализирован");
     }
@@ -62,10 +69,7 @@ public class LearningModeManager {
             );
         }
 
-        UserSession session = userSessions.computeIfAbsent(userId, k -> {
-            logger.debug("Создана новая сессия для пользователя {}", userId);
-            return new UserSession(userId);
-        });
+        UserSession session = getUserSession(userId);
 
         LearningModeStrategy strategy;
         try {
@@ -84,7 +88,7 @@ public class LearningModeManager {
 
         return strategy.processInput(userInput, context)
                 .thenApply(response -> {
-                    updateSession(session, response);
+                    updateSessionAfterInput(session, response, userInput);
                     return response;
                 })
                 .exceptionally(throwable -> {
@@ -118,10 +122,7 @@ public class LearningModeManager {
         }
 
         return CompletableFuture.supplyAsync(() -> {
-            UserSession session = userSessions.computeIfAbsent(userId, k -> {
-                logger.debug("Создана новая сессия для пользователя {}", userId);
-                return new UserSession(userId);
-            });
+            UserSession session = getUserSession(userId);
 
             LearningMode oldMode = session.currentMode;
             session.currentMode = newMode;
@@ -144,6 +145,10 @@ public class LearningModeManager {
 
             try {
                 LearningTask task = strategy.getNextTask(context).join();
+
+                // Сохраняем информацию о смене режима
+                saveModeSwitch(session, oldMode, newMode);
+
                 return LearningResponse.builder()
                         .message(String.format("Переключено на режим: %s\n\n%s",
                                 newMode.getDisplayName(), task.getDescription()))
@@ -162,6 +167,100 @@ public class LearningModeManager {
         }, executor);
     }
 
+    private UserSession getUserSession(String userId) {
+        return userSessions.computeIfAbsent(userId, k -> {
+            logger.debug("Создана новая сессия для пользователя {}", userId);
+            UserSession session = new UserSession(userId);
+
+            // Загружаем прогресс из БД
+            loadUserProgress(session);
+
+            return session;
+        });
+    }
+
+    private void loadUserProgress(UserSession session) {
+        try {
+            User user = new User();
+            user.setId(Integer.parseInt(session.userId));
+
+            Map<LearningMode, LearningProgress> progresses =
+                    progressManager.getUserProgress(user);
+
+            for (Map.Entry<LearningMode, LearningProgress> entry : progresses.entrySet()) {
+                session.modeProgress.put(entry.getKey(), entry.getValue().getOverallProgress());
+            }
+
+            logger.debug("Загружен прогресс для пользователя {}: {} режимов",
+                    session.userId, session.modeProgress.size());
+        } catch (Exception e) {
+            logger.error("Ошибка при загрузке прогресса пользователя {}", session.userId, e);
+        }
+    }
+
+    private void updateSessionAfterInput(UserSession session, LearningResponse response, String userInput) {
+        session.modeProgress.put(session.currentMode, response.getProgress());
+        session.lastContext = buildContext(session);
+
+        saveProgressAsync(session, response);
+        updateSessionStats(session, userInput);
+    }
+
+    private void saveProgressAsync(UserSession session, LearningResponse response) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                User user = new User();
+                user.setId(Integer.parseInt(session.userId));
+
+                LearningProgress progress = progressManager.getProgress(user, session.currentMode);
+
+                LearningProgress updated = LearningProgress.builder()
+                        .user(user)
+                        .learningMode(session.currentMode)
+                        .overallProgress(response.getProgress())
+                        .tasksCompleted(progress.getTasksCompleted() + 1)
+                        .timeSpent(progress.getTimeSpent() + 60)
+                        .startDate(progress.getStartLocalDate())
+                        .build();
+
+                progress.getSkillsProgress().forEach(updated::updateSkillProgress);
+                progress.getAchievements().forEach(updated::addAchievement);
+
+                progressManager.saveProgress(updated);
+
+                logger.debug("Прогресс сохранен для пользователя {} в режиме {}",
+                        session.userId, session.currentMode);
+            } catch (Exception e) {
+                logger.error("Ошибка при сохранении прогресса", e);
+            }
+        }, executor);
+    }
+
+    private void saveModeSwitch(UserSession session, LearningMode oldMode, LearningMode newMode) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                User user = new User();
+                user.setId(Integer.parseInt(session.userId));
+
+                LearningProgress progress = progressManager.getProgress(user, newMode);
+                if (!progress.hasAchievement("Первый режим")) {
+                    progressManager.addAchievement(user, newMode,
+                            "🎯 Начато изучение режима " + newMode.getDisplayName());
+                }
+
+                logger.debug("Смена режима сохранена: {} -> {} для пользователя {}",
+                        oldMode, newMode, session.userId);
+            } catch (Exception e) {
+                logger.error("Ошибка при сохранении смены режима", e);
+            }
+        });
+    }
+
+    private void updateSessionStats(UserSession session, String userInput) {
+        // Здесь можно обновлять статистику текущей сессии
+        // Например, количество сообщений, время и т.д.
+    }
+
     public CompletableFuture<LearningMode> getRecommendedMode(String userId) {
         if (userId == null || userId.trim().isEmpty()) {
             logger.error("getRecommendedMode: userId is null or empty");
@@ -172,9 +271,8 @@ public class LearningModeManager {
             UserSession session = userSessions.get(userId);
             if (session == null) return LearningMode.CONVERSATION;
 
-            Map<LearningMode, Double> progress = session.modeProgress;
-
-            return progress.entrySet().stream()
+            // Анализируем прогресс и рекомендуем режим
+            return session.modeProgress.entrySet().stream()
                     .min(Map.Entry.comparingByValue())
                     .map(Map.Entry::getKey)
                     .orElse(LearningMode.CONVERSATION);
@@ -191,24 +289,7 @@ public class LearningModeManager {
             UserSession session = userSessions.get(userId);
             if (session == null) return Collections.emptyMap();
 
-            Map<LearningMode, Double> overallProgress = new ConcurrentHashMap<>();
-
-            for (LearningMode mode : LearningMode.values()) {
-                try {
-                    LearningModeStrategy strategy = strategyFactory.getStrategy(mode);
-                    if (strategy.isSupported()) {
-                        LearningContext context = buildContext(session);
-                        double progress = strategy.analyzeProgress(context)
-                                .thenApply(LearningProgress::getOverallProgress)
-                                .join();
-                        overallProgress.put(mode, progress);
-                    }
-                } catch (Exception e) {
-                    logger.warn("Ошибка при анализе прогресса для режима {}", mode, e);
-                }
-            }
-
-            return overallProgress;
+            return new HashMap<>(session.modeProgress);
         }, executor);
     }
 
@@ -223,11 +304,7 @@ public class LearningModeManager {
             return CompletableFuture.completedFuture(createEmptyTask());
         }
 
-        UserSession session = userSessions.get(userId);
-        if (session == null) {
-            session = new UserSession(userId);
-            userSessions.put(userId, session);
-        }
+        UserSession session = getUserSession(userId);
 
         try {
             LearningModeStrategy strategy = strategyFactory.getStrategy(mode);
@@ -237,16 +314,6 @@ public class LearningModeManager {
             logger.error("Ошибка при получении следующего задания для пользователя {}", userId, e);
             return CompletableFuture.completedFuture(createEmptyTask());
         }
-    }
-
-    public void updateSpeechAnalysis(String userId, EnhancedSpeechAnalysis analysis) {
-        if (userId == null || userId.trim().isEmpty()) {
-            logger.error("updateSpeechAnalysis: userId is null or empty");
-            return;
-        }
-
-        UserSession session = userSessions.computeIfAbsent(userId, k -> new UserSession(userId));
-        session.lastAnalysis = analysis;
     }
 
     private LearningContext buildContext(UserSession session) {
@@ -262,45 +329,28 @@ public class LearningModeManager {
                 .userId(session.userId)
                 .mode(session.currentMode)
                 .currentLevel(calculateOverallLevel(session))
-                .lastAnalysis(session.lastAnalysis)
-                .sessionCount(getSessionCount(session.userId))
-                .sessionDuration(getSessionDuration(session.userId))
+                .sessionCount(session.modeProgress.size())
+                .sessionDuration(getSessionDuration(session))
                 .build();
     }
 
     private double calculateOverallLevel(UserSession session) {
         if (session == null || session.modeProgress.isEmpty()) return 50.0;
+
         return session.modeProgress.values().stream()
                 .mapToDouble(Double::doubleValue)
                 .average()
                 .orElse(50.0);
     }
 
-    private void updateSession(UserSession session, LearningResponse response) {
-        if (session == null || response == null) return;
-
-        session.modeProgress.put(session.currentMode, response.getProgress());
-        session.lastContext = LearningContext.builder()
-                .userId(session.userId)
-                .mode(session.currentMode)
-                .currentLevel(calculateOverallLevel(session))
-                .lastAnalysis(session.lastAnalysis)
-                .build();
+    private long getSessionDuration(UserSession session) {
+        if (session == null || session.sessionStart == null) return 0;
+        return (System.currentTimeMillis() - session.sessionStart.getTime()) / 1000;
     }
 
     private double getCurrentProgress(UserSession session) {
         if (session == null) return 0;
         return session.modeProgress.getOrDefault(session.currentMode, 0.0);
-    }
-
-    private int getSessionCount(String userId) {
-        // В реальном приложении здесь будет получение из БД
-        return 1;
-    }
-
-    private long getSessionDuration(String userId) {
-        // В реальном приложении здесь будет получение из БД
-        return 300000; // 5 минут
     }
 
     private LearningTask createEmptyTask() {
@@ -313,17 +363,49 @@ public class LearningModeManager {
                 .build();
     }
 
-    /**
-     * Очистка сессии пользователя
-     */
     public void clearUserSession(String userId) {
         if (userId == null || userId.trim().isEmpty()) {
             logger.warn("clearUserSession: userId is null or empty");
             return;
         }
 
-        userSessions.remove(userId);
-        logger.info("Сессия пользователя {} очищена", userId);
+        UserSession session = userSessions.remove(userId);
+        if (session != null) {
+            // Сохраняем финальный прогресс перед очисткой
+            saveFinalProgress(session);
+            logger.info("Сессия пользователя {} очищена", userId);
+        }
+    }
+
+    private void saveFinalProgress(UserSession session) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                User user = new User();
+                user.setId(Integer.parseInt(session.userId));
+
+                for (Map.Entry<LearningMode, Double> entry : session.modeProgress.entrySet()) {
+                    LearningProgress progress = progressManager.getProgress(user, entry.getKey());
+
+                    LearningProgress updated = LearningProgress.builder()
+                            .user(user)
+                            .learningMode(entry.getKey())
+                            .overallProgress(entry.getValue())
+                            .tasksCompleted(progress.getTasksCompleted())
+                            .timeSpent(progress.getTimeSpent() + getSessionDuration(session))
+                            .startDate(progress.getStartLocalDate())
+                            .build();
+
+                    progress.getSkillsProgress().forEach(updated::updateSkillProgress);
+                    progress.getAchievements().forEach(updated::addAchievement);
+
+                    progressManager.saveProgress(updated);
+                }
+
+                logger.debug("Финальный прогресс сохранен для пользователя {}", session.userId);
+            } catch (Exception e) {
+                logger.error("Ошибка при сохранении финального прогресса", e);
+            }
+        });
     }
 
     public String getModeStats(String userId) {
@@ -340,5 +422,39 @@ public class LearningModeManager {
                         mode.getDisplayName(), progress)));
 
         return stats.toString();
+    }
+
+    public CompletableFuture<String> getDetailedStats(String userId) {
+        if (userId == null || userId.trim().isEmpty()) {
+            return CompletableFuture.completedFuture("Нет данных");
+        }
+
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                User user = new User();
+                user.setId(Integer.parseInt(userId));
+
+                LearningProgressManager.TotalStats stats = progressManager.getTotalStats(user);
+
+                StringBuilder sb = new StringBuilder();
+                sb.append("=== ДЕТАЛЬНАЯ СТАТИСТИКА ===\n\n");
+                sb.append(String.format("Активных режимов: %d\n", stats.getActiveModes()));
+                sb.append(String.format("Всего заданий: %d\n", stats.getTotalTasks()));
+                sb.append(String.format("Общее время: %s\n", stats.getFormattedTotalTime()));
+                sb.append(String.format("Средний прогресс: %.1f%%\n", stats.getAverageProgress()));
+                sb.append(String.format("Достижений: %d\n", stats.getTotalAchievements()));
+
+                sb.append("\nЛучший режим: ").append(progressManager.getBestMode(user).getDisplayName());
+
+                sb.append("\n\nРежимы для улучшения:\n");
+                progressManager.getModesToImprove(user).forEach(mode ->
+                        sb.append("• ").append(mode.getDisplayName()).append("\n"));
+
+                return sb.toString();
+            } catch (Exception e) {
+                logger.error("Ошибка при получении детальной статистики", e);
+                return "Ошибка загрузки статистики";
+            }
+        }, executor);
     }
 }

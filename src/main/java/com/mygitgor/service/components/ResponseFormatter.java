@@ -3,7 +3,7 @@ package com.mygitgor.service.components;
 import com.mygitgor.analysis.RecommendationEngine;
 import com.mygitgor.model.EnhancedSpeechAnalysis;
 import com.mygitgor.model.SpeechAnalysis;
-import com.mygitgor.model.User;
+import com.mygitgor.model.core.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.List;
@@ -25,31 +25,17 @@ public class ResponseFormatter {
 
         StringBuilder response = new StringBuilder();
 
-        // Добавляем метку режима
         if (responseMode == ResponseMode.VOICE) {
             response.append("🔊 **Ответ озвучен**\n\n");
         }
 
-        // Основной ответ
         response.append("## 🤖 AI Репетитор:\n\n");
         response.append(botResponse).append("\n\n");
-
-        // Анализ текста
         appendTextAnalysis(response, textAnalysis);
-
-        // Анализ речи
         appendSpeechAnalysis(response, speechAnalysis);
-
-        // Персонализированные рекомендации
         appendPersonalizedRecommendations(response, personalizedRecommendations);
-
-        // Недельный план
         appendWeeklyPlan(response, weeklyPlan);
-
-        // Генерация упражнения (если нет персонализированных)
         appendDefaultExercise(response, personalizedRecommendations);
-
-        // Подсказка о режиме
         appendModeHint(response, responseMode);
 
         return response.toString();
@@ -73,7 +59,6 @@ public class ResponseFormatter {
             response.append(speechAnalysis.getSummary()).append("\n\n");
         }
 
-        // Общие рекомендации
         if (!speechAnalysis.getRecommendations().isEmpty()) {
             response.append("### 💡 Рекомендации:\n\n");
             speechAnalysis.getRecommendations().forEach(rec ->
@@ -106,7 +91,6 @@ public class ResponseFormatter {
         response.append("• Уровень владения: **")
                 .append(analysis.getProficiencyLevel()).append("**\n\n");
 
-        // Ошибки
         if (!analysis.getDetectedErrors().isEmpty()) {
             response.append("### ❌ Обнаруженные ошибки:\n\n");
             analysis.getDetectedErrors().forEach(error ->

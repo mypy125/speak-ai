@@ -1,4 +1,4 @@
-package com.mygitgor.ai.strategy.core;
+package com.mygitgor.model;
 
 import java.util.List;
 import java.util.Map;

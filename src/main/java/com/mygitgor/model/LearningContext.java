@@ -1,6 +1,5 @@
-package com.mygitgor.ai.strategy.core;
+package com.mygitgor.model;
 
-import com.mygitgor.model.EnhancedSpeechAnalysis;
 import java.util.Objects;
 
 public class LearningContext {

@@ -1,6 +1,6 @@
 package com.mygitgor.ai;
 
-import com.mygitgor.ai.strategy.core.LearningMode;
+import com.mygitgor.model.LearningMode;
 import com.mygitgor.ai.strategy.LearningModeStrategy;
 import com.mygitgor.ai.strategy.type.*;
 import com.mygitgor.analysis.PronunciationTrainer;

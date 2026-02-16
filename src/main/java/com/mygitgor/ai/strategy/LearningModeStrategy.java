@@ -1,6 +1,10 @@
 package com.mygitgor.ai.strategy;
 
-import com.mygitgor.ai.strategy.core.*;
+import com.mygitgor.model.LearningContext;
+import com.mygitgor.model.LearningMode;
+import com.mygitgor.model.LearningResponse;
+import com.mygitgor.model.LearningTask;
+import com.mygitgor.model.core.LearningProgress;
 
 import java.util.concurrent.CompletableFuture;
 

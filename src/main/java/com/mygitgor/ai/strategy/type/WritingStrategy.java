@@ -2,7 +2,11 @@ package com.mygitgor.ai.strategy.type;
 
 import com.mygitgor.ai.AiService;
 import com.mygitgor.ai.strategy.*;
-import com.mygitgor.ai.strategy.core.*;
+import com.mygitgor.model.LearningContext;
+import com.mygitgor.model.LearningMode;
+import com.mygitgor.model.LearningResponse;
+import com.mygitgor.model.LearningTask;
+import com.mygitgor.model.core.LearningProgress;
 import com.mygitgor.utils.ThreadPoolManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -119,8 +123,8 @@ public class WritingStrategy implements LearningModeStrategy {
 
             return LearningTask.builder()
                     .id("wri_" + System.currentTimeMillis())
-                    .title("Письменная работа: " + topic)
-                    .description("Напишите текст на тему \"" + topic + "\"")
+                    .title("Writing task: " + topic)
+                    .description("Write a text about \"" + topic + "\"")
                     .mode(LearningMode.WRITING)
                     .difficulty(mapDifficulty(context.getCurrentLevel()))
                     .examples(getWritingExamples(topic))
@@ -144,23 +148,25 @@ public class WritingStrategy implements LearningModeStrategy {
     private String buildWritingPrompt(String userInput, WritingState state,
                                       LearningContext context) {
         return String.format("""
-                Ты - AI репетитор по письменному английскому.
-                
-                Тема: %s
-                Уровень ученика: %.1f
-                Выполнено работ: %d
-                Средняя оценка: %.1f
-                
-                Текст ученика: %s
-                
-                Проанализируй текст по критериям:
-                1. Грамматика и пунктуация
-                2. Стиль и структура
-                3. Логика и связность
-                4. Словарный запас
-                
-                Дай конкретные рекомендации по улучшению.
-                """,
+            You are an AI English writing tutor.
+            ALWAYS respond in English.
+
+            Writing topic: %s
+            Student level: %.1f
+            Texts completed: %d
+            Average score: %.1f
+
+            Student text: %s
+
+            Analyze the text using these criteria:
+            1. Grammar and punctuation
+            2. Style and structure
+            3. Logic and coherence
+            4. Vocabulary usage
+
+            Provide clear and actionable improvement suggestions.
+            Be supportive and constructive.
+            """,
                 state.currentTopic,
                 context.getCurrentLevel(),
                 state.textsCompleted,
@@ -171,15 +177,15 @@ public class WritingStrategy implements LearningModeStrategy {
 
     private String formatWritingResponse(String aiResponse, WritingState state) {
         return String.format("""
-                ### ✍️ Анализ письменной работы
-                
-                %s
-                
-                **📊 Прогресс:**
-                • Выполнено работ: %d
-                • Средняя оценка: %.1f
-                • Текущая тема: %s
-                """,
+            ### ✍️ Writing Analysis
+
+            %s
+
+            **📊 Progress:**
+            • Texts completed: %d
+            • Average score: %.1f
+            • Current topic: %s
+            """,
                 aiResponse,
                 state.textsCompleted,
                 state.averageScore,
@@ -242,22 +248,22 @@ public class WritingStrategy implements LearningModeStrategy {
     private List<String> generateRecommendations(WritingState state) {
         List<String> recs = new ArrayList<>();
         if (calculateAverageGrammar(state) < 70) {
-            recs.add("Уделите внимание грамматике");
+            recs.add("Focus more on grammar accuracy");
         }
         if (calculateAverageStyle(state) < 65) {
-            recs.add("Работайте над структурой текста");
+            recs.add("Improve text structure and coherence");
         }
         if (state.textsCompleted < 5) {
-            recs.add("Пишите больше текстов для практики");
+            recs.add("Write more texts to practice regularly");
         }
         return recs;
     }
 
     private List<String> getWritingExamples(String topic) {
         return Arrays.asList(
-                "Пример хорошего вступления",
-                "Пример основной части",
-                "Пример заключения"
+                "Example of a good introduction",
+                "Example of a body paragraph",
+                "Example of a conclusion"
         );
     }
 
@@ -291,8 +297,8 @@ public class WritingStrategy implements LearningModeStrategy {
         String nextTopic = getNextTopic(context);
         return LearningTask.builder()
                 .id("task_" + System.currentTimeMillis())
-                .title("Новая тема для письма")
-                .description("Напишите текст на тему: " + nextTopic)
+                .title("New writing topic")
+                .description("Write a text about: " + nextTopic)
                 .mode(LearningMode.WRITING)
                 .difficulty(mapDifficulty(context.getCurrentLevel()))
                 .build();

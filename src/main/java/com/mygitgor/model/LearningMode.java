@@ -1,4 +1,4 @@
-package com.mygitgor.ai.strategy.core;
+package com.mygitgor.model;
 
 public enum LearningMode {
     CONVERSATION("💬 Разговорная практика", "Общайтесь с AI для развития разговорных навыков"),

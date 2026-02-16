@@ -2,7 +2,11 @@ package com.mygitgor.ai.strategy.type;
 
 import com.mygitgor.ai.AiService;
 import com.mygitgor.ai.strategy.*;
-import com.mygitgor.ai.strategy.core.*;
+import com.mygitgor.model.LearningContext;
+import com.mygitgor.model.LearningMode;
+import com.mygitgor.model.LearningResponse;
+import com.mygitgor.model.LearningTask;
+import com.mygitgor.model.core.LearningProgress;
 import com.mygitgor.utils.ThreadPoolManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -126,8 +130,8 @@ public class GrammarStrategy implements LearningModeStrategy {
 
             return new LearningTask.Builder()
                     .id("gram_" + System.currentTimeMillis())
-                    .title("Изучение: " + topic)
-                    .description("Практикуйте грамматическую тему '" + topic + "'")
+                    .title("Study: " + topic)
+                    .description("Practice the grammar topic '" + topic + "'")
                     .mode(LearningMode.GRAMMAR)
                     .difficulty(mapDifficulty(context.getCurrentLevel()))
                     .examples(getGrammarExamples(topic))
@@ -149,17 +153,19 @@ public class GrammarStrategy implements LearningModeStrategy {
     private String buildGrammarPrompt(String userInput, GrammarState state,
                                       LearningContext context) {
         return String.format("""
-            Ты - AI репетитор по грамматике английского языка.
-            
-            Текущая тема: %s
-            Уровень ученика: %.1f
-            Прогресс по теме: %.1f%%
-            
-            Задание ученика: %s
-            
-            Объясни грамматическое правило, проверь ответ и дай обратную связь.
-            """,
-                state != null ? state.currentTopic : "общая",
+        You are an AI English grammar tutor.
+        ALWAYS respond in English.
+
+        Current topic: %s
+        Student level: %.1f
+        Topic progress: %.1f%%
+
+        Student task: %s
+
+        Explain the grammar rule, check the answer, and provide feedback.
+        Be supportive and clear.
+        """,
+                state != null ? state.currentTopic : "general",
                 context.getCurrentLevel(),
                 state != null ? state.topicScores.getOrDefault(state.currentTopic, 0.0) : 0,
                 userInput
@@ -207,8 +213,8 @@ public class GrammarStrategy implements LearningModeStrategy {
         String nextTopic = getNextTopic(context);
         return new LearningTask.Builder()
                 .id("task_" + System.currentTimeMillis())
-                .title("Упражнение по теме: " + nextTopic)
-                .description("Выполните упражнения для закрепления материала")
+                .title("Grammar exercise: " + nextTopic)
+                .description("Complete exercises to reinforce the material")
                 .mode(LearningMode.GRAMMAR)
                 .difficulty(mapDifficulty(context.getCurrentLevel()))
                 .build();
@@ -224,7 +230,7 @@ public class GrammarStrategy implements LearningModeStrategy {
         state.topicScores.entrySet().stream()
                 .filter(e -> e.getValue() < 70)
                 .limit(2)
-                .forEach(e -> recs.add("Повторите тему: " + e.getKey()));
+                .forEach(e -> recs.add("Review the topic: " + e.getKey()));
         return recs;
     }
 

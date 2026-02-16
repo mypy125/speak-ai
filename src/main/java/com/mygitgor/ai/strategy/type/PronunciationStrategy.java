@@ -1,8 +1,12 @@
 package com.mygitgor.ai.strategy.type;
 
 import com.mygitgor.ai.strategy.*;
-import com.mygitgor.ai.strategy.core.*;
 import com.mygitgor.analysis.PronunciationTrainer;
+import com.mygitgor.model.LearningContext;
+import com.mygitgor.model.LearningMode;
+import com.mygitgor.model.LearningResponse;
+import com.mygitgor.model.LearningTask;
+import com.mygitgor.model.core.LearningProgress;
 import com.mygitgor.service.AudioAnalyzer;
 import com.mygitgor.utils.ThreadPoolManager;
 import org.slf4j.Logger;
@@ -105,7 +109,7 @@ public class PronunciationStrategy implements LearningModeStrategy {
 
             return new LearningTask.Builder()
                     .id("pron_" + System.currentTimeMillis())
-                    .title("Тренировка звука /" + phoneme + "/")
+                    .title("Pronunciation practice /" + phoneme + "/")
                     .description(exercise.getInstructions())
                     .mode(LearningMode.PRONUNCIATION)
                     .difficulty(mapDifficulty(context.getCurrentLevel()))
@@ -131,13 +135,20 @@ public class PronunciationStrategy implements LearningModeStrategy {
 
     private String generateFeedback(String phoneme, double score, LearningContext context) {
         if (score > 85) {
-            return String.format("Отлично! Звук /%s/ произносится правильно. (Оценка: %.1f)",
-                    phoneme, score);
+            return String.format(
+                    "Excellent! The /%s/ sound is pronounced correctly. (Score: %.1f)",
+                    phoneme, score
+            );
         } else if (score > 70) {
-            return String.format("Хорошо, но есть небольшие нюансы. (Оценка: %.1f)", score);
+            return String.format(
+                    "Good, but there are minor pronunciation issues. (Score: %.1f)",
+                    score
+            );
         } else {
-            return String.format("Нужно больше практики для звука /%s/. (Оценка: %.1f)",
-                    phoneme, score);
+            return String.format(
+                    "You need more practice with the /%s/ sound. (Score: %.1f)",
+                    phoneme, score
+            );
         }
     }
 
@@ -173,8 +184,8 @@ public class PronunciationStrategy implements LearningModeStrategy {
         String nextPhoneme = getNextPhoneme(context);
         return new LearningTask.Builder()
                 .id("task_" + System.currentTimeMillis())
-                .title("Практика звука /" + nextPhoneme + "/")
-                .description("Повторяйте слова с этим звуком")
+                .title("Practice sound /" + nextPhoneme + "/")
+                .description("Repeat words with this sound")
                 .mode(LearningMode.PRONUNCIATION)
                 .difficulty(mapDifficulty(context.getCurrentLevel()))
                 .build();
@@ -193,7 +204,7 @@ public class PronunciationStrategy implements LearningModeStrategy {
         state.phonemeScores.entrySet().stream()
                 .filter(e -> e.getValue() < 70)
                 .limit(3)
-                .forEach(e -> recs.add("Уделите внимание звуку /" + e.getKey() + "/"));
+                .forEach(e -> recs.add("Focus on the /" + e.getKey() + "/ sound"));
         return recs;
     }
 }

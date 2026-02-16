@@ -1,4 +1,4 @@
-package com.mygitgor.ai.strategy.core;
+package com.mygitgor.model;
 
 import java.util.Collections;
 import java.util.List;

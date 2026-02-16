@@ -3,7 +3,7 @@ package com.mygitgor.repository.DAO;
 import com.j256.ormlite.dao.Dao;
 import com.j256.ormlite.dao.DaoManager;
 import com.j256.ormlite.stmt.QueryBuilder;
-import com.mygitgor.model.User;
+import com.mygitgor.model.core.User;
 import com.mygitgor.repository.DatabaseManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

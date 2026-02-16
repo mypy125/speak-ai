@@ -1,6 +1,6 @@
 package com.mygitgor.service.interfaces;
 
-import com.mygitgor.model.Conversation;
+import com.mygitgor.model.core.Conversation;
 import com.mygitgor.service.ChatBotService;
 import com.mygitgor.service.components.ResponseMode;
 

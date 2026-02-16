@@ -1,17 +1,17 @@
 package com.mygitgor.chatbot;
 
 import com.mygitgor.ai.*;
-import com.mygitgor.ai.strategy.core.LearningMode;
-import com.mygitgor.ai.strategy.core.LearningResponse;
+import com.mygitgor.model.LearningMode;
+import com.mygitgor.model.LearningResponse;
 import com.mygitgor.analysis.PronunciationTrainer;
 import com.mygitgor.chatbot.components.*;
 import com.mygitgor.config.AppConstants;
 import com.mygitgor.config.ServicesConfig;
 import com.mygitgor.error.ErrorHandler;
 import com.mygitgor.error.ServiceInitializationException;
-import com.mygitgor.model.Conversation;
+import com.mygitgor.model.core.Conversation;
 import com.mygitgor.model.EnhancedSpeechAnalysis;
-import com.mygitgor.model.User;
+import com.mygitgor.model.core.User;
 import com.mygitgor.service.ChatBotService;
 import com.mygitgor.service.AudioAnalyzer;
 import com.mygitgor.service.DemoTextToSpeechService;
@@ -112,9 +112,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
     @FXML private Label analysisCountLabel;
     @FXML private Label recordingsCountLabel;
 
-    // ========================================
-    // Learning Mode Controls
-    // ========================================
     @FXML private ComboBox<LearningMode> learningModeComboBox;
     @FXML private Button switchModeButton;
     @FXML private Label currentModeLabel;
@@ -125,9 +122,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
     @FXML private Label modeProgressLabel;
     @FXML private TextArea modeStatsArea;
 
-    // ========================================
-    // Services & Managers
-    // ========================================
     private ChatBotService chatBotService;
     private ITTSService textToSpeechService;
     private SpeechRecorder speechRecorder;
@@ -148,17 +142,12 @@ public class ChatBotController implements Initializable, AutoCloseable {
     private AnalysisManager analysisManager;
     private ThreadPoolManager threadPoolManager;
 
-    // Learning Strategy Components
     private LearningStrategyFactory learningStrategyFactory;
     private LearningModeManager learningModeManager;
     private LearningMode currentLearningMode = LearningMode.CONVERSATION;
 
     private final AtomicBoolean isShuttingDown = new AtomicBoolean(false);
     private final AtomicReference<CompletableFuture<Void>> currentOperation = new AtomicReference<>(null);
-
-    // ========================================
-    // Initialization
-    // ========================================
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
@@ -960,9 +949,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
         return sb.toString();
     }
 
-    /**
-     * Обработка сообщения через LearningModeManager
-     */
     private CompletableFuture<Void> processWithLearningMode(String userId, String text, String audioFile) {
         return learningModeManager.processInput(userId, text, Optional.ofNullable(audioFile))
                 .thenAccept(response -> {
@@ -1007,9 +993,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
                 });
     }
 
-    /**
-     * Обычная обработка сообщения через ChatBotService
-     */
     private CompletableFuture<Void> processWithChatBotService(String text, String audioFile,
                                                               ResponseMode responseMode) {
         return CompletableFuture.runAsync(() -> {
@@ -1063,9 +1046,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
         }, threadPoolManager.getBackgroundExecutor());
     }
 
-    /**
-     * Анализ аудио с использованием существующих менеджеров
-     */
     private void analyzeAudioWithManagers(String audioFile, String text) {
         if (audioFile == null || audioFile.isEmpty()) {
             logger.debug("Нет аудиофайла для анализа");
@@ -1084,14 +1064,11 @@ public class ChatBotController implements Initializable, AutoCloseable {
             }
         });
 
-        // Запускаем анализ асинхронно
         CompletableFuture.runAsync(() -> {
             try {
-                // Используем AudioAnalyzer для анализа
                 EnhancedSpeechAnalysis analysis = audioAnalyzer.analyzeAudio(audioFile, text);
 
                 Platform.runLater(() -> {
-                    // Обновляем UI с результатами анализа
                     if (analysisArea != null) {
                         analysisArea.setText(analysis.getSummary());
                     }
@@ -1101,10 +1078,8 @@ public class ChatBotController implements Initializable, AutoCloseable {
                         detailedAnalysisArea.setVisible(true);
                     }
 
-                    // Обновляем метку слабой фонемы
                     updatePhonemeLabel(analysis);
 
-                    // Обновляем кнопки
                     if (analyzeButton != null) {
                         analyzeButton.setDisable(false);
                     }
@@ -1113,15 +1088,12 @@ public class ChatBotController implements Initializable, AutoCloseable {
                         updatePronunciationButtonText(analysis);
                     }
 
-                    // Обновляем рекомендации
                     updateRecommendationsFromAnalysis(analysis);
 
-                    // Увеличиваем счетчик анализов
                     if (statisticsManager != null) {
                         statisticsManager.onAnalysisPerformed();
                     }
 
-                    // Скрываем индикатор анализа
                     if (analysisProgress != null) {
                         analysisProgress.setVisible(false);
                     }
@@ -1143,9 +1115,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
         }, threadPoolManager.getBackgroundExecutor());
     }
 
-    /**
-     * Обновление метки слабой фонемы
-     */
     private void updatePhonemeLabel(EnhancedSpeechAnalysis analysis) {
         if (phonemeLabel == null) return;
 
@@ -1166,9 +1135,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
         }
     }
 
-    /**
-     * Обновление текста кнопки тренажера
-     */
     private void updatePronunciationButtonText(EnhancedSpeechAnalysis analysis) {
         if (pronunciationButton == null) return;
 
@@ -1187,9 +1153,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
         }
     }
 
-    /**
-     * Обновление рекомендаций на основе анализа
-     */
     private void updateRecommendationsFromAnalysis(EnhancedSpeechAnalysis analysis) {
         if (recommendationsArea == null) return;
 
@@ -1205,7 +1168,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
             analysis.getRecommendations().forEach(rec ->
                     recText.append("• ").append(rec).append("\n"));
         } else {
-            // Стандартные рекомендации если нет специфических
             if (analysis.getPronunciationScore() < 75) {
                 recText.append("• 🔊 Уделите внимание произношению сложных звуков\n");
             }
@@ -1220,7 +1182,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
             }
         }
 
-        // Добавляем рекомендации по слабым фонемам
         if (analysis.getPhonemeScores() != null && !analysis.getPhonemeScores().isEmpty()) {
             recText.append("\n**🔊 ПРОБЛЕМНЫЕ ЗВУКИ:**\n");
             analysis.getPhonemeScores().entrySet().stream()
