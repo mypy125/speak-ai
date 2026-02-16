@@ -147,46 +147,74 @@ public class VocabularyStrategy implements LearningModeStrategy {
 
     private String buildVocabularyPrompt(String userInput, VocabularyState state,
                                          LearningContext context) {
+
+        double level = context.getCurrentLevel();
+        String topic = (state != null && state.currentTopic != null)
+                ? state.currentTopic : "General Vocabulary";
+        int wordsLearned = (state != null) ? state.wordsLearned : 0;
+        double retention = (state != null) ? state.averageRetention : 0.0;
+
         return String.format("""
-            You are an AI English vocabulary tutor.
-            ALWAYS respond in English.
+    You are an expert, warm and highly motivating AI English Vocabulary Tutor.
+    Your goal is to help students expand their active vocabulary, remember words long-term and use them naturally in real conversations.
 
-            Current topic: %s
-            Student level: %.1f
-            Words learned: %d
-            Average retention: %.1f%%
+    === STRICT RULES (ALWAYS FOLLOW) ===
+    - ALWAYS respond ONLY in English. Never switch languages.
+    - Perfectly adapt to the student’s level (%.1f / 10.0):
+        • 1.0–3.9 → Extremely simple words, short sentences, basic explanations
+        • 4.0–6.9 → Friendly, clear and supportive
+        • 7.0–10.0 → Rich, natural and idiomatic language with collocations & nuances
+    - Always start with genuine praise and encouragement.
+    - Never say “wrong” or “bad”. Use: “Nice try!”, “You’re on the right track!”, “Let’s make this even better”.
+    - Structure every response exactly in this order:
+        1. Warm positive opening (1–2 sentences)
+        2. What the student used correctly (highlight good words/phrases)
+        3. Gentle improvement suggestions (show better alternatives)
+        4. 3–5 powerful new words/collocations related to the topic + natural example sentences
+        5. One memorable tip or mnemonic to help retention
+        6. Short interactive challenge or question to practice the new vocabulary right away
+        7. Motivating closing
 
-            Student message: %s
+    === CURRENT SESSION ===
+    - Vocabulary topic: %s
+    - Student proficiency level: %.1f / 10.0
+    - Words learned this session: %d
+    - Average retention: %.1f%%
 
-            Analyze vocabulary usage and provide feedback:
-            1. Which words were used correctly
-            2. Which words can be improved
-            3. Suggest new words related to the topic
-            4. Provide example usage
-            """,
-                state.currentTopic,
-                context.getCurrentLevel(),
-                state.wordsLearned,
-                state.averageRetention,
+    Student’s message / answer:
+    "%s"
+
+    Now generate a complete, beautifully structured vocabulary feedback response.
+    """,
+                level,
+                topic,
+                level,
+                wordsLearned,
+                retention,
                 userInput
         );
     }
 
     private String formatVocabularyResponse(String aiResponse, VocabularyState state) {
+        String topic = (state != null && state.currentTopic != null)
+                ? state.currentTopic : "General Vocabulary";
+
         return String.format("""
-            ### 📖 Vocabulary Practice
+        📖 **Vocabulary Mastery Session**
 
-            %s
+        %s
 
-            **📊 Statistics:**
-            • Words learned: %d
-            • Current topic: %s
-            • Retention: %.1f%%
-            """,
+        **📊 Your Progress**
+        • Words learned: **%d**
+        • Average retention: **%.1f%%**
+        • Current topic: **%s**
+
+        You’re building an amazing vocabulary! Keep it up! 🔥
+        """,
                 aiResponse,
-                state.wordsLearned,
-                state.currentTopic,
-                state.averageRetention
+                state != null ? state.wordsLearned : 0,
+                state != null ? state.averageRetention : 0.0,
+                topic
         );
     }
 

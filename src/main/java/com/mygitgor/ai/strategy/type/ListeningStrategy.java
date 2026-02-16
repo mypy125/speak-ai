@@ -146,43 +146,71 @@ public class ListeningStrategy implements LearningModeStrategy {
 
     private String buildListeningPrompt(String userInput, ListeningState state,
                                         LearningContext context) {
+
+        double level = context.getCurrentLevel();
+        double avgComprehension = (state != null) ? state.averageComprehension : 0.0;
+        String topic = (state != null && state.currentTopic != null)
+                ? state.currentTopic : "General Listening";
+
         return String.format("""
-            You are an AI English listening tutor.
-            ALWAYS respond in English.
+    You are an expert, warm and highly motivating AI English Listening Tutor.
+    Your goal is to help students dramatically improve their listening comprehension, confidence and real-world understanding.
 
-            Topic: %s
-            Student level: %.1f
-            Comprehension: %.1f%%
+    === STRICT RULES (ALWAYS FOLLOW) ===
+    - ALWAYS respond ONLY in English. Never use any other language.
+    - Adapt language perfectly to the student's level (%.1f / 10.0):
+        • 1.0–3.9 → Very simple words, short sentences, slow & clear explanations
+        • 4.0–6.9 → Friendly and clear with moderate detail
+        • 7.0–10.0 → Natural, rich vocabulary and advanced listening strategies
+    - Always start with genuine encouragement.
+    - Never say "wrong". Use: "Almost there!", "You caught most of it!", "Let’s fine-tune this part".
+    - Structure every response exactly in this order:
+        1. Warm positive opening (1 sentence)
+        2. Overall comprehension score + short summary
+        3. What the student understood correctly (list key points)
+        4. What was missed or misunderstood (show exact parts from their answer)
+        5. Clear explanation of difficult sections + useful listening tips
+        6. 2–3 concrete, actionable recommendations to improve
+        7. Motivating closing + one short follow-up listening challenge or question
 
-            Student answer: %s
+    === CURRENT SESSION ===
+    - Listening topic: %s
+    - Student proficiency level: %.1f / 10.0
+    - Average comprehension this session: %.1f%%
+    
+    Student's answer:
+    "%s"
 
-            Analyze listening comprehension:
-            1. How accurately the student understood the content
-            2. What details were missed
-            3. Give recommendations to improve listening skills
-            """,
-                state.currentTopic,
-                context.getCurrentLevel(),
-                state.averageComprehension,
+    Now generate a complete, beautifully structured listening feedback response.
+    """,
+                level,
+                topic,
+                level,
+                avgComprehension,
                 userInput
         );
     }
 
     private String formatListeningResponse(String aiResponse, ListeningState state) {
+        String topic = (state != null && state.currentTopic != null)
+                ? state.currentTopic : "General Listening";
+
         return String.format("""
-            ### 🎧 Listening Practice
+        🎧 **Listening Practice Session**
 
-            %s
+        %s
 
-            **📊 Results:**
-            • Comprehension: %.1f%%
-            • Exercises completed: %d
-            • Current topic: %s
-            """,
+        **📊 Your Results**
+        • Comprehension: **%.1f%%**
+        • Exercises completed: **%d**
+        • Current topic: **%s**
+
+        Keep going! You're getting better with every session 🔥
+        """,
                 aiResponse,
-                state.averageComprehension,
-                state.exercisesCompleted,
-                state.currentTopic
+                state != null ? state.averageComprehension : 0.0,
+                state != null ? state.exercisesCompleted : 0,
+                topic
         );
     }
 

@@ -147,49 +147,78 @@ public class WritingStrategy implements LearningModeStrategy {
 
     private String buildWritingPrompt(String userInput, WritingState state,
                                       LearningContext context) {
+
+        double level = context.getCurrentLevel();
+        String topic = (state != null && state.currentTopic != null)
+                ? state.currentTopic : "General Writing";
+        int textsCompleted = (state != null) ? state.textsCompleted : 0;
+        double avgScore = (state != null) ? state.averageScore : 0.0;
+
         return String.format("""
-            You are an AI English writing tutor.
-            ALWAYS respond in English.
+    You are an expert, warm and highly motivating AI English Writing Tutor.
+    Your goal is to help students write clearly, confidently and naturally — from simple paragraphs to advanced essays.
 
-            Writing topic: %s
-            Student level: %.1f
-            Texts completed: %d
-            Average score: %.1f
+    === STRICT RULES (ALWAYS FOLLOW) ===
+    - ALWAYS respond ONLY in English. Never use any other language.
+    - Perfectly adapt to the student’s level (%.1f / 10.0):
+        • 1.0–3.9 → Extremely simple words, short sentences, basic feedback
+        • 4.0–6.9 → Friendly, clear and supportive with moderate detail
+        • 7.0–10.0 → Rich vocabulary, advanced style tips, nuanced suggestions
+    - Always start with genuine encouragement and praise.
+    - Never say “wrong” or “bad”. Use: “Great effort!”, “You’re on the right track!”, “Let’s make this even stronger”.
+    - Structure every response exactly in this order:
+        1. Warm positive opening (1–2 sentences)
+        2. Overall score + one-sentence summary of strengths
+        3. Detailed breakdown by 4 criteria:
+           • Grammar & Punctuation
+           • Vocabulary & Word Choice
+           • Style & Structure
+           • Logic & Coherence
+        4. Rewritten improved version of the student’s text (highlighted improvements)
+        5. 3–5 concrete, actionable suggestions with examples
+        6. One memorable writing tip or checklist item
+        7. Motivating closing + short writing challenge for next practice
 
-            Student text: %s
+    === CURRENT SESSION ===
+    - Writing topic: %s
+    - Student proficiency level: %.1f / 10.0
+    - Texts completed: %d
+    - Average score: %.1f
 
-            Analyze the text using these criteria:
-            1. Grammar and punctuation
-            2. Style and structure
-            3. Logic and coherence
-            4. Vocabulary usage
+    Student’s text:
+    "%s"
 
-            Provide clear and actionable improvement suggestions.
-            Be supportive and constructive.
-            """,
-                state.currentTopic,
-                context.getCurrentLevel(),
-                state.textsCompleted,
-                state.averageScore,
+    Now generate a complete, beautifully structured writing feedback response.
+    """,
+                level,
+                topic,
+                level,
+                textsCompleted,
+                avgScore,
                 userInput
         );
     }
 
     private String formatWritingResponse(String aiResponse, WritingState state) {
+        String topic = (state != null && state.currentTopic != null)
+                ? state.currentTopic : "General Writing";
+
         return String.format("""
-            ### ✍️ Writing Analysis
+        ✍️ **Writing Mastery Session**
 
-            %s
+        %s
 
-            **📊 Progress:**
-            • Texts completed: %d
-            • Average score: %.1f
-            • Current topic: %s
-            """,
+        **📊 Your Progress**
+        • Texts completed: **%d**
+        • Average score: **%.1f / 10.0**
+        • Current topic: **%s**
+
+        Excellent work! Every text you write makes you a better writer 🔥
+        """,
                 aiResponse,
-                state.textsCompleted,
-                state.averageScore,
-                state.currentTopic
+                state != null ? state.textsCompleted : 0,
+                state != null ? state.averageScore : 0.0,
+                topic
         );
     }
 
