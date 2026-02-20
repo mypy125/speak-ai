@@ -8,7 +8,10 @@
 <?import javafx.scene.layout.VBox?>
 <?import javafx.scene.web.WebView?>
 
-<fx:root type="javafx.scene.layout.VBox" xmlns:fx="http://javafx.com/fxml">
+<VBox xmlns="http://javafx.com/javafx/17"
+      xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.mygitgor.view.components.MessageComponentsController"
+      stylesheets="@/com/mygitgor/view/styles/chat-styles.css">
 
     <!-- Шаблон для сообщения пользователя -->
     <fx:define>
@@ -67,4 +70,4 @@
         </HBox>
     </fx:define>
 
-</fx:root>
+</VBox>

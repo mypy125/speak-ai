@@ -352,10 +352,8 @@ public class WritingStrategy implements LearningModeStrategy {
             String prompt = buildDetailedWritingPrompt(userInput, state, context, currentTopic, analysis);
             String aiResponse = aiService.generateBotResponse(prompt, null);
 
-            // Генерируем текст для отображения
             String displayText = generateDisplayText(aiResponse, analysis, state, currentTopic);
 
-            // Генерируем текст для TTS
             String ttsText = generateTtsText(aiResponse, analysis, state, currentTopic);
 
             return LearningResponse.builder()
@@ -782,9 +780,6 @@ public class WritingStrategy implements LearningModeStrategy {
         return tts.toString();
     }
 
-    /**
-     * Генерирует текст для отображения задачи
-     */
     private String generateTaskDisplayText(WritingTopic topic, LearningContext context) {
         StringBuilder display = new StringBuilder();
 
@@ -818,9 +813,7 @@ public class WritingStrategy implements LearningModeStrategy {
         return display.toString();
     }
 
-    /**
-     * Генерирует текст для TTS задачи
-     */
+
     private String generateTaskTtsText(WritingTopic topic, LearningContext context, String focus) {
         StringBuilder tts = new StringBuilder();
 

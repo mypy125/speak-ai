@@ -340,7 +340,6 @@ public class HtmlUtils {
     }
 
     public static void main(String[] args) {
-        // Тестовый HTML
         String testHtml = """
             <div class='info-box'>
                 <h2>Hello World!</h2>

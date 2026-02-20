@@ -3,11 +3,10 @@ package com.mygitgor.chatbot.components;
 import com.mygitgor.service.interfaces.ITTSService;
 import com.mygitgor.utils.HtmlUtils;
 import com.mygitgor.utils.ThreadPoolManager;
+import com.mygitgor.view.components.MessageComponentLoader;
+import com.mygitgor.view.components.MessageTypeDetector;
 import javafx.application.Platform;
-import javafx.geometry.Insets;
-import javafx.geometry.Pos;
 import javafx.scene.Node;
-import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.*;
 import org.slf4j.Logger;
@@ -20,11 +19,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import javafx.concurrent.Worker;
+
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
-import javafx.scene.web.WebEngine;
-import javafx.scene.web.WebView;
 import javafx.animation.PauseTransition;
 import javafx.util.Duration;
 import java.util.*;
@@ -33,14 +30,8 @@ public class ChatMessagesManager {
     private static final Logger logger = LoggerFactory.getLogger(ChatMessagesManager.class);
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("h:mm a");
 
-    private static final int AVATAR_SIZE = 32;
-    private static final int MESSAGE_MAX_WIDTH = 400;
-    private static final int TEXT_MAX_WIDTH = 380;
     private static final int SCROLL_DELAY_MS = 50;
     private static final int BATCH_SIZE = 10;
-    private static final int WEBVIEW_MIN_HEIGHT = 50;
-    private static final int WEBVIEW_MAX_HEIGHT = 600;
-    private static final int WEBVIEW_LOAD_TIMEOUT = 2000;
 
     private final VBox messagesContainer;
     private final ScrollPane scrollPane;
@@ -77,22 +68,14 @@ public class ChatMessagesManager {
         }
 
         final String finalText = text;
-        final LocalTime now = LocalTime.now();
+        final String timeStr = LocalTime.now().format(TIME_FORMATTER);
 
         Platform.runLater(() -> {
             try {
-                HBox messageContainer = createMessageContainer(Pos.TOP_RIGHT);
-
-                VBox messageContent = createMessageContent();
-                VBox messageBubble = createUserMessageBubble(finalText);
-                HBox messageInfo = createMessageInfo(now);
-
-                messageContent.getChildren().addAll(messageBubble, messageInfo);
-
-                StackPane userAvatar = createAvatar("U", "user");
-                messageContainer.getChildren().addAll(messageContent, userAvatar);
-
+                HBox messageContainer = MessageComponentLoader.createUserMessage(finalText, timeStr);
                 messagesContainer.getChildren().add(messageContainer);
+
+                setupCopyHandler(messageContainer, finalText);
 
                 logger.debug("Добавлено сообщение пользователя (длина: {})", finalText.length());
                 scheduleScrollToBottom();
@@ -101,7 +84,6 @@ public class ChatMessagesManager {
             }
         });
     }
-
 
     public void addAIMessage(String text) {
         addAIMessage(text, null);
@@ -115,32 +97,22 @@ public class ChatMessagesManager {
 
         final String finalText = text;
         final String finalTtsText = ttsText;
-        final LocalTime now = LocalTime.now();
+        final String timeStr = LocalTime.now().format(TIME_FORMATTER);
 
         Platform.runLater(() -> {
             try {
-                HBox messageContainer = createMessageContainer(Pos.TOP_LEFT);
-                StackPane aiAvatar = createAvatar("AI", "ai");
-                VBox messageContent = createMessageContent();
+                HBox messageContainer;
 
-                VBox messageBubble = createAIMessageBubble(finalText);
-
-                if (finalTtsText != null) {
-                    Map<String, Object> data = new HashMap<>();
-                    data.put("tts", finalTtsText);
-                    data.put("display", finalText);
-                    data.put("type", "text");
-                    data.put("timestamp", now);
-                    messageBubble.setUserData(data);
+                if (MessageTypeDetector.needsHtmlRendering(finalText)) {
+                    messageContainer = MessageComponentLoader.createAiHtmlMessage(finalText, timeStr, finalTtsText);
+                } else {
+                    messageContainer = MessageComponentLoader.createAiMessage(finalText, timeStr, finalTtsText);
                 }
 
-                Label timeLabel = createTimeLabel(now);
-
-                messageContent.getChildren().addAll(messageBubble, timeLabel);
-                messageContainer.getChildren().addAll(aiAvatar, messageContent);
                 messagesContainer.getChildren().add(messageContainer);
+                setupCopyHandler(messageContainer, finalText);
 
-                logger.debug("Добавлено текстовое сообщение AI (длина: {}, TTS: {})",
+                logger.debug("Добавлено сообщение AI (длина: {}, TTS: {})",
                         finalText.length(), finalTtsText != null ? "да" : "нет");
                 scheduleScrollToBottom();
             } catch (Exception e) {
@@ -162,36 +134,18 @@ public class ChatMessagesManager {
 
         final String finalHtml = htmlContent;
         final String finalTtsText = ttsText;
-        final LocalTime now = LocalTime.now();
+        final String timeStr = LocalTime.now().format(TIME_FORMATTER);
 
         Platform.runLater(() -> {
             try {
-                HBox messageContainer = createMessageContainer(Pos.TOP_LEFT);
-                StackPane aiAvatar = createAvatar("AI", "ai");
-                VBox messageContent = createMessageContent();
-
-                VBox messageBubble = createAIMessageBubbleWithHTML(finalHtml);
-
-                if (finalTtsText != null) {
-                    Map<String, Object> data = new HashMap<>();
-                    data.put("tts", finalTtsText);
-                    data.put("html", finalHtml);
-                    data.put("type", "html");
-                    data.put("timestamp", now);
-                    messageBubble.setUserData(data);
-                }
-
-                Label timeLabel = createTimeLabel(now);
-
-                messageContent.getChildren().addAll(messageBubble, timeLabel);
-                messageContainer.getChildren().addAll(aiAvatar, messageContent);
+                HBox messageContainer = MessageComponentLoader.createAiHtmlMessage(finalHtml, timeStr, finalTtsText);
                 messagesContainer.getChildren().add(messageContainer);
+                setupCopyHandler(messageContainer, HtmlUtils.stripHtml(finalHtml));
 
                 logger.debug("Добавлено HTML сообщение AI (длина: {})", finalHtml.length());
                 scheduleScrollToBottom();
             } catch (Exception e) {
                 logger.error("Ошибка при добавлении HTML сообщения", e);
-                // В случае ошибки показываем как обычный текст
                 addAIMessage(HtmlUtils.stripHtml(htmlContent), ttsText);
             }
         });
@@ -206,21 +160,8 @@ public class ChatMessagesManager {
 
         Platform.runLater(() -> {
             try {
-                HBox timeDivider = new HBox();
-                timeDivider.getStyleClass().add("time-divider");
-
-                Region line1 = createDividerLine();
-                Region line2 = createDividerLine();
-
-                Label label = new Label(finalTimeText);
-                label.getStyleClass().add("divider-label");
-
-                HBox.setHgrow(line1, Priority.ALWAYS);
-                HBox.setHgrow(line2, Priority.ALWAYS);
-
-                timeDivider.getChildren().addAll(line1, label, line2);
-                messagesContainer.getChildren().add(timeDivider);
-
+                HBox divider = MessageComponentLoader.createTimeDivider(finalTimeText);
+                messagesContainer.getChildren().add(divider);
                 logger.debug("Добавлен разделитель времени: {}", finalTimeText);
             } catch (Exception e) {
                 logger.error("Ошибка при добавлении разделителя времени", e);
@@ -270,7 +211,6 @@ public class ChatMessagesManager {
             }
         }, threadPoolManager.getBackgroundExecutor());
     }
-
 
     public Optional<String> getTtsTextForMessage(int index) {
         if (index < 0 || index >= messagesContainer.getChildren().size()) {
@@ -348,32 +288,6 @@ public class ChatMessagesManager {
         speakMessage(messagesContainer.getChildren().size() - 1, ttsService);
     }
 
-    public CompletableFuture<Void> speakAllMessagesAsync(ITTSService ttsService) {
-        if (ttsService == null) {
-            logger.error("TTS сервис не инициализирован");
-            return CompletableFuture.failedFuture(new IllegalStateException("TTS service not available"));
-        }
-
-        List<CompletableFuture<Void>> futures = new ArrayList<>();
-
-        for (int i = 0; i < messagesContainer.getChildren().size(); i++) {
-            int index = i;
-            getTtsTextForMessage(i).ifPresent(ttsText -> {
-                CompletableFuture<Void> future = ttsService.speakAsync(ttsText)
-                        .thenRun(() -> logger.debug("Озвучено сообщение {}", index))
-                        .exceptionally(throwable -> {
-                            logger.error("Ошибка при озвучивании сообщения {}: {}",
-                                    index, throwable.getMessage());
-                            return null;
-                        });
-                futures.add(future);
-            });
-        }
-
-        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-                .thenRun(() -> logger.debug("Все сообщения озвучены"));
-    }
-
     public void stopSpeaking(ITTSService ttsService) {
         if (ttsService != null) {
             ttsService.stopSpeaking();
@@ -386,32 +300,12 @@ public class ChatMessagesManager {
     }
 
     private Optional<String> extractTtsFromNode(Node node) {
-        if (node instanceof HBox) {
-            HBox hbox = (HBox) node;
-            for (Node child : hbox.getChildren()) {
-                if (child instanceof VBox) {
-                    VBox vbox = (VBox) child;
-                    for (Node contentChild : vbox.getChildren()) {
-                        if (contentChild instanceof VBox) {
-                            VBox bubble = (VBox) contentChild;
-                            Object userData = bubble.getUserData();
-                            if (userData instanceof Map) {
-                                Map<?, ?> data = (Map<?, ?>) userData;
-                                Object tts = data.get("tts");
-                                if (tts instanceof String) {
-                                    return Optional.of((String) tts);
-                                }
-                            }
-                        } else if (contentChild instanceof Label) {
-                            // Для обычных текстовых сообщений без userData
-                            Label label = (Label) contentChild;
-                            String text = label.getText();
-                            if (text != null && !text.isEmpty()) {
-                                return Optional.of(text);
-                            }
-                        }
-                    }
-                }
+        Object userData = node.getUserData();
+        if (userData instanceof Map) {
+            Map<?, ?> data = (Map<?, ?>) userData;
+            Object tts = data.get("tts");
+            if (tts instanceof String) {
+                return Optional.of((String) tts);
             }
         }
         return Optional.empty();
@@ -423,181 +317,24 @@ public class ChatMessagesManager {
         }
 
         Node node = messagesContainer.getChildren().get(index);
-        String originalStyle = node.getStyle();
-
-        node.setStyle(originalStyle + "-fx-effect: dropshadow(gaussian, #3498db, 10, 0, 0, 0);");
+        node.getStyleClass().add("message-highlight");
 
         PauseTransition pause = new PauseTransition(Duration.millis(500));
-        pause.setOnFinished(e -> node.setStyle(originalStyle));
+        pause.setOnFinished(e -> node.getStyleClass().remove("message-highlight"));
         pause.play();
     }
 
-    private void highlightLastMessage() {
-        highlightMessage(messagesContainer.getChildren().size() - 1);
-    }
-
-    private HBox createMessageContainer(Pos alignment) {
-        HBox container = new HBox();
-        container.setSpacing(8);
-        container.setAlignment(alignment);
-        container.setPadding(new Insets(0, 0, 5, 0));
-        container.setMaxWidth(Double.MAX_VALUE);
-
-        String styleClass = alignment == Pos.TOP_LEFT ?
-                "message-container-left" : "message-container-right";
-        container.getStyleClass().addAll("message-container", styleClass);
-
-        return container;
-    }
-
-    private VBox createMessageContent() {
-        VBox content = new VBox();
-        content.setSpacing(3);
-        content.setMaxWidth(Double.MAX_VALUE);
-        content.getStyleClass().add("message-content");
-        return content;
-    }
-
-    private VBox createUserMessageBubble(String text) {
-        VBox bubble = new VBox();
-        bubble.getStyleClass().addAll("message-bubble", "message-bubble-user");
-        bubble.setMaxWidth(MESSAGE_MAX_WIDTH);
-
-        Label messageText = new Label(text);
-        messageText.getStyleClass().add("message-text-user");
-        messageText.setWrapText(true);
-        messageText.setMaxWidth(TEXT_MAX_WIDTH);
-
-        setupCopyHandler(bubble, text);
-
-        bubble.getChildren().add(messageText);
-        return bubble;
-    }
-
-    private VBox createAIMessageBubble(String text) {
-        VBox bubble = new VBox();
-        bubble.getStyleClass().addAll("message-bubble", "message-bubble-ai");
-        bubble.setMaxWidth(MESSAGE_MAX_WIDTH);
-
-        Label messageText = new Label(text);
-        messageText.getStyleClass().add("message-text-ai");
-        messageText.setWrapText(true);
-        messageText.setMaxWidth(TEXT_MAX_WIDTH);
-
-        setupCopyHandler(bubble, text);
-
-        bubble.getChildren().add(messageText);
-        return bubble;
-    }
-
-    private VBox createAIMessageBubbleWithHTML(String htmlContent) {
-        VBox bubble = new VBox();
-        bubble.getStyleClass().add("webview-bubble");
-        bubble.setMaxWidth(MESSAGE_MAX_WIDTH);
-
-        WebView webView = new WebView();
-        webView.getStyleClass().add("webview");
-
-        WebEngine webEngine = webView.getEngine();
-
-        webView.setContextMenuEnabled(false);
-        webView.setFocusTraversable(false);
-
-        webEngine.loadContent(htmlContent);
-
-        webView.setPrefHeight(WEBVIEW_MIN_HEIGHT);
-        webView.setPrefWidth(MESSAGE_MAX_WIDTH - 40);
-
-        final long startTime = System.currentTimeMillis();
-
-        webEngine.getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
-            if (newState == Worker.State.SUCCEEDED) {
-                long loadTime = System.currentTimeMillis() - startTime;
-
-                Platform.runLater(() -> {
-                    try {
-                        if (loadTime > WEBVIEW_LOAD_TIMEOUT) {
-                            logger.warn("WebView загружался слишком долго ({}мс)", loadTime);
-                            return;
-                        }
-
-                        Object result = webEngine.executeScript(
-                                "document.documentElement.scrollHeight"
-                        );
-
-                        if (result instanceof Number) {
-                            double height = ((Number) result).doubleValue();
-                            height = Math.min(height + 20, WEBVIEW_MAX_HEIGHT);
-                            if (height > WEBVIEW_MIN_HEIGHT) {
-                                webView.setPrefHeight(height);
-                                logger.trace("WebView height: {}px (loaded in {}ms)", height, loadTime);
-                            }
-                        }
-                    } catch (Exception e) {
-                        logger.warn("Ошибка при調整 высоты WebView: {}", e.getMessage());
-                    }
-                });
-            }
-        });
-
-        setupCopyHandler(bubble, HtmlUtils.stripHtml(htmlContent));
-
-        bubble.getChildren().add(webView);
-        return bubble;
-    }
-
-    private HBox createMessageInfo(LocalTime time) {
-        HBox info = new HBox();
-        info.getStyleClass().add("message-info");
-
-        Label timeLabel = createTimeLabel(time);
-        Label statusLabel = new Label("✔");
-        statusLabel.getStyleClass().add("status-label");
-
-        info.getChildren().addAll(timeLabel, statusLabel);
-        return info;
-    }
-
-    private Label createTimeLabel(LocalTime time) {
-        Label timeLabel = new Label(time.format(TIME_FORMATTER));
-        timeLabel.getStyleClass().add("time-label");
-        return timeLabel;
-    }
-
-    private StackPane createAvatar(String text, String type) {
-        StackPane avatar = new StackPane();
-        avatar.setPrefSize(AVATAR_SIZE, AVATAR_SIZE);
-        avatar.setMinSize(AVATAR_SIZE, AVATAR_SIZE);
-        avatar.setMaxSize(AVATAR_SIZE, AVATAR_SIZE);
-        avatar.getStyleClass().addAll("avatar", "avatar-" + type);
-
-        Label label = new Label(text);
-        label.getStyleClass().add("avatar-label");
-
-        avatar.getChildren().add(label);
-        return avatar;
-    }
-
-    private Region createDividerLine() {
-        Region line = new Region();
-        line.getStyleClass().add("divider-line");
-        HBox.setHgrow(line, Priority.ALWAYS);
-        return line;
-    }
-
-    private void setupCopyHandler(VBox bubble, String content) {
-        bubble.setOnMouseClicked(event -> {
+    private void setupCopyHandler(HBox container, String content) {
+        container.setOnMouseClicked(event -> {
             if (event.getClickCount() == 2) {
                 Clipboard clipboard = Clipboard.getSystemClipboard();
                 ClipboardContent clipboardContent = new ClipboardContent();
                 clipboardContent.putString(content);
                 clipboard.setContent(clipboardContent);
 
-                String originalStyle = bubble.getStyle();
-                bubble.setStyle(originalStyle + "-fx-effect: dropshadow(gaussian, #3498db, 10, 0, 0, 0);");
-
+                container.getStyleClass().add("message-highlight");
                 PauseTransition pause = new PauseTransition(Duration.millis(200));
-                pause.setOnFinished(e -> bubble.setStyle(originalStyle));
+                pause.setOnFinished(e -> container.getStyleClass().remove("message-highlight"));
                 pause.play();
 
                 logger.debug("Сообщение скопировано в буфер обмена");
@@ -637,7 +374,6 @@ public class ChatMessagesManager {
         });
     }
 
-
     public int getMessageCount() {
         return messagesContainer.getChildren().size();
     }
@@ -669,25 +405,6 @@ public class ChatMessagesManager {
     public String exportChatForTts() {
         return exportMessages();
     }
-
-    public String exportChatForTtsWithPauses(long pauseMs) {
-        StringBuilder sb = new StringBuilder();
-        int messageCount = 0;
-
-        for (Node node : messagesContainer.getChildren()) {
-            Optional<String> ttsOpt = extractTtsFromNode(node);
-            if (ttsOpt.isPresent()) {
-                if (messageCount > 0) {
-                    sb.append("<break time=\"").append(pauseMs).append("ms\"/> ");
-                }
-                sb.append(ttsOpt.get()).append(" ");
-                messageCount++;
-            }
-        }
-
-        return sb.toString();
-    }
-
 
     public static class ChatMessage {
         private final String id;

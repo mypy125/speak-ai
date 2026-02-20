@@ -48,7 +48,6 @@ public class ExerciseStrategy implements LearningModeStrategy {
     private static final int ACHIEVEMENT_STREAK_10 = 10;
     private static final int ACHIEVEMENT_STREAK_20 = 20;
 
-    // Карта для преобразования типов упражнений в читаемый текст для TTS
     private static final Map<String, String> EXERCISE_TYPE_TO_SPEECH = new HashMap<>();
 
     static {
@@ -227,10 +226,8 @@ public class ExerciseStrategy implements LearningModeStrategy {
             String nextExerciseType = getNextExerciseType(state, context);
             state.currentExercise = nextExerciseType;
 
-            // Генерируем текст для отображения
             String displayText = generateDisplayText(isCorrect, state, context, exerciseType);
 
-            // Генерируем текст для TTS
             String ttsText = generateTtsText(isCorrect, state, exerciseType);
 
             return LearningResponse.builder()
@@ -255,7 +252,6 @@ public class ExerciseStrategy implements LearningModeStrategy {
                     state.currentExercise : getExerciseType(context);
             boolean isCorrect = evaluateExercise(userInput, exerciseType, context);
 
-            // Возвращаем TTS текст
             return generateTtsText(isCorrect, state, exerciseType);
         }, executor);
     }
@@ -311,10 +307,8 @@ public class ExerciseStrategy implements LearningModeStrategy {
             state.currentExercise = exerciseType;
         }
 
-        // Текст для отображения
         String displayDescription = generateTaskDisplayText(template, exerciseType, context);
 
-        // Текст для TTS
         String ttsDescription = generateTaskTtsText(template, exerciseType, context);
 
         return LearningTask.builder()
@@ -352,9 +346,6 @@ public class ExerciseStrategy implements LearningModeStrategy {
         return ThreadLocalRandom.current().nextDouble() < successProbability;
     }
 
-    /**
-     * Генерирует текст для отображения
-     */
     private String generateDisplayText(boolean isCorrect, ExerciseState state,
                                        LearningContext context, String exerciseType) {
         ExerciseTemplate template = EXERCISE_TEMPLATES.getOrDefault(exerciseType,
@@ -395,9 +386,6 @@ public class ExerciseStrategy implements LearningModeStrategy {
         return display.toString();
     }
 
-    /**
-     * Генерирует текст для TTS
-     */
     private String generateTtsText(boolean isCorrect, ExerciseState state, String exerciseType) {
         ExerciseTemplate template = EXERCISE_TEMPLATES.getOrDefault(exerciseType,
                 EXERCISE_TEMPLATES.get("fill_gaps"));
@@ -426,9 +414,6 @@ public class ExerciseStrategy implements LearningModeStrategy {
         return tts.toString();
     }
 
-    /**
-     * Генерирует текст для отображения задачи
-     */
     private String generateTaskDisplayText(ExerciseTemplate template, String exerciseType,
                                            LearningContext context) {
         StringBuilder display = new StringBuilder();
@@ -454,9 +439,6 @@ public class ExerciseStrategy implements LearningModeStrategy {
         return display.toString();
     }
 
-    /**
-     * Генерирует текст для TTS задачи
-     */
     private String generateTaskTtsText(ExerciseTemplate template, String exerciseType,
                                        LearningContext context) {
         StringBuilder tts = new StringBuilder();

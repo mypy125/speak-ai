@@ -5,7 +5,6 @@ import com.mygitgor.analysis.PronunciationTrainer;
 import com.mygitgor.model.*;
 import com.mygitgor.model.core.LearningProgress;
 import com.mygitgor.service.AudioAnalyzer;
-import com.mygitgor.utils.HtmlTemplateLoader;
 import com.mygitgor.utils.ThreadPoolManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -391,7 +390,6 @@ public class PronunciationStrategy implements LearningModeStrategy {
             PhonemeInfo info = phonemeDatabase.getOrDefault(phoneme,
                     new PhonemeInfo("Sound", "Practice this sound", "", getDefaultWords(phoneme)));
 
-            // Возвращаем TTS текст
             return generateTtsText(phoneme, score, state, info);
         }, executor);
     }
@@ -457,10 +455,8 @@ public class PronunciationStrategy implements LearningModeStrategy {
             examples.addAll(exercise.getExamples());
         }
 
-        // Текст для отображения
         String displayDescription = generateTaskDisplayText(phoneme, info, context);
 
-        // Текст для TTS
         String ttsDescription = generateTaskTtsText(phoneme, info, context);
 
         return LearningTask.builder()
@@ -547,20 +543,15 @@ public class PronunciationStrategy implements LearningModeStrategy {
         return baseScore;
     }
 
-    /**
-     * Генерирует текст для отображения (без HTML)
-     */
     private String generateDisplayText(String phoneme, double score,
                                        PronunciationState state,
                                        PhonemeInfo info,
                                        LearningContext context) {
         StringBuilder display = new StringBuilder();
 
-        // Заголовок
         display.append("🔤 PRONUNCIATION PRACTICE: /").append(phoneme).append("/\n");
         display.append("═══════════════════════════════════════════\n\n");
 
-        // Оценка
         display.append("📊 SCORE: ").append(String.format("%.1f", score)).append("/100");
         if (score >= EXCELLENT_PRONUNCIATION) {
             display.append(" ⭐ EXCELLENT!\n");
@@ -571,13 +562,11 @@ public class PronunciationStrategy implements LearningModeStrategy {
         }
         display.append("\n");
 
-        // Информация о звуке
         display.append("🔊 ABOUT THIS SOUND\n");
         display.append("──────────────────\n");
         display.append("📝 Description: ").append(info.description).append("\n");
         display.append("🗣️ How to pronounce: ").append(info.articulation).append("\n\n");
 
-        // Примеры слов
         display.append("📚 EXAMPLE WORDS\n");
         display.append("────────────────\n");
         for (String word : info.exampleWords) {
@@ -585,7 +574,6 @@ public class PronunciationStrategy implements LearningModeStrategy {
         }
         display.append("\n");
 
-        // Прогресс
         if (state != null) {
             display.append("📈 YOUR PROGRESS\n");
             display.append("────────────────\n");
@@ -597,7 +585,6 @@ public class PronunciationStrategy implements LearningModeStrategy {
             display.append("\n");
         }
 
-        // Советы
         display.append("💡 PRACTICE TIPS\n");
         display.append("────────────────\n");
         List<String> tips = generatePronunciationTips(phoneme, info);
@@ -606,7 +593,6 @@ public class PronunciationStrategy implements LearningModeStrategy {
         }
         display.append("\n");
 
-        // Следующий фокус
         if (state != null) {
             List<String> weakPhonemes = state.getWeakPhonemes();
             if (!weakPhonemes.isEmpty() && !weakPhonemes.get(0).equals(phoneme)) {

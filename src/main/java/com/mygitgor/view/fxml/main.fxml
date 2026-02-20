@@ -13,6 +13,7 @@
 
     <stylesheets>
         <URL value="@../styles/main.css"/>
+        <URL value="@../styles/chat-styles.css"/>
     </stylesheets>
 
     <fx:define>

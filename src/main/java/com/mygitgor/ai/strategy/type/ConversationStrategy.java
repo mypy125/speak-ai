@@ -219,10 +219,8 @@ public class ConversationStrategy implements LearningModeStrategy {
             state.addTopic(topic);
         }
 
-        // Текст для отображения
         String displayDescription = generateTaskDisplayText(topic, difficulty, context);
 
-        // Текст для TTS
         String ttsDescription = generateTaskTtsText(topic, difficulty, context);
 
         return LearningTask.builder()
@@ -370,9 +368,6 @@ public class ConversationStrategy implements LearningModeStrategy {
         }
     }
 
-    /**
-     * Генерирует текст для отображения
-     */
     private String generateDisplayText(String aiResponse, ConversationState state) {
         StringBuilder display = new StringBuilder();
 
@@ -393,13 +388,9 @@ public class ConversationStrategy implements LearningModeStrategy {
         return display.toString();
     }
 
-    /**
-     * Генерирует текст для TTS
-     */
     private String generateTtsText(String aiResponse, ConversationState state) {
         StringBuilder tts = new StringBuilder();
 
-        // Очищаем AI ответ от возможных маркдаун символов
         String cleanResponse = aiResponse.replaceAll("[\\*\\_\\`\\#]", "")
                 .replaceAll("\\[([^\\]]+)\\]\\([^\\)]+\\)", "$1")
                 .trim();
@@ -415,9 +406,6 @@ public class ConversationStrategy implements LearningModeStrategy {
         return tts.toString();
     }
 
-    /**
-     * Генерирует текст для отображения задачи
-     */
     private String generateTaskDisplayText(String topic, LearningTask.DifficultyLevel difficulty,
                                            LearningContext context) {
         StringBuilder display = new StringBuilder();
@@ -451,9 +439,6 @@ public class ConversationStrategy implements LearningModeStrategy {
         return display.toString();
     }
 
-    /**
-     * Генерирует текст для TTS задачи
-     */
     private String generateTaskTtsText(String topic, LearningTask.DifficultyLevel difficulty,
                                        LearningContext context) {
         StringBuilder tts = new StringBuilder();

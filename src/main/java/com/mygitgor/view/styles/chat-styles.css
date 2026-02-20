@@ -1,9 +1,13 @@
-/* Основные стили чата */
+/* ========================================
+   chat-styles.css - Стили для компонентов чата
+   ======================================== */
+
+/* ==================== ОСНОВНЫЕ СТИЛИ ==================== */
 .chat-container {
     -fx-background-color: #fafafa;
 }
 
-/* Контейнер сообщения */
+/* ==================== КОНТЕЙНЕР СООБЩЕНИЯ ==================== */
 .message-container {
     -fx-spacing: 8;
     -fx-padding: 0 0 5 0;
@@ -18,13 +22,13 @@
     -fx-alignment: top-right;
 }
 
-/* Контент сообщения */
+/* ==================== КОНТЕНТ СООБЩЕНИЯ ==================== */
 .message-content {
     -fx-spacing: 3;
     -fx-max-width: Infinity;
 }
 
-/* Аватар */
+/* ==================== АВАТАР ==================== */
 .avatar {
     -fx-background-radius: 50%;
     -fx-alignment: center;
@@ -57,11 +61,16 @@
     -fx-text-fill: white;
 }
 
-/* Пузырьки сообщений */
+/* ==================== ПУЗЫРЬКИ СООБЩЕНИЙ ==================== */
 .message-bubble {
     -fx-padding: 12 16;
     -fx-max-width: 400px;
     -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.05), 3, 0, 0, 1);
+    -fx-transition: all 0.2s ease;
+}
+
+.message-bubble:hover {
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.1), 5, 0, 0, 2);
 }
 
 .message-bubble-user {
@@ -78,7 +87,7 @@
     -fx-border-radius: 12 12 12 4;
 }
 
-/* Текст сообщений */
+/* ==================== ТЕКСТ СООБЩЕНИЙ ==================== */
 .message-text-user {
     -fx-text-fill: white;
     -fx-font-size: 13px;
@@ -95,7 +104,7 @@
     -fx-max-width: 380px;
 }
 
-/* Информация о сообщении */
+/* ==================== ИНФОРМАЦИЯ О СООБЩЕНИИ ==================== */
 .message-info {
     -fx-alignment: center-right;
     -fx-spacing: 8;
@@ -112,7 +121,7 @@
     -fx-font-size: 11px;
 }
 
-/* Разделитель времени */
+/* ==================== РАЗДЕЛИТЕЛЬ ВРЕМЕНИ ==================== */
 .time-divider {
     -fx-alignment: center;
     -fx-spacing: 10;
@@ -134,7 +143,7 @@
     -fx-padding: 0 10;
 }
 
-/* WebView сообщения */
+/* ==================== WEBVIEW СООБЩЕНИЯ ==================== */
 .webview-bubble {
     -fx-background-color: linear-gradient(to bottom, #f8f9fa, #ecf0f1);
     -fx-background-radius: 12 12 12 4;
@@ -146,21 +155,21 @@
     -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.05), 3, 0, 0, 1);
 }
 
+.webview-bubble:hover {
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.1), 5, 0, 0, 2);
+}
+
 .webview {
     -fx-context-menu-enabled: false;
     -fx-focus-traversable: false;
 }
 
-/* Анимации */
-.message-bubble-user, .message-bubble-ai, .webview-bubble {
-    -fx-transition: all 0.2s ease;
+/* ==================== СТИЛИ ДЛЯ ПОДСВЕТКИ ==================== */
+.message-highlight {
+    -fx-effect: dropshadow(gaussian, #3498db, 10, 0, 0, 0);
 }
 
-.message-bubble-user:hover, .message-bubble-ai:hover, .webview-bubble:hover {
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.1), 5, 0, 0, 2);
-}
-
-/* Скроллбар */
+/* ==================== СКРОЛЛБАР ==================== */
 .scroll-pane {
     -fx-background-color: transparent;
 }
@@ -187,7 +196,7 @@
     -fx-background-color: transparent;
 }
 
-/* Адаптивность */
+/* ==================== АДАПТИВНОСТЬ ==================== */
 @media (max-width: 400px) {
     .message-bubble, .webview-bubble {
         -fx-max-width: 300px;
@@ -197,4 +206,42 @@
         -fx-max-width: 280px;
         -fx-font-size: 12px;
     }
+}
+
+/* ==================== АНИМАЦИИ ==================== */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.message-container {
+    -fx-animation: fadeIn 0.3s ease;
+}
+
+/* ==================== БЕЙДЖИ ==================== */
+.badge {
+    -fx-background-radius: 12;
+    -fx-padding: 2 8;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+
+.badge-success {
+    -fx-background-color: #27ae60;
+    -fx-text-fill: white;
+}
+
+.badge-warning {
+    -fx-background-color: #f39c12;
+    -fx-text-fill: white;
+}
+
+.badge-info {
+    -fx-background-color: #3498db;
+    -fx-text-fill: white;
+}
+
+.badge-danger {
+    -fx-background-color: #e74c3c;
+    -fx-text-fill: white;
 }

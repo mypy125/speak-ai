@@ -276,10 +276,8 @@ public class GrammarStrategy implements LearningModeStrategy {
             state.exercisesDone++;
             updateAverageScore(state);
 
-            // Генерируем текст для отображения
             String displayText = generateDisplayText(aiResponse, score, state, currentTopic);
 
-            // Генерируем текст для TTS
             String ttsText = generateTtsText(aiResponse, score, state, currentTopic);
 
             return LearningResponse.builder()
@@ -304,7 +302,6 @@ public class GrammarStrategy implements LearningModeStrategy {
             String prompt = buildGrammarPrompt(userInput, state, context, currentTopic);
             String aiResponse = aiService.generateBotResponse(prompt, null);
 
-            // Возвращаем TTS текст
             return generateTtsText(aiResponse,
                     state != null ? state.averageScore : 0,
                     state, currentTopic);
@@ -374,10 +371,8 @@ public class GrammarStrategy implements LearningModeStrategy {
 
         List<String> examples = generateExerciseExamples(topic, context.getCurrentLevel());
 
-        // Текст для отображения
         String displayDescription = generateTaskDisplayText(topic, context);
 
-        // Текст для TTS
         String ttsDescription = generateTaskTtsText(topic, context);
 
         return LearningTask.builder()

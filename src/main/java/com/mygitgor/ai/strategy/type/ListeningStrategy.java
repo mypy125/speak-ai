@@ -274,10 +274,8 @@ public class ListeningStrategy implements LearningModeStrategy {
             String prompt = buildListeningPrompt(userInput, state, context, currentTopic);
             String aiResponse = aiService.generateBotResponse(prompt, null);
 
-            // Генерируем текст для отображения
             String displayText = generateDisplayText(aiResponse, comprehensionScore, state, currentTopic);
 
-            // Генерируем текст для TTS
             String ttsText = generateTtsText(aiResponse, comprehensionScore, state, currentTopic);
 
             return LearningResponse.builder()
@@ -362,10 +360,8 @@ public class ListeningStrategy implements LearningModeStrategy {
         String transcript = generateTranscript(topic, context.getCurrentLevel());
         String speed = getSpeed(context.getCurrentLevel(), topic);
 
-        // Текст для отображения
         String displayDescription = generateTaskDisplayText(topic, context);
 
-        // Текст для TTS
         String ttsDescription = generateTaskTtsText(topic, context);
 
         return LearningTask.builder()
@@ -542,7 +538,6 @@ public class ListeningStrategy implements LearningModeStrategy {
                                    ListeningState state, ListeningTopic topic) {
         StringBuilder tts = new StringBuilder();
 
-        // Краткое изложение AI ответа (первые 200 символов)
         String cleanResponse = aiResponse.replaceAll("[\\n\\r]+", " ").trim();
         if (cleanResponse.length() > 200) {
             cleanResponse = cleanResponse.substring(0, 200) + "... ";
