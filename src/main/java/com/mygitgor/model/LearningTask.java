@@ -1,13 +1,12 @@
 package com.mygitgor.model;
 
-import java.util.List;
-import java.util.Map;
 import java.util.*;
 
 public class LearningTask {
     private final String id;
     private final String title;
     private final String description;
+    private final String ttsDescription;
     private final LearningMode mode;
     private final DifficultyLevel difficulty;
     private final List<String> examples;
@@ -42,6 +41,7 @@ public class LearningTask {
         this.id = builder.id;
         this.title = builder.title;
         this.description = builder.description;
+        this.ttsDescription = builder.ttsDescription;  // ДОБАВЛЕНО
         this.mode = builder.mode;
         this.difficulty = builder.difficulty;
         this.examples = builder.examples != null ?
@@ -60,6 +60,7 @@ public class LearningTask {
         private String id;
         private String title;
         private String description;
+        private String ttsDescription;  // ДОБАВЛЕНО
         private LearningMode mode;
         private DifficultyLevel difficulty;
         private List<String> examples;
@@ -77,6 +78,12 @@ public class LearningTask {
 
         public Builder description(String description) {
             this.description = description;
+            return this;
+        }
+
+        // ДОБАВЛЕН МЕТОД
+        public Builder ttsDescription(String ttsDescription) {
+            this.ttsDescription = ttsDescription;
             return this;
         }
 
@@ -134,12 +141,16 @@ public class LearningTask {
             if (difficulty == null) {
                 difficulty = DifficultyLevel.BEGINNER;
             }
+            if (ttsDescription == null || ttsDescription.trim().isEmpty()) {
+                ttsDescription = description;
+            }
         }
     }
 
     public String getId() { return id; }
     public String getTitle() { return title; }
     public String getDescription() { return description; }
+    public String getTtsDescription() { return ttsDescription; }
     public LearningMode getMode() { return mode; }
     public DifficultyLevel getDifficulty() { return difficulty; }
     public List<String> getExamples() { return examples; }
@@ -147,8 +158,8 @@ public class LearningTask {
 
     @Override
     public String toString() {
-        return String.format("LearningTask{id='%s', title='%s', mode=%s, difficulty=%s}",
-                id, title, mode, difficulty);
+        return String.format("LearningTask{id='%s', title='%s', mode=%s, difficulty=%s, hasTts=%s}",
+                id, title, mode, difficulty, ttsDescription != null);
     }
 
     @Override

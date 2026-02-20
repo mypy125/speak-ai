@@ -19,15 +19,10 @@
         <ToggleGroup fx:id="responseModeToggleGroup"/>
     </fx:define>
 
-    <!-- Основной контейнер -->
     <SplitPane dividerPositions="0.7" VBox.vgrow="ALWAYS">
 
-        <!-- ========================================
-             ЛЕВАЯ ЧАСТЬ: ЧАТ
-             ======================================== -->
         <VBox spacing="10" style="-fx-padding: 10;">
 
-            <!-- Заголовок с логотипом и статусом -->
             <HBox alignment="CENTER_LEFT" spacing="10">
                 <VBox spacing="2">
                     <Label text="SpeakAI Репетитор"
@@ -40,7 +35,6 @@
                 </VBox>
                 <Region HBox.hgrow="ALWAYS"/>
 
-                <!-- Кнопки управления (компактные) -->
                 <HBox spacing="5" alignment="CENTER_RIGHT">
                     <Button text="⚙️ LearningMode"
                             onAction="#toggleLearningModePanel"

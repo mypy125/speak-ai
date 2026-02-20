@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.web.WebView?>
+
+<fx:root type="javafx.scene.layout.VBox" xmlns:fx="http://javafx.com/fxml">
+
+    <!-- Шаблон для сообщения пользователя -->
+    <fx:define>
+        <HBox fx:id="userMessageTemplate" styleClass="message-container, message-container-right">
+            <VBox styleClass="message-content">
+                <VBox styleClass="message-bubble, message-bubble-user">
+                    <Label fx:id="userMessageText" styleClass="message-text-user"/>
+                </VBox>
+                <HBox styleClass="message-info">
+                    <Label fx:id="userTimeLabel" styleClass="time-label"/>
+                    <Label styleClass="status-label" text="✔"/>
+                </HBox>
+            </VBox>
+            <StackPane styleClass="avatar, avatar-user">
+                <Label styleClass="avatar-label" text="U"/>
+            </StackPane>
+        </HBox>
+    </fx:define>
+
+    <!-- Шаблон для текстового сообщения AI -->
+    <fx:define>
+        <HBox fx:id="aiMessageTemplate" styleClass="message-container, message-container-left">
+            <StackPane styleClass="avatar, avatar-ai">
+                <Label styleClass="avatar-label" text="AI"/>
+            </StackPane>
+            <VBox styleClass="message-content">
+                <VBox styleClass="message-bubble, message-bubble-ai">
+                    <Label fx:id="aiMessageText" styleClass="message-text-ai" wrapText="true"/>
+                </VBox>
+                <Label fx:id="aiTimeLabel" styleClass="time-label"/>
+            </VBox>
+        </HBox>
+    </fx:define>
+
+    <!-- Шаблон для HTML сообщения AI -->
+    <fx:define>
+        <HBox fx:id="aiHtmlMessageTemplate" styleClass="message-container, message-container-left">
+            <StackPane styleClass="avatar, avatar-ai">
+                <Label styleClass="avatar-label" text="AI"/>
+            </StackPane>
+            <VBox styleClass="message-content">
+                <VBox styleClass="webview-bubble">
+                    <WebView fx:id="webView" styleClass="webview"/>
+                </VBox>
+                <Label fx:id="aiHtmlTimeLabel" styleClass="time-label"/>
+            </VBox>
+        </HBox>
+    </fx:define>
+
+    <!-- Шаблон для разделителя времени -->
+    <fx:define>
+        <HBox fx:id="timeDividerTemplate" styleClass="time-divider">
+            <Region styleClass="divider-line"/>
+            <Label fx:id="dividerLabel" styleClass="divider-label"/>
+            <Region styleClass="divider-line"/>
+        </HBox>
+    </fx:define>
+
+</fx:root>

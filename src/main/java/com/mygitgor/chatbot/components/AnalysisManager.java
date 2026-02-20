@@ -9,6 +9,7 @@ import com.mygitgor.service.AudioAnalyzer;
 import com.mygitgor.state.ChatBotState;
 import com.mygitgor.utils.ThreadPoolManager;
 import javafx.application.Platform;
+import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.stage.Stage;
 import org.slf4j.Logger;
@@ -31,6 +32,8 @@ public class AnalysisManager {
     private static final int MAX_WEAK_PHONEMES_TO_SHOW = 3;
     private static final int EXERCISE_WINDOW_WIDTH = 820;
     private static final int EXERCISE_WINDOW_HEIGHT = 650;
+    private static final double WEAK_PHONEME_THRESHOLD = 70.0;
+    private static final double TRAINER_PHONEME_THRESHOLD = 80.0;
 
     private final TextArea analysisArea;
     private final TextArea detailedAnalysisArea;
@@ -95,11 +98,11 @@ public class AnalysisManager {
         Platform.runLater(() -> {
             if (analyzeButton != null) {
                 analyzeButton.setDisable(true);
-                analyzeButton.setStyle("-fx-background-color: #95a5a6;");
+                analyzeButton.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
             }
             if (pronunciationButton != null) {
                 pronunciationButton.setDisable(true);
-                pronunciationButton.setStyle("-fx-background-color: #95a5a6;");
+                pronunciationButton.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
             }
             if (analysisProgress != null) {
                 analysisProgress.setVisible(false);
@@ -201,144 +204,6 @@ public class AnalysisManager {
         }
     }
 
-    private void updateAnalysisUI(EnhancedSpeechAnalysis analysis) {
-        if (analysis == null) return;
-
-        if (analysisArea != null) {
-            analysisArea.setText(formatAnalysisSummary(analysis));
-            analysisArea.setStyle("-fx-font-family: 'Segoe UI'; -fx-font-size: 13px;");
-        }
-
-        if (detailedAnalysisArea != null) {
-            String detailedReport = analysis.getDetailedReport();
-            if (detailedReport != null && !detailedReport.isEmpty()) {
-                detailedAnalysisArea.setText(formatDetailedReport(detailedReport));
-                detailedAnalysisArea.setVisible(true);
-            } else {
-                detailedAnalysisArea.setVisible(false);
-            }
-        }
-
-        updatePhonemeLabel(analysis);
-
-        updateButtonsState(true);
-        updatePronunciationButtonText(analysis);
-    }
-
-    private String formatAnalysisSummary(EnhancedSpeechAnalysis analysis) {
-        return String.format("""
-            📊 РЕЗУЛЬТАТ АНАЛИЗА РЕЧИ
-            =========================
-            
-            Общая оценка: %.1f/100
-            Уровень: %s
-            
-            Детальные оценки:
-            • Произношение: %.1f/100
-            • Беглость: %.1f/100
-            • Интонация: %.1f/100
-            • Громкость: %.1f/100
-            • Четкость: %.1f/100
-            • Уверенность: %.1f/100
-            
-            Статистика:
-            • Скорость речи: %.1f слов/мин
-            • Паузы: %d (%.1f сек)
-            """,
-                analysis.getOverallScore(),
-                analysis.getProficiencyLevel(),
-                analysis.getPronunciationScore(),
-                analysis.getFluencyScore(),
-                analysis.getIntonationScore(),
-                analysis.getVolumeScore(),
-                analysis.getClarityScore(),
-                analysis.getConfidenceScore(),
-                analysis.getSpeakingRate(),
-                analysis.getPauseCount(),
-                analysis.getTotalPauseDuration()
-        );
-    }
-
-    private String formatDetailedReport(String report) {
-        return "📋 ДЕТАЛЬНЫЙ АНАЛИЗ\n" +
-                "===================\n\n" + report;
-    }
-
-    private void updatePhonemeLabel(EnhancedSpeechAnalysis analysis) {
-        if (phonemeLabel == null) return;
-
-        if (analysis.getPhonemeScores() != null && !analysis.getPhonemeScores().isEmpty()) {
-            analysis.getPhonemeScores().entrySet().stream()
-                    .min(Map.Entry.comparingByValue())
-                    .ifPresent(entry -> {
-                        String phoneme = "/" + entry.getKey() + "/";
-                        float score = entry.getValue();
-
-                        String text = String.format("🔊 Слабая фонема: %s (%.1f/100)", phoneme, score);
-                        phonemeLabel.setText(text);
-                        phonemeLabel.setVisible(true);
-                    });
-        } else {
-            phonemeLabel.setVisible(false);
-        }
-    }
-
-    private void updatePronunciationButtonText(EnhancedSpeechAnalysis analysis) {
-        if (pronunciationButton == null) return;
-
-        if (analysis.getPhonemeScores() != null && !analysis.getPhonemeScores().isEmpty()) {
-            long weakPhonemesCount = analysis.getPhonemeScores().values().stream()
-                    .filter(score -> score < AppConstants.WEAK_PHONEME_THRESHOLD)
-                    .count();
-
-            if (weakPhonemesCount > 0) {
-                pronunciationButton.setText("🎯 Тренажер (" + weakPhonemesCount + " проблем)");
-            } else {
-                pronunciationButton.setText("✅ Тренажер произношения");
-            }
-        }
-    }
-
-    private void updateRecommendations(ChatBotService.ChatResponse response) {
-        if (recommendationsArea == null) return;
-
-        StringBuilder recommendationsText = new StringBuilder();
-
-        if (response.getSpeechAnalysis() != null &&
-                !response.getSpeechAnalysis().getRecommendations().isEmpty()) {
-            recommendationsText.append("📋 ОБЩИЕ РЕКОМЕНДАЦИИ\n");
-            recommendationsText.append("====================\n\n");
-
-            response.getSpeechAnalysis().getRecommendations().forEach(rec ->
-                    recommendationsText.append("• ").append(rec).append("\n"));
-            recommendationsText.append("\n");
-        }
-
-        if (response.getPersonalizedRecommendations() != null &&
-                !response.getPersonalizedRecommendations().isEmpty()) {
-
-            recommendationsText.append("🎯 ПЕРСОНАЛИЗИРОВАННЫЕ РЕКОМЕНДАЦИИ\n");
-            recommendationsText.append("==================================\n\n");
-
-            response.getPersonalizedRecommendations().forEach(rec -> {
-                recommendationsText.append("[").append(rec.getPriority()).append("] ")
-                        .append(rec.getTitle()).append("\n");
-                recommendationsText.append(rec.getDescription()).append("\n");
-                recommendationsText.append("Упражнения:\n");
-                rec.getExercises().stream().limit(3).forEach(ex ->
-                        recommendationsText.append("  • ").append(ex).append("\n"));
-                recommendationsText.append("\n");
-            });
-        }
-
-        if (recommendationsText.length() > 0) {
-            Platform.runLater(() -> {
-                recommendationsArea.setText(recommendationsText.toString());
-                recommendationsArea.setStyle("-fx-font-family: 'Segoe UI'; -fx-font-size: 13px;");
-            });
-        }
-    }
-
     public void showPronunciationTrainer() {
         String audioFile = state.getCurrentAudioFile();
 
@@ -380,92 +245,152 @@ public class AnalysisManager {
         }, backgroundExecutor);
     }
 
-    private void showPronunciationExercises(EnhancedSpeechAnalysis analysis) {
-        List<Map.Entry<String, Float>> weakPhonemes = analysis.getPhonemeScores().entrySet().stream()
-                .filter(e -> e.getValue() < AppConstants.TRAINER_PHONEME_THRESHOLD)
-                .sorted(Map.Entry.comparingByValue())
-                .limit(MAX_WEAK_PHONEMES_TO_SHOW)
-                .collect(Collectors.toList());
-
-        if (weakPhonemes.isEmpty()) {
-            ErrorHandler.showInfo("Отличное произношение!",
-                    "У вас нет проблемных звуков! Все фонемы оценены выше 80 баллов.");
-            return;
+    public void cancelAnalysis() {
+        CompletableFuture<Void> future = currentAnalysis.getAndSet(null);
+        if (future != null && !future.isDone()) {
+            future.cancel(true);
+            isAnalyzing.set(false);
+            Platform.runLater(() -> {
+                showAnalysisInProgress(false);
+                ErrorHandler.showWarning("Анализ отменен", "Анализ был прерван");
+            });
+            logger.info("Анализ отменен пользователем");
         }
-
-        String exercisesText = generateExercisesText(weakPhonemes, analysis);
-        showExercisesWindow(exercisesText);
     }
 
-    private String generateExercisesText(List<Map.Entry<String, Float>> weakPhonemes,
-                                         EnhancedSpeechAnalysis analysis) {
-        StringBuilder text = new StringBuilder();
-        text.append("🎯 ТРЕНАЖЕР ПРОИЗНОШЕНИЯ\n");
-        text.append("=".repeat(60)).append("\n\n");
-
-        for (Map.Entry<String, Float> phonemeEntry : weakPhonemes) {
-            String phoneme = phonemeEntry.getKey();
-            float score = phonemeEntry.getValue();
-
-            String difficulty = score < 60 ? "beginner" :
-                    score < 75 ? "intermediate" : "advanced";
-
-            PronunciationTrainer.PronunciationExercise exercise =
-                    pronunciationTrainer.createExercise(phoneme, difficulty);
-
-            text.append("🔊 ЗВУК /").append(phoneme).append("/\n");
-            text.append("📊 Оценка: ").append(String.format("%.1f", score)).append("/100\n\n");
-            text.append("📝 Инструкции:\n").append(exercise.getInstructions()).append("\n\n");
-            text.append("📚 Примеры:\n");
-            exercise.getExamples().forEach(ex -> text.append("  • ").append(ex).append("\n"));
-            text.append("\n💡 Советы:\n");
-            exercise.getTips().forEach(tip -> text.append("  • ").append(tip).append("\n"));
-            text.append("\n" + "=".repeat(60)).append("\n\n");
-        }
-
-        return text.toString();
-    }
-
-    private void showExercisesWindow(String content) {
-        TextArea trainingArea = new TextArea(content);
-        trainingArea.setEditable(false);
-        trainingArea.setWrapText(true);
-        trainingArea.setPrefSize(EXERCISE_WINDOW_WIDTH - 20, EXERCISE_WINDOW_HEIGHT - 50);
-        trainingArea.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 12px;");
-
-        ScrollPane scrollPane = new ScrollPane(trainingArea);
-        scrollPane.setFitToWidth(true);
-        scrollPane.setStyle("-fx-background-color: white;");
-
-        Stage trainingStage = new Stage();
-        trainingStage.setTitle("🎯 Тренажер произношения");
-        if (stage != null) {
-            trainingStage.initOwner(stage);
-        }
-
-        javafx.scene.Scene scene = new javafx.scene.Scene(scrollPane,
-                EXERCISE_WINDOW_WIDTH, EXERCISE_WINDOW_HEIGHT);
-        trainingStage.setScene(scene);
-        trainingStage.show();
-    }
-
-    private void showAnalysisInProgress(boolean inProgress) {
+    public void clear() {
         Platform.runLater(() -> {
-            if (analysisProgress != null) {
-                analysisProgress.setVisible(inProgress);
-                analysisProgress.setProgress(inProgress ? ProgressBar.INDETERMINATE_PROGRESS : 0);
+            if (analysisArea != null) {
+                analysisArea.clear();
             }
-            if (detailedAnalysisArea != null && inProgress) {
-                detailedAnalysisArea.setVisible(true);
-                detailedAnalysisArea.setText("⏳ Выполняется анализ...\n\nПожалуйста, подождите.");
+            if (detailedAnalysisArea != null) {
+                detailedAnalysisArea.clear();
+                detailedAnalysisArea.setVisible(false);
             }
-            if (statusLabel != null && inProgress) {
-                statusLabel.setText("🔍 Анализ речи...");
-                statusLabel.setStyle("-fx-text-fill: #3498db; -fx-font-weight: bold;");
+            if (recommendationsArea != null) {
+                recommendationsArea.clear();
+            }
+            if (phonemeLabel != null) {
+                phonemeLabel.setVisible(false);
+                phonemeLabel.setText("");
             }
 
-            updateButtonsState(!inProgress);
+            lastAnalysis.set(null);
+            updateButtonsState(false);
+
+            if (pronunciationButton != null) {
+                pronunciationButton.setText("🎯 Тренажер произношения");
+                pronunciationButton.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
+            }
         });
+    }
+
+    public EnhancedSpeechAnalysis getLastAnalysis() {
+        return lastAnalysis.get();
+    }
+
+    public boolean isAnalyzing() {
+        return isAnalyzing.get();
+    }
+
+    private void updateAnalysisUI(EnhancedSpeechAnalysis analysis) {
+        if (analysis == null) return;
+
+        if (analysisArea != null) {
+            analysisArea.setText(formatAnalysisSummary(analysis));
+            analysisArea.setStyle("-fx-font-family: 'Segoe UI'; -fx-font-size: 13px; -fx-background-color: #f8f9fa;");
+        }
+
+        if (detailedAnalysisArea != null) {
+            String detailedReport = analysis.getDetailedReport();
+            if (detailedReport != null && !detailedReport.isEmpty()) {
+                detailedAnalysisArea.setText(formatDetailedReport(detailedReport));
+                detailedAnalysisArea.setVisible(true);
+            } else {
+                detailedAnalysisArea.setVisible(false);
+            }
+        }
+
+        updatePhonemeLabel(analysis);
+        updateButtonsState(true);
+        updatePronunciationButtonText(analysis);
+    }
+
+    private String formatAnalysisSummary(EnhancedSpeechAnalysis analysis) {
+        return String.format("""
+            📊 **РЕЗУЛЬТАТ АНАЛИЗА РЕЧИ**
+            =========================
+            
+            **Общая оценка:** %.1f/100
+            **Уровень:** %s
+            
+            **Детальные оценки:**
+            • Произношение: %.1f/100
+            • Беглость: %.1f/100
+            • Интонация: %.1f/100
+            • Громкость: %.1f/100
+            • Четкость: %.1f/100
+            • Уверенность: %.1f/100
+            
+            **Статистика:**
+            • Скорость речи: %.1f слов/мин
+            • Паузы: %d (%.1f сек)
+            """,
+                analysis.getOverallScore(),
+                analysis.getProficiencyLevel(),
+                analysis.getPronunciationScore(),
+                analysis.getFluencyScore(),
+                analysis.getIntonationScore(),
+                analysis.getVolumeScore(),
+                analysis.getClarityScore(),
+                analysis.getConfidenceScore(),
+                analysis.getSpeakingRate(),
+                analysis.getPauseCount(),
+                analysis.getTotalPauseDuration()
+        );
+    }
+
+    private String formatDetailedReport(String report) {
+        return "📋 **ДЕТАЛЬНЫЙ АНАЛИЗ**\n" +
+                "===================\n\n" + report;
+    }
+
+    private void updatePhonemeLabel(EnhancedSpeechAnalysis analysis) {
+        if (phonemeLabel == null) return;
+
+        if (analysis.getPhonemeScores() != null && !analysis.getPhonemeScores().isEmpty()) {
+            analysis.getPhonemeScores().entrySet().stream()
+                    .min(Map.Entry.comparingByValue())
+                    .ifPresent(entry -> {
+                        String phoneme = "/" + entry.getKey() + "/";
+                        float score = entry.getValue();
+
+                        String text = String.format("🔊 Слабая фонема: %s (%.1f/100)", phoneme, score);
+                        phonemeLabel.setText(text);
+                        phonemeLabel.setVisible(true);
+                        phonemeLabel.setStyle("-fx-text-fill: #e67e22; -fx-font-weight: bold;");
+                    });
+        } else {
+            phonemeLabel.setVisible(false);
+        }
+    }
+
+    private void updatePronunciationButtonText(EnhancedSpeechAnalysis analysis) {
+        if (pronunciationButton == null) return;
+
+        if (analysis.getPhonemeScores() != null && !analysis.getPhonemeScores().isEmpty()) {
+            long weakPhonemesCount = analysis.getPhonemeScores().values().stream()
+                    .filter(score -> score < WEAK_PHONEME_THRESHOLD)
+                    .count();
+
+            if (weakPhonemesCount > 0) {
+                pronunciationButton.setText("🎯 Тренажер (" + weakPhonemesCount + " проблем)");
+                pronunciationButton.setStyle("-fx-background-color: #e67e22; -fx-text-fill: white;");
+            } else {
+                pronunciationButton.setText("✅ Тренажер произношения");
+                pronunciationButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white;");
+            }
+        }
     }
 
     private void updateButtonsState(boolean enabled) {
@@ -481,6 +406,66 @@ public class AnalysisManager {
                     "-fx-background-color: #27ae60; -fx-text-fill: white;" :
                     "-fx-background-color: #95a5a6; -fx-text-fill: white;");
         }
+    }
+
+    private void updateRecommendations(ChatBotService.ChatResponse response) {
+        if (recommendationsArea == null) return;
+
+        StringBuilder recommendationsText = new StringBuilder();
+
+        if (response.getSpeechAnalysis() != null &&
+                !response.getSpeechAnalysis().getRecommendations().isEmpty()) {
+            recommendationsText.append("📋 **ОБЩИЕ РЕКОМЕНДАЦИИ**\n");
+            recommendationsText.append("====================\n\n");
+
+            response.getSpeechAnalysis().getRecommendations().forEach(rec ->
+                    recommendationsText.append("• ").append(rec).append("\n"));
+            recommendationsText.append("\n");
+        }
+
+        if (response.getPersonalizedRecommendations() != null &&
+                !response.getPersonalizedRecommendations().isEmpty()) {
+
+            recommendationsText.append("🎯 **ПЕРСОНАЛИЗИРОВАННЫЕ РЕКОМЕНДАЦИИ**\n");
+            recommendationsText.append("==================================\n\n");
+
+            response.getPersonalizedRecommendations().forEach(rec -> {
+                recommendationsText.append("[").append(rec.getPriority()).append("] **")
+                        .append(rec.getTitle()).append("**\n");
+                recommendationsText.append(rec.getDescription()).append("\n");
+                recommendationsText.append("**Упражнения:**\n");
+                rec.getExercises().stream().limit(3).forEach(ex ->
+                        recommendationsText.append("  • ").append(ex).append("\n"));
+                recommendationsText.append("\n");
+            });
+        }
+
+        if (recommendationsText.length() > 0) {
+            Platform.runLater(() -> {
+                recommendationsArea.setText(recommendationsText.toString());
+                recommendationsArea.setStyle("-fx-font-family: 'Segoe UI'; -fx-font-size: 13px; -fx-background-color: #f8f9fa;");
+            });
+        }
+    }
+
+    private void showAnalysisInProgress(boolean inProgress) {
+        Platform.runLater(() -> {
+            if (analysisProgress != null) {
+                analysisProgress.setVisible(inProgress);
+                analysisProgress.setProgress(inProgress ? ProgressBar.INDETERMINATE_PROGRESS : 0);
+            }
+            if (detailedAnalysisArea != null && inProgress) {
+                detailedAnalysisArea.setVisible(true);
+                detailedAnalysisArea.setText("⏳ **Выполняется анализ...**\n\nПожалуйста, подождите.");
+                detailedAnalysisArea.setStyle("-fx-font-family: 'Segoe UI'; -fx-font-size: 13px; -fx-background-color: #f8f9fa;");
+            }
+            if (statusLabel != null && inProgress) {
+                statusLabel.setText("🔍 Анализ речи...");
+                statusLabel.setStyle("-fx-text-fill: #3498db; -fx-font-weight: bold;");
+            }
+
+            updateButtonsState(!inProgress);
+        });
     }
 
     private void showCompletionNotification(EnhancedSpeechAnalysis analysis) {
@@ -518,50 +503,72 @@ public class AnalysisManager {
         }
     }
 
-    public void clear() {
-        Platform.runLater(() -> {
-            if (analysisArea != null) {
-                analysisArea.clear();
-            }
-            if (detailedAnalysisArea != null) {
-                detailedAnalysisArea.clear();
-                detailedAnalysisArea.setVisible(false);
-            }
-            if (recommendationsArea != null) {
-                recommendationsArea.clear();
-            }
-            if (phonemeLabel != null) {
-                phonemeLabel.setVisible(false);
-                phonemeLabel.setText("");
-            }
+    private void showPronunciationExercises(EnhancedSpeechAnalysis analysis) {
+        List<Map.Entry<String, Float>> weakPhonemes = analysis.getPhonemeScores().entrySet().stream()
+                .filter(e -> e.getValue() < TRAINER_PHONEME_THRESHOLD)
+                .sorted(Map.Entry.comparingByValue())
+                .limit(MAX_WEAK_PHONEMES_TO_SHOW)
+                .collect(Collectors.toList());
 
-            lastAnalysis.set(null);
-            updateButtonsState(false);
-
-            if (pronunciationButton != null) {
-                pronunciationButton.setText("🎯 Тренажер произношения");
-            }
-        });
-    }
-
-    public void cancelAnalysis() {
-        CompletableFuture<Void> future = currentAnalysis.getAndSet(null);
-        if (future != null && !future.isDone()) {
-            future.cancel(true);
-            isAnalyzing.set(false);
-            Platform.runLater(() -> {
-                showAnalysisInProgress(false);
-                ErrorHandler.showWarning("Анализ отменен", "Анализ был прерван");
-            });
-            logger.info("Анализ отменен пользователем");
+        if (weakPhonemes.isEmpty()) {
+            ErrorHandler.showInfo("Отличное произношение!",
+                    "У вас нет проблемных звуков! Все фонемы оценены выше 80 баллов.");
+            return;
         }
+
+        String exercisesText = generateExercisesText(weakPhonemes, analysis);
+        showExercisesWindow(exercisesText);
     }
 
-    public EnhancedSpeechAnalysis getLastAnalysis() {
-        return lastAnalysis.get();
+    private String generateExercisesText(List<Map.Entry<String, Float>> weakPhonemes,
+                                         EnhancedSpeechAnalysis analysis) {
+        StringBuilder text = new StringBuilder();
+        text.append("🎯 **ТРЕНАЖЕР ПРОИЗНОШЕНИЯ**\n");
+        text.append("=".repeat(60)).append("\n\n");
+
+        for (Map.Entry<String, Float> phonemeEntry : weakPhonemes) {
+            String phoneme = phonemeEntry.getKey();
+            float score = phonemeEntry.getValue();
+
+            String difficulty = score < 60 ? "beginner" :
+                    score < 75 ? "intermediate" : "advanced";
+
+            PronunciationTrainer.PronunciationExercise exercise =
+                    pronunciationTrainer.createExercise(phoneme, difficulty);
+
+            text.append("🔊 **ЗВУК /").append(phoneme).append("/**\n");
+            text.append("📊 Оценка: **").append(String.format("%.1f", score)).append("/100**\n\n");
+            text.append("📝 **Инструкции:**\n").append(exercise.getInstructions()).append("\n\n");
+            text.append("📚 **Примеры:**\n");
+            exercise.getExamples().forEach(ex -> text.append("  • ").append(ex).append("\n"));
+            text.append("\n💡 **Советы:**\n");
+            exercise.getTips().forEach(tip -> text.append("  • ").append(tip).append("\n"));
+            text.append("\n" + "=".repeat(60)).append("\n\n");
+        }
+
+        return text.toString();
     }
 
-    public boolean isAnalyzing() {
-        return isAnalyzing.get();
+    private void showExercisesWindow(String content) {
+        TextArea trainingArea = new TextArea(content);
+        trainingArea.setEditable(false);
+        trainingArea.setWrapText(true);
+        trainingArea.setPrefSize(EXERCISE_WINDOW_WIDTH - 20, EXERCISE_WINDOW_HEIGHT - 50);
+        trainingArea.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 12px; -fx-background-color: #f8f9fa;");
+
+        ScrollPane scrollPane = new ScrollPane(trainingArea);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setStyle("-fx-background-color: white; -fx-background: white;");
+
+        Stage trainingStage = new Stage();
+        trainingStage.setTitle("🎯 Тренажер произношения");
+        if (stage != null) {
+            trainingStage.initOwner(stage);
+        }
+
+        Scene scene = new Scene(scrollPane,
+                EXERCISE_WINDOW_WIDTH, EXERCISE_WINDOW_HEIGHT);
+        trainingStage.setScene(scene);
+        trainingStage.show();
     }
 }

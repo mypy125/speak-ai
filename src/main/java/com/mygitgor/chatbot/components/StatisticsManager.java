@@ -18,6 +18,10 @@ public class StatisticsManager {
 
     private static final int UI_UPDATE_DELAY_MS = 100;
     private static final int MAX_BATCH_SIZE = 10;
+    private static final int LABEL_FONT_SIZE = 14;
+    private static final String LABEL_TEXT_COLOR = "#2c3e50";
+    private static final int KILO = 1000;
+    private static final int MILLION = 1_000_000;
 
     private final Label messagesCountLabel;
     private final Label analysisCountLabel;
@@ -59,9 +63,9 @@ public class StatisticsManager {
     private void setLabelStyle(Label label) {
         if (label != null) {
             label.setStyle(
-                    "-fx-font-size: 14px; " +
+                    "-fx-font-size: " + LABEL_FONT_SIZE + "px; " +
                             "-fx-font-weight: bold; " +
-                            "-fx-text-fill: #2c3e50;"
+                            "-fx-text-fill: " + LABEL_TEXT_COLOR + ";"
             );
         }
     }
@@ -74,55 +78,10 @@ public class StatisticsManager {
         }
     }
 
-    private void scheduleUpdate() {
+    public void forceUpdate() {
         needsUpdate.set(true);
-
-        if (isUpdateScheduled.compareAndSet(false, true)) {
-            scheduledExecutor.schedule(() -> {
-                if (needsUpdate.getAndSet(false)) {
-                    Platform.runLater(this::performUpdate);
-                }
-                isUpdateScheduled.set(false);
-            }, UI_UPDATE_DELAY_MS, TimeUnit.MILLISECONDS);
-        }
-    }
-
-    private void performUpdate() {
-        try {
-            ChatBotState.Statistics stats = state.getStatistics();
-            StatisticsSnapshot snapshot = new StatisticsSnapshot(stats);
-
-            StatisticsSnapshot last = lastSnapshot.get();
-            if (last != null && last.equals(snapshot)) {
-                return;
-            }
-
-            lastSnapshot.set(snapshot);
-
-            if (messagesCountLabel != null) {
-                messagesCountLabel.setText(formatNumber(stats.getMessagesCount()));
-            }
-            if (analysisCountLabel != null) {
-                analysisCountLabel.setText(formatNumber(stats.getAnalysisCount()));
-            }
-            if (recordingsCountLabel != null) {
-                recordingsCountLabel.setText(formatNumber(stats.getRecordingsCount()));
-            }
-
-            logger.trace("Статистика обновлена: {}", snapshot);
-        } catch (Exception e) {
-            logger.error("Ошибка при обновлении статистики", e);
-        }
-    }
-
-    private String formatNumber(int number) {
-        if (number < 1000) {
-            return String.valueOf(number);
-        } else if (number < 1_000_000) {
-            return String.format("%.1fk", number / 1000.0);
-        } else {
-            return String.format("%.1fm", number / 1_000_000.0);
-        }
+        isUpdateScheduled.set(false);
+        Platform.runLater(this::performUpdate);
     }
 
     public void onMessageSent() {
@@ -189,6 +148,70 @@ public class StatisticsManager {
         StatisticsSnapshot current = new StatisticsSnapshot(state.getStatistics());
         StatisticsSnapshot last = lastSnapshot.get();
         return last == null || !last.equals(current);
+    }
+
+    public String getStatisticsString() {
+        StatisticsSnapshot stats = getCurrentStatistics();
+        return String.format("📊 Сообщений: %d | Анализов: %d | Записей: %d",
+                stats.getMessagesCount(), stats.getAnalysisCount(), stats.getRecordingsCount());
+    }
+
+    public boolean isEmpty() {
+        StatisticsSnapshot stats = getCurrentStatistics();
+        return stats.getMessagesCount() == 0 &&
+                stats.getAnalysisCount() == 0 &&
+                stats.getRecordingsCount() == 0;
+    }
+
+    private void scheduleUpdate() {
+        needsUpdate.set(true);
+
+        if (isUpdateScheduled.compareAndSet(false, true)) {
+            scheduledExecutor.schedule(() -> {
+                if (needsUpdate.getAndSet(false)) {
+                    Platform.runLater(this::performUpdate);
+                }
+                isUpdateScheduled.set(false);
+            }, UI_UPDATE_DELAY_MS, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    private void performUpdate() {
+        try {
+            ChatBotState.Statistics stats = state.getStatistics();
+            StatisticsSnapshot snapshot = new StatisticsSnapshot(stats);
+
+            StatisticsSnapshot last = lastSnapshot.get();
+            if (last != null && last.equals(snapshot)) {
+                return;
+            }
+
+            lastSnapshot.set(snapshot);
+
+            if (messagesCountLabel != null) {
+                messagesCountLabel.setText(formatNumber(stats.getMessagesCount()));
+            }
+            if (analysisCountLabel != null) {
+                analysisCountLabel.setText(formatNumber(stats.getAnalysisCount()));
+            }
+            if (recordingsCountLabel != null) {
+                recordingsCountLabel.setText(formatNumber(stats.getRecordingsCount()));
+            }
+
+            logger.trace("Статистика обновлена: {}", snapshot);
+        } catch (Exception e) {
+            logger.error("Ошибка при обновлении статистики", e);
+        }
+    }
+
+    private String formatNumber(int number) {
+        if (number < KILO) {
+            return String.valueOf(number);
+        } else if (number < MILLION) {
+            return String.format("%.1fk", number / (double) KILO);
+        } else {
+            return String.format("%.1fm", number / (double) MILLION);
+        }
     }
 
     public static class StatisticsSnapshot {
@@ -260,24 +283,5 @@ public class StatisticsManager {
             return String.format("Update{msg=%d, anl=%d, rec=%d}",
                     incrementMessages, incrementAnalysis, incrementRecordings);
         }
-    }
-
-    public void forceUpdate() {
-        needsUpdate.set(true);
-        isUpdateScheduled.set(false);
-        Platform.runLater(this::performUpdate);
-    }
-
-    public String getStatisticsString() {
-        StatisticsSnapshot stats = getCurrentStatistics();
-        return String.format("📊 Сообщений: %d | Анализов: %d | Записей: %d",
-                stats.getMessagesCount(), stats.getAnalysisCount(), stats.getRecordingsCount());
-    }
-
-    public boolean isEmpty() {
-        StatisticsSnapshot stats = getCurrentStatistics();
-        return stats.getMessagesCount() == 0 &&
-                stats.getAnalysisCount() == 0 &&
-                stats.getRecordingsCount() == 0;
     }
 }

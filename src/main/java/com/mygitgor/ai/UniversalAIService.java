@@ -3,6 +3,7 @@ package com.mygitgor.ai;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.mygitgor.model.EnhancedSpeechAnalysis;
 import com.mygitgor.model.LearningContext;
 import com.mygitgor.model.LearningMode;
 import com.mygitgor.model.SpeechAnalysis;
@@ -19,6 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.*;
 
 public class UniversalAIService implements AiService {
     private static final Logger logger = LoggerFactory.getLogger(UniversalAIService.class);
@@ -30,9 +32,11 @@ public class UniversalAIService implements AiService {
     private static final int RETRY_DELAY_MS = 1000;
     private static final int RATE_LIMIT_PER_MINUTE = 60;
     private static final int MAX_QUEUE_SIZE = 100;
+    private static final int MAX_CACHE_SIZE = 200;
     private static final double DEFAULT_TEMPERATURE = 0.7;
     private static final int DEFAULT_MAX_TOKENS = 500;
     private static final int MAX_HISTORY_SIZE = 50;
+    private static final double TOKEN_ESTIMATION_FACTOR = 3.5;
 
     private final String apiKey;
     private final String provider;
@@ -49,6 +53,7 @@ public class UniversalAIService implements AiService {
     private final AtomicLong totalResponseTime = new AtomicLong(0);
     private final AtomicInteger errorCount = new AtomicInteger(0);
     private final AtomicReference<CompletableFuture<?>> currentRequest = new AtomicReference<>(null);
+    private final AtomicLong lastHealthCheck = new AtomicLong(System.currentTimeMillis());
 
     private final Semaphore rateLimiter = new Semaphore(RATE_LIMIT_PER_MINUTE);
     private final ScheduledExecutorService rateLimitResetScheduler;
@@ -58,24 +63,49 @@ public class UniversalAIService implements AiService {
     private final ScheduledExecutorService scheduledExecutor;
 
     private final ConcurrentHashMap<String, String> promptCache = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<LearningMode, PromptTemplate> promptTemplates = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> cacheTimestamp = new ConcurrentHashMap<>();
 
+    private final ConcurrentHashMap<LearningMode, PromptTemplate> promptTemplates = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<LearningMode, ModeStats> modeStats = new ConcurrentHashMap<>();
 
     private static class ModeStats {
         final AtomicInteger requestCount = new AtomicInteger(0);
         final AtomicLong totalTokens = new AtomicLong(0);
         final AtomicLong totalTime = new AtomicLong(0);
+        final AtomicInteger totalErrors = new AtomicInteger(0);
+        final ConcurrentHashMap<String, AtomicInteger> topicStats = new ConcurrentHashMap<>();
 
-        void recordRequest(int tokens, long timeMs) {
+        void recordRequest(int tokens, long timeMs, boolean success, String topic) {
             requestCount.incrementAndGet();
             totalTokens.addAndGet(tokens);
             totalTime.addAndGet(timeMs);
+            if (!success) {
+                totalErrors.incrementAndGet();
+            }
+            if (topic != null) {
+                topicStats.computeIfAbsent(topic, k -> new AtomicInteger()).incrementAndGet();
+            }
         }
 
         double getAverageTime() {
             int count = requestCount.get();
             return count > 0 ? (double) totalTime.get() / count : 0;
+        }
+
+        double getSuccessRate() {
+            int total = requestCount.get();
+            return total > 0 ? (double) (total - totalErrors.get()) / total * 100 : 100;
+        }
+
+        double getAverageTokens() {
+            int count = requestCount.get();
+            return count > 0 ? (double) totalTokens.get() / count : 0;
+        }
+
+        Map<String, Integer> getTopicStats() {
+            Map<String, Integer> result = new HashMap<>();
+            topicStats.forEach((topic, count) -> result.put(topic, count.get()));
+            return result;
         }
     }
 
@@ -130,6 +160,7 @@ public class UniversalAIService implements AiService {
 
         initializePromptTemplates();
         scheduleRateLimitReset();
+        scheduleCacheCleanup();
         testConnectionAsync();
 
         logger.info("UniversalAIService инициализирован: провайдер={}, модель={}, режимов={}",
@@ -138,131 +169,162 @@ public class UniversalAIService implements AiService {
 
     private void initializePromptTemplates() {
         promptTemplates.put(LearningMode.CONVERSATION, new PromptTemplate(
-                "Ты - дружелюбный AI репетитор для разговорной практики английского языка. " +
-                        "Поддерживай естественный диалог, задавай вопросы, мягко исправляй ошибки. " +
-                        "Уровень ученика: %s",
+                "You are a friendly AI English tutor for conversational practice. " +
+                        "Maintain natural dialogue, ask questions, gently correct mistakes. " +
+                        "Student level: %s",
                 """
-                Контекст разговора:
-                - Уровень: %s
-                - Предыдущие сообщения: %s
-                - Тема: %s
+                Conversation Context:
+                - Level: %s
+                - Previous messages: %s
+                - Topic: %s
                 
-                Сообщение ученика: %s
+                Student's message: %s
                 
-                Ответь естественно, поддерживая разговор. Задавай вопросы, чтобы стимулировать диалог.
-                Корректируй ошибки мягко, если они есть. Используй Markdown форматирование.
+                Respond naturally, support the conversation. Ask questions to encourage dialogue.
+                Gently correct mistakes if any. Use Markdown formatting.
                 """,
                 800,
                 0.8
         ));
 
         promptTemplates.put(LearningMode.PRONUNCIATION, new PromptTemplate(
-                "Ты - эксперт по фонетике английского языка. Помогай ученикам улучшать произношение. " +
-                        "Объясняй артикуляцию звуков и давай практические советы. Уровень: %s",
+                "You are a phonetics expert. Help students improve pronunciation. " +
+                        "Explain articulation and give practical advice. Level: %s",
                 """
-                Тренировка произношения:
-                - Целевой звук: %s
-                - Текущая оценка: %s
-                - Слова для практики: %s
+                Pronunciation Practice:
+                - Target sound: %s
+                - Current score: %s
+                - Practice words: %s
                 
-                Запись ученика: %s
+                Student's recording: %s
                 
-                Проанализируй произношение. Дай оценку по 100-балльной шкале.
-                Объясни, как правильно произносить звук, и предложи упражнения.
+                Analyze pronunciation. Give a score out of 100.
+                Explain how to pronounce correctly and suggest exercises.
                 """,
                 600,
                 0.5
         ));
 
         promptTemplates.put(LearningMode.GRAMMAR, new PromptTemplate(
-                "Ты - AI репетитор по грамматике английского языка. Объясняй правила просто и понятно. " +
-                        "Давай примеры и проверяй понимание. Уровень: %s",
+                "You are an AI grammar tutor. Explain rules clearly and simply. " +
+                        "Give examples and check understanding. Level: %s",
                 """
-                Изучение грамматики:
-                - Тема: %s
-                - Сложность: %s
-                - Предыдущие ошибки: %s
+                Grammar Study:
+                - Topic: %s
+                - Difficulty: %s
+                - Previous errors: %s
                 
-                Ответ ученика: %s
+                Student's answer: %s
                 
-                Проверь правильность, объясни правило, дай примеры.
-                Предложи похожее упражнение для закрепления.
+                Check correctness, explain the rule, give examples.
+                Suggest a similar exercise for practice.
                 """,
                 500,
                 0.6
         ));
 
         promptTemplates.put(LearningMode.EXERCISE, new PromptTemplate(
-                "Ты - AI репетитор, создающий упражнения по английскому языку. " +
-                        "Генерируй разнообразные задания с учетом уровня ученика. Уровень: %s",
+                "You are an AI tutor creating English exercises. " +
+                        "Generate varied tasks based on student level. Level: %s",
                 """
-                Генерация упражнения:
-                - Тип: %s
-                - Сложность: %s
-                - Прогресс: %s%%
+                Exercise Generation:
+                - Type: %s
+                - Difficulty: %s
+                - Progress: %s%%
                 
-                Ответ ученика: %s
+                Student's answer: %s
                 
-                Оцени правильность ответа. Если правильно - похвали и предложи следующее упражнение.
-                Если ошибка - объясни и дай похожее задание.
+                Evaluate correctness. If correct - praise and suggest next exercise.
+                If error - explain and give similar task.
                 """,
                 400,
                 0.7
         ));
 
         promptTemplates.put(LearningMode.VOCABULARY, new PromptTemplate(
-                "Ты - AI репетитор для расширения словарного запаса. " +
-                        "Вводи новые слова в контексте и помогай их запоминать. Уровень: %s",
+                "You are an AI vocabulary tutor. Introduce new words in context " +
+                        "and help remember them. Level: %s",
                 """
-                Работа со словарным запасом:
-                - Тема: %s
-                - Новые слова: %s
-                - Контекст: %s
+                Vocabulary Work:
+                - Topic: %s
+                - New words: %s
+                - Context: %s
                 
-                Использование слов учеником: %s
+                Student's usage: %s
                 
-                Проверь правильность использования слов в контексте.
-                Дай примеры употребления и предложи составить предложения.
+                Check correct word usage in context.
+                Give examples and suggest making sentences.
                 """,
                 500,
                 0.7
         ));
 
         promptTemplates.put(LearningMode.WRITING, new PromptTemplate(
-                "Ты - AI репетитор по письменному английскому. Помогай улучшать стиль, " +
-                        "структуру и грамматику текстов. Уровень: %s",
+                "You are an AI writing tutor. Help improve style, " +
+                        "structure, and grammar of texts. Level: %s",
                 """
-                Анализ письменной работы:
-                - Тип текста: %s
-                - Объем: %d слов
-                - Цель: %s
+                Writing Analysis:
+                - Text type: %s
+                - Length: %d words
+                - Goal: %s
                 
-                Текст ученика: %s
+                Student's text: %s
                 
-                Проанализируй текст: грамматика, стиль, структура, лексика.
-                Дай конкретные рекомендации по улучшению.
+                Analyze the text: grammar, style, structure, vocabulary.
+                Give specific recommendations for improvement.
                 """,
                 800,
                 0.6
         ));
 
         promptTemplates.put(LearningMode.LISTENING, new PromptTemplate(
-                "Ты - AI репетитор по аудированию. Помогай понимать речь на слух " +
-                        "и развивать навыки восприятия. Уровень: %s",
+                "You are an AI listening tutor. Help understand spoken English " +
+                        "and develop listening skills. Level: %s",
                 """
-                Тренировка аудирования:
-                - Тема: %s
-                - Скорость речи: %s
-                - Сложность: %s
+                Listening Practice:
+                - Topic: %s
+                - Speech speed: %s
+                - Difficulty: %s
                 
-                Распознанный текст ученика: %s
+                Student's recognized text: %s
                 
-                Проверь понимание, укажи на возможные ошибки восприятия.
-                Предложи упражнения для улучшения навыков аудирования.
+                Check comprehension, identify possible perception errors.
+                Suggest exercises to improve listening skills.
                 """,
                 600,
                 0.5
         ));
+    }
+
+    private void scheduleRateLimitReset() {
+        rateLimitResetScheduler.scheduleAtFixedRate(() -> {
+            try {
+                int permits = RATE_LIMIT_PER_MINUTE - rateLimiter.availablePermits();
+                if (permits > 0) {
+                    rateLimiter.release(permits);
+                    logger.debug("Rate limit reset: released {} permits", permits);
+                }
+            } catch (Exception e) {
+                logger.error("Error resetting rate limit", e);
+            }
+        }, 1, 1, TimeUnit.MINUTES);
+    }
+
+    private void scheduleCacheCleanup() {
+        scheduledExecutor.scheduleAtFixedRate(() -> {
+            try {
+                long now = System.currentTimeMillis();
+                long oneHour = 3600000; // 1 час в миллисекундах
+
+                cacheTimestamp.entrySet().removeIf(entry ->
+                        now - entry.getValue() > oneHour);
+                promptCache.keySet().retainAll(cacheTimestamp.keySet());
+
+                logger.debug("Cache cleaned: {} entries remaining", promptCache.size());
+            } catch (Exception e) {
+                logger.error("Error cleaning cache", e);
+            }
+        }, 1, 1, TimeUnit.HOURS);
     }
 
     public CompletableFuture<String> processModeRequest(String userInput,
@@ -270,31 +332,44 @@ public class UniversalAIService implements AiService {
                                                         LearningContext context) {
         if (isShutdown.get()) {
             return CompletableFuture.failedFuture(
-                    new IllegalStateException("UniversalAIService остановлен"));
+                    new IllegalStateException("UniversalAIService is shut down"));
         }
 
         long startTime = System.currentTimeMillis();
+        String topic = context != null ? context.getMode().name() : "general";
 
         return CompletableFuture.supplyAsync(() -> {
             try {
+                String cacheKey = generateCacheKey(userInput, mode, context);
+                String cachedResponse = getCachedResponse(cacheKey);
+                if (cachedResponse != null) {
+                    logger.debug("Cache hit for mode: {}", mode);
+                    return cachedResponse;
+                }
+
                 PromptTemplate template = promptTemplates.get(mode);
                 if (template == null) {
-                    logger.warn("Нет шаблона для режима {}, используется общий", mode);
+                    logger.warn("No template for mode {}, using general", mode);
                     return generateBotResponse(userInput, null);
                 }
 
                 String prompt = buildModePrompt(userInput, mode, context, template);
                 String response = executeWithRetry(prompt, "mode_" + mode.name());
 
+                cacheResponse(cacheKey, response);
+
+                int tokens = estimateTokens(prompt + response);
                 ModeStats stats = modeStats.computeIfAbsent(mode, k -> new ModeStats());
-                stats.recordRequest(estimateTokens(prompt + response),
-                        System.currentTimeMillis() - startTime);
+                stats.recordRequest(tokens, System.currentTimeMillis() - startTime, true, topic);
 
                 return response;
 
             } catch (Exception e) {
                 errorCount.incrementAndGet();
-                logger.error("Ошибка в режиме {}: {}", mode, e.getMessage());
+                ModeStats stats = modeStats.computeIfAbsent(mode, k -> new ModeStats());
+                stats.recordRequest(0, System.currentTimeMillis() - startTime, false, topic);
+
+                logger.error("Error in mode {}: {}", mode, e.getMessage());
                 return getFallbackModeResponse(mode, userInput);
             }
         }, requestExecutor);
@@ -307,7 +382,7 @@ public class UniversalAIService implements AiService {
     public CompletableFuture<SpeechAnalysis> analyzePronunciationAsync(String text, String audioPath) {
         if (isShutdown.get()) {
             return CompletableFuture.failedFuture(
-                    new IllegalStateException("UniversalAIService остановлен"));
+                    new IllegalStateException("UniversalAIService is shut down"));
         }
 
         return CompletableFuture.supplyAsync(() ->
@@ -344,7 +419,7 @@ public class UniversalAIService implements AiService {
                     LearningContext.builder().build()).join();
             parseAnalysisFromResponse(response, analysis);
         } catch (Exception e) {
-            logger.error("Ошибка при анализе произношения", e);
+            logger.error("Error analyzing pronunciation", e);
             generateMockAnalysis(analysis);
         }
 
@@ -383,45 +458,40 @@ public class UniversalAIService implements AiService {
     private String buildConversationPrompt(String userInput, LearningContext context,
                                            PromptTemplate template) {
         String level = context != null ? formatLevel(context.getCurrentLevel()) : "intermediate";
-        String history = context != null ? getConversationHistory(context) : "Новая беседа";
-        String topic = context != null && context.getLastAnalysis() != null ?
-                context.getLastAnalysis().getSummary() : "Общая тема";
+        String history = getConversationHistory(context);
+        String topic = getConversationTopic(context);
 
-        return template.systemPrompt + "\n\n" +
+        return template.systemPrompt.formatted(level) + "\n\n" +
                 template.format(level, history, topic, userInput);
     }
 
     private String buildPronunciationPrompt(String userInput, LearningContext context,
                                             PromptTemplate template) {
         String phoneme = extractPhoneme(userInput);
-        String score = context != null && context.getLastAnalysis() != null ?
-                String.format("%.1f", context.getLastAnalysis().getPronunciationScore()) : "0";
+        String score = getPronunciationScore(context);
         String words = getPracticeWords(phoneme);
 
-        return template.systemPrompt + "\n\n" +
+        return template.systemPrompt.formatted(getLevel(context)) + "\n\n" +
                 template.format(phoneme, score, words, userInput);
     }
 
     private String buildGrammarPrompt(String userInput, LearningContext context,
                                       PromptTemplate template) {
         String topic = detectGrammarTopic(userInput);
-        String difficulty = context != null ?
-                determineDifficulty(context.getCurrentLevel()) : "intermediate";
+        String difficulty = getDifficulty(context);
         String errors = getPreviousErrors(context);
 
-        return template.systemPrompt + "\n\n" +
+        return template.systemPrompt.formatted(getLevel(context)) + "\n\n" +
                 template.format(topic, difficulty, errors, userInput);
     }
 
     private String buildExercisePrompt(String userInput, LearningContext context,
                                        PromptTemplate template) {
         String type = detectExerciseType(userInput);
-        String difficulty = context != null ?
-                determineDifficulty(context.getCurrentLevel()) : "intermediate";
-        String progress = context != null ?
-                String.format("%.1f", context.getCurrentLevel()) : "50";
+        String difficulty = getDifficulty(context);
+        String progress = getProgress(context);
 
-        return template.systemPrompt + "\n\n" +
+        return template.systemPrompt.formatted(getLevel(context)) + "\n\n" +
                 template.format(type, difficulty, progress, userInput);
     }
 
@@ -431,7 +501,7 @@ public class UniversalAIService implements AiService {
         String newWords = getNewVocabulary(topic);
         String context_ = getVocabularyContext(topic);
 
-        return template.systemPrompt + "\n\n" +
+        return template.systemPrompt.formatted(getLevel(context)) + "\n\n" +
                 template.format(topic, newWords, context_, userInput);
     }
 
@@ -441,7 +511,7 @@ public class UniversalAIService implements AiService {
         int wordCount = estimateWordCount(userInput);
         String goal = determineWritingGoal(context);
 
-        return template.systemPrompt + "\n\n" +
+        return template.systemPrompt.formatted(getLevel(context)) + "\n\n" +
                 template.format(type, String.valueOf(wordCount), goal, userInput);
     }
 
@@ -449,11 +519,63 @@ public class UniversalAIService implements AiService {
                                         PromptTemplate template) {
         String topic = detectListeningTopic(userInput);
         String speed = determineSpeed(context);
-        String difficulty = context != null ?
-                determineDifficulty(context.getCurrentLevel()) : "intermediate";
+        String difficulty = getDifficulty(context);
 
-        return template.systemPrompt + "\n\n" +
+        return template.systemPrompt.formatted(getLevel(context)) + "\n\n" +
                 template.format(topic, speed, difficulty, userInput);
+    }
+
+    private String getLevel(LearningContext context) {
+        return context != null ? formatLevel(context.getCurrentLevel()) : "intermediate";
+    }
+
+    private String getDifficulty(LearningContext context) {
+        return context != null ? determineDifficulty(context.getCurrentLevel()) : "intermediate";
+    }
+
+    private String getProgress(LearningContext context) {
+        return context != null ? String.format("%.1f", context.getCurrentLevel()) : "50";
+    }
+
+    private String getConversationHistory(LearningContext context) {
+        if (context == null || context.getLastAnalysis() == null) {
+            return "New conversation";
+        }
+
+        EnhancedSpeechAnalysis analysis = (EnhancedSpeechAnalysis) context.getLastAnalysis();
+        return String.format(
+                "Last analysis: pronunciation=%.1f, grammar=%.1f, vocabulary=%.1f",
+                analysis.getPronunciationScore(),
+                analysis.getGrammarScore(),
+                analysis.getVocabularyScore()
+        );
+    }
+
+    private String getConversationTopic(LearningContext context) {
+        if (context == null || context.getLastAnalysis() == null) {
+            return "General topic";
+        }
+        return context.getLastAnalysis().getSummary();
+    }
+
+    private String getPronunciationScore(LearningContext context) {
+        if (context == null || context.getLastAnalysis() == null) {
+            return "0";
+        }
+        return String.format("%.1f", context.getLastAnalysis().getPronunciationScore());
+    }
+
+    private String getPreviousErrors(LearningContext context) {
+        if (context == null || context.getLastAnalysis() == null) {
+            return "No previous errors";
+        }
+
+        EnhancedSpeechAnalysis analysis = (EnhancedSpeechAnalysis) context.getLastAnalysis();
+        if (analysis.getDetectedErrors().isEmpty()) {
+            return "No errors detected";
+        }
+
+        return String.join("; ", analysis.getDetectedErrors());
     }
 
     private String executeWithRetry(String prompt, String operationName) {
@@ -475,7 +597,7 @@ public class UniversalAIService implements AiService {
             } catch (IOException e) {
                 lastException = e;
                 retries++;
-                logger.warn("Попытка {} для {} не удалась: {}", retries, operationName, e.getMessage());
+                logger.warn("Attempt {} for {} failed: {}", retries, operationName, e.getMessage());
 
                 if (retries < MAX_RETRIES) {
                     try {
@@ -491,7 +613,7 @@ public class UniversalAIService implements AiService {
             }
         }
 
-        logger.error("Все попытки ({}) для {} исчерпаны", MAX_RETRIES, operationName, lastException);
+        logger.error("All {} attempts for {} exhausted", MAX_RETRIES, operationName, lastException);
         errorCount.incrementAndGet();
         return getFallbackModeResponse(LearningMode.CONVERSATION, prompt);
     }
@@ -500,7 +622,7 @@ public class UniversalAIService implements AiService {
         JsonObject request = createRequest(prompt);
         Request httpRequest = buildHttpRequest(request);
 
-        logger.debug("Отправка запроса к {} API, модель: {}", getProviderName(), model);
+        logger.debug("Sending request to {} API, model: {}", getProviderName(), model);
 
         try (Response response = client.newCall(httpRequest).execute()) {
             if (!response.isSuccessful()) {
@@ -564,7 +686,7 @@ public class UniversalAIService implements AiService {
 
         JsonObject systemMessage = new JsonObject();
         systemMessage.addProperty("role", "system");
-        systemMessage.addProperty("content", "Ты - AI репетитор английского языка.");
+        systemMessage.addProperty("content", "You are an AI English tutor.");
         messages.add(systemMessage);
 
         JsonObject userMessage = new JsonObject();
@@ -611,9 +733,9 @@ public class UniversalAIService implements AiService {
                         .get("content").getAsString();
             };
         } catch (Exception e) {
-            logger.error("Ошибка парсинга ответа: {}",
+            logger.error("Error parsing response: {}",
                     responseBody.substring(0, Math.min(200, responseBody.length())));
-            throw new IOException("Неверный формат ответа API", e);
+            throw new IOException("Invalid API response format", e);
         }
     }
 
@@ -623,16 +745,16 @@ public class UniversalAIService implements AiService {
             isAvailable.set(available);
 
             if (available) {
-                logger.info("✅ {} API подключен успешно. Модель: {}", getProviderName(), model);
+                logger.info("✅ {} API connected successfully. Model: {}", getProviderName(), model);
             } else {
-                logger.warn("⚠️ {} API не доступен. Используется демо-режим.", getProviderName());
+                logger.warn("⚠️ {} API not available. Using demo mode.", getProviderName());
             }
         }, requestExecutor);
     }
 
     private boolean testConnection() {
         if (apiKey == null || apiKey.isEmpty() || apiKey.equals("your-api-key-here")) {
-            logger.warn("API ключ не настроен. Используется демо-режим.");
+            logger.warn("API key not configured. Using demo mode.");
             return false;
         }
 
@@ -645,15 +767,9 @@ public class UniversalAIService implements AiService {
                 return response.isSuccessful();
             }
         } catch (Exception e) {
-            logger.debug("Ошибка при тестировании подключения: {}", e.getMessage());
+            logger.debug("Connection test error: {}", e.getMessage());
             return false;
         }
-    }
-
-    private void scheduleRateLimitReset() {
-        rateLimitResetScheduler.scheduleAtFixedRate(() -> {
-            rateLimiter.release(RATE_LIMIT_PER_MINUTE - rateLimiter.availablePermits());
-        }, 1, 1, TimeUnit.MINUTES);
     }
 
     private String getFallbackModeResponse(LearningMode mode, String input) {
@@ -670,110 +786,134 @@ public class UniversalAIService implements AiService {
 
     private String getFallbackConversationResponse(String input) {
         return String.format("""
-            👋 Привет! (Демо-режим)
+            👋 Hello! (Demo mode)
             
-            Я получил ваше сообщение: "%s"
+            I received your message: "%s"
             
-            В демо-режиме я могу предложить:
-            • 📝 Практиковать базовые фразы
-            • 🎤 Тренировать произношение
-            • 📚 Изучать новую лексику
+            In demo mode I can suggest:
+            • 📝 Practice basic phrases
+            • 🎤 Train pronunciation
+            • 📚 Learn new vocabulary
             
-            Для полноценного общения настройте API ключ в конфигурации.
+            Configure your API key in settings for full functionality.
             """, input);
     }
 
     private String getFallbackPronunciationResponse(String input) {
         return """
-            🔊 Тренировка произношения (демо-режим)
+            🔊 Pronunciation practice (demo mode)
             
-            Практикуйте звуки:
+            Practice these sounds:
             • /θ/ - think, thought, through
             • /ð/ - this, that, there
             • /r/ - red, right, rain
             • /æ/ - cat, bat, hat
             
-            Запишите себя и проанализируйте с помощью AudioAnalyzer!
+            Record yourself and analyze with AudioAnalyzer!
             """;
     }
 
     private String getFallbackGrammarResponse(String input) {
         return String.format("""
-            📚 Грамматика (демо-режим)
+            📚 Grammar (demo mode)
             
-            Анализ предложения: "%s"
+            Analyzing: "%s"
             
-            Рекомендации:
-            1. Проверьте согласование времен
-            2. Обратите внимание на артикли
-            3. Используйте более разнообразные конструкции
+            Recommendations:
+            1. Check verb tense agreement
+            2. Pay attention to articles
+            3. Use more varied structures
             
-            Для детального анализа настройте API ключ.
+            Configure API key for detailed analysis.
             """, input);
     }
 
     private String getFallbackExerciseResponse(String input) {
         return """
-            🎯 Упражнение (демо-режим)
+            🎯 Exercise (demo mode)
             
-            Задание: Составьте 5 предложений на тему "Daily Routine"
+            Task: Write 5 sentences about "Daily Routine"
             
-            Пример:
+            Example:
             • I wake up at 7 AM every day
             • After breakfast, I go to work
             • I usually have lunch at 1 PM
             
-            Запишите свои предложения и проанализируйте их!
+            Write your sentences and analyze them!
             """;
     }
 
     private String getFallbackVocabularyResponse(String input) {
         return """
-            📖 Новые слова (демо-режим)
+            📖 New words (demo mode)
             
-            Тема: "Work and Career"
+            Topic: "Work and Career"
             
-            Новые слова:
+            New words:
             • employment - занятость
             • colleague - коллега
             • deadline - крайний срок
             • promotion - повышение
             
-            Составьте предложения с этими словами!
+            Make sentences with these words!
             """;
     }
 
     private String getFallbackWritingResponse(String input) {
         return String.format("""
-            ✍️ Анализ письма (демо-режим)
+            ✍️ Writing analysis (demo mode)
             
-            Текст: "%s"
+            Text: "%s"
             
-            Рекомендации:
-            • Добавьте вводные слова
-            • Используйте более сложные предложения
-            • Проверьте пунктуацию
+            Recommendations:
+            • Add transition words
+            • Use more complex sentences
+            • Check punctuation
             
-            Для детального анализа текста настройте API ключ.
+            Configure API key for detailed analysis.
             """, input);
     }
 
     private String getFallbackListeningResponse(String input) {
         return """
-            🎧 Аудирование (демо-режим)
+            🎧 Listening (demo mode)
             
-            Рекомендации для тренировки:
-            1. Слушайте подкасты на английском
-            2. Смотрите видео с субтитрами
-            3. Практикуйте shadowing technique
+            Practice tips:
+            1. Listen to English podcasts
+            2. Watch videos with subtitles
+            3. Practice shadowing technique
             
-            Записывайте услышанное и сравнивайте с оригиналом!
+            Write what you hear and compare with original!
             """;
     }
 
-    // ========================================
-    // Вспомогательные методы
-    // ========================================
+    private String generateCacheKey(String userInput, LearningMode mode, LearningContext context) {
+        String contextStr = context != null ? String.valueOf(context.hashCode()) : "null";
+        return mode + ":" + contextStr + ":" + userInput.hashCode();
+    }
+
+    private String getCachedResponse(String key) {
+        String response = promptCache.get(key);
+        if (response != null) {
+            cacheTimestamp.put(key, System.currentTimeMillis());
+        }
+        return response;
+    }
+
+    private void cacheResponse(String key, String response) {
+        if (promptCache.size() >= MAX_CACHE_SIZE) {
+            String oldestKey = cacheTimestamp.entrySet().stream()
+                    .min(Map.Entry.comparingByValue())
+                    .map(Map.Entry::getKey)
+                    .orElse(null);
+            if (oldestKey != null) {
+                promptCache.remove(oldestKey);
+                cacheTimestamp.remove(oldestKey);
+            }
+        }
+        promptCache.put(key, response);
+        cacheTimestamp.put(key, System.currentTimeMillis());
+    }
 
     private String formatLevel(double level) {
         if (level < 30) return "beginner";
@@ -795,10 +935,6 @@ public class UniversalAIService implements AiService {
         return formatLevel(level);
     }
 
-    private String getConversationHistory(LearningContext context) {
-        return "Последние сообщения: ...";
-    }
-
     private String extractPhoneme(String input) {
         String[] phonemes = {"θ", "ð", "r", "æ", "ɪ", "iː", "ʃ", "w"};
         return phonemes[new Random().nextInt(phonemes.length)];
@@ -815,35 +951,57 @@ public class UniversalAIService implements AiService {
     }
 
     private String detectGrammarTopic(String input) {
-        if (input.contains("present") || input.contains("past")) return "tenses";
-        if (input.contains("if")) return "conditionals";
+        String lower = input.toLowerCase();
+        if (lower.contains("present") || lower.contains("past") || lower.contains("future")) {
+            return "tenses";
+        }
+        if (lower.contains("if") || lower.contains("would") || lower.contains("could")) {
+            return "conditionals";
+        }
+        if (lower.contains("the") || lower.contains("a ") || lower.contains("an ")) {
+            return "articles";
+        }
         return "general grammar";
     }
 
-    private String getPreviousErrors(LearningContext context) {
-        return "Основные ошибки: ...";
-    }
-
     private String detectExerciseType(String input) {
-        String[] types = {"fill_gaps", "multiple_choice", "translation"};
+        String[] types = {"fill_gaps", "multiple_choice", "translation", "correction", "matching"};
         return types[new Random().nextInt(types.length)];
     }
 
     private String detectVocabularyTopic(String input) {
-        String[] topics = {"work", "travel", "food", "family", "technology"};
+        String[] topics = {"work", "travel", "food", "family", "technology", "health", "education"};
+
+        String lower = input.toLowerCase();
+        for (String topic : topics) {
+            if (lower.contains(topic)) {
+                return topic;
+            }
+        }
         return topics[new Random().nextInt(topics.length)];
     }
 
     private String getNewVocabulary(String topic) {
-        return "new words for " + topic;
+        Map<String, String> vocabulary = Map.of(
+                "work", "deadline, colleague, promotion, salary, meeting",
+                "travel", "destination, accommodation, itinerary, passport, visa",
+                "food", "ingredient, recipe, cuisine, appetizer, dessert"
+        );
+        return vocabulary.getOrDefault(topic, "new words for " + topic);
     }
 
     private String getVocabularyContext(String topic) {
-        return "context for " + topic;
+        Map<String, String> contexts = Map.of(
+                "work", "in the office, during meetings, in emails",
+                "travel", "at the airport, in hotels, sightseeing",
+                "food", "in restaurants, cooking at home, grocery shopping"
+        );
+        return contexts.getOrDefault(topic, "context for " + topic);
     }
 
     private String detectWritingType(String input) {
-        if (input.length() > 200) return "essay";
+        if (input.length() > 500) return "essay";
+        if (input.contains("?") && input.split("[.!?]+").length > 3) return "dialogue";
         return "short message";
     }
 
@@ -852,41 +1010,51 @@ public class UniversalAIService implements AiService {
     }
 
     private String determineWritingGoal(LearningContext context) {
-        return "improve writing skills";
+        if (context == null) return "improve writing skills";
+
+        double level = context.getCurrentLevel();
+        if (level < 30) return "write simple sentences correctly";
+        if (level < 60) return "write coherent paragraphs";
+        return "write complex texts with good style";
     }
 
     private String detectListeningTopic(String input) {
-        String[] topics = {"daily conversation", "news", "lecture"};
+        String[] topics = {"daily conversation", "news", "lecture", "interview", "podcast"};
         return topics[new Random().nextInt(topics.length)];
     }
 
     private String determineSpeed(LearningContext context) {
-        String[] speeds = {"slow", "normal", "fast"};
-        return speeds[new Random().nextInt(speeds.length)];
+        if (context == null) return "normal";
+
+        double level = context.getCurrentLevel();
+        if (level < 30) return "slow";
+        if (level < 60) return "normal";
+        return "fast";
     }
 
     private int estimateTokens(String text) {
-        return text.length() / 4; // Приблизительная оценка
+        if (text == null) return 0;
+        return (int) Math.ceil(text.length() / TOKEN_ESTIMATION_FACTOR);
     }
 
     private void parseAnalysisFromResponse(String response, SpeechAnalysis analysis) {
         try {
             String[] lines = response.split("\n");
             for (String line : lines) {
-                if (line.contains("Произношение:") && line.matches(".*\\d+.*")) {
+                if (line.contains("Pronunciation:") && line.matches(".*\\d+.*")) {
                     analysis.setPronunciationScore(extractScore(line));
-                } else if (line.contains("Беглость:") && line.matches(".*\\d+.*")) {
+                } else if (line.contains("Fluency:") && line.matches(".*\\d+.*")) {
                     analysis.setFluencyScore(extractScore(line));
-                } else if (line.contains("Грамматика:") && line.matches(".*\\d+.*")) {
+                } else if (line.contains("Grammar:") && line.matches(".*\\d+.*")) {
                     analysis.setGrammarScore(extractScore(line));
-                } else if (line.contains("Словарный запас:") && line.matches(".*\\d+.*")) {
+                } else if (line.contains("Vocabulary:") && line.matches(".*\\d+.*")) {
                     analysis.setVocabularyScore(extractScore(line));
-                } else if (line.contains("рекоменд") || line.contains("совет")) {
+                } else if (line.contains("recommend") || line.contains("suggestion")) {
                     analysis.addRecommendation(line.trim());
                 }
             }
         } catch (Exception e) {
-            logger.error("Ошибка парсинга анализа", e);
+            logger.error("Error parsing analysis", e);
             generateMockAnalysis(analysis);
         }
     }
@@ -906,15 +1074,15 @@ public class UniversalAIService implements AiService {
         analysis.setGrammarScore(80 + Math.random() * 15);
         analysis.setVocabularyScore(85 + Math.random() * 10);
 
-        analysis.addRecommendation("🔊 Практикуйте произношение сложных звуков");
-        analysis.addRecommendation("📚 Уделите внимание грамматическим конструкциям");
-        analysis.addRecommendation("🎯 Расширяйте словарный запас");
-        analysis.addRecommendation("⏱️ Работайте над беглостью речи");
+        analysis.addRecommendation("🔊 Practice difficult sounds");
+        analysis.addRecommendation("📚 Focus on grammar structures");
+        analysis.addRecommendation("🎯 Expand your vocabulary");
+        analysis.addRecommendation("⏱️ Work on speech fluency");
     }
 
     private void handleAPIError(int code, String errorBody) {
         if (errorBody == null || errorBody.isEmpty()) {
-            logger.error("API ошибка {} без тела ответа", code);
+            logger.error("API error {} with no body", code);
             return;
         }
 
@@ -930,7 +1098,7 @@ public class UniversalAIService implements AiService {
                 }
             }
         } catch (Exception e) {
-            logger.error("Тело ошибки: {}",
+            logger.error("Error body: {}",
                     errorBody.substring(0, Math.min(200, errorBody.length())));
         }
     }
@@ -1009,7 +1177,7 @@ public class UniversalAIService implements AiService {
             Response response = chain.proceed(chain.request());
             long duration = System.nanoTime() - startTime;
 
-            logger.debug("Запрос к {} выполнен за {} мс",
+            logger.debug("Request to {} completed in {} ms",
                     chain.request().url(), TimeUnit.NANOSECONDS.toMillis(duration));
 
             return response;
@@ -1021,7 +1189,7 @@ public class UniversalAIService implements AiService {
             return;
         }
 
-        logger.info("Завершение работы UniversalAIService...");
+        logger.info("Shutting down UniversalAIService...");
 
         CompletableFuture<?> request = currentRequest.getAndSet(null);
         if (request != null && !request.isDone()) {
@@ -1045,31 +1213,74 @@ public class UniversalAIService implements AiService {
             client.connectionPool().evictAll();
         }
 
-        logger.info("UniversalAIService завершил работу");
+        promptCache.clear();
+        cacheTimestamp.clear();
+
+        logger.info("UniversalAIService shut down");
     }
 
     public String getModeStats() {
-        StringBuilder stats = new StringBuilder("Статистика по режимам:\n");
+        StringBuilder stats = new StringBuilder("Statistics by mode:\n");
 
         for (Map.Entry<LearningMode, ModeStats> entry : modeStats.entrySet()) {
             ModeStats ms = entry.getValue();
-            stats.append(String.format("• %s: запросов=%d, среднее время=%.1f мс\n",
-                    entry.getKey(), ms.requestCount.get(), ms.getAverageTime()));
+            stats.append(String.format("• %s: requests=%d, avg time=%.1fms, success rate=%.1f%%, avg tokens=%.1f\n",
+                    entry.getKey(),
+                    ms.requestCount.get(),
+                    ms.getAverageTime(),
+                    ms.getSuccessRate(),
+                    ms.getAverageTokens()));
         }
 
-        stats.append(String.format("\nОбщая статистика:\n• Всего запросов: %d\n• Ошибок: %d\n• Доступен: %s",
-                requestCounter.get(), errorCount.get(), isAvailable.get() ? "✅" : "❌"));
+        stats.append(String.format("\nOverall statistics:\n• Total requests: %d\n• Errors: %d\n• Available: %s\n• Cache size: %d",
+                requestCounter.get(),
+                errorCount.get(),
+                isAvailable.get() ? "✅" : "❌",
+                promptCache.size()));
 
         return stats.toString();
     }
 
+    public Map<String, Object> getHealthStatus() {
+        Map<String, Object> status = new HashMap<>();
+        status.put("available", isAvailable.get());
+        status.put("shutdown", isShutdown.get());
+        status.put("totalRequests", requestCounter.get());
+        status.put("totalErrors", errorCount.get());
+        status.put("avgResponseTime", requestCounter.get() > 0 ?
+                (double) totalResponseTime.get() / requestCounter.get() : 0);
+        status.put("cacheSize", promptCache.size());
+        status.put("rateLimiterAvailable", rateLimiter.availablePermits());
+        status.put("uptime", System.currentTimeMillis() - lastHealthCheck.get());
+
+        Map<String, Object> modeStatus = new HashMap<>();
+        for (Map.Entry<LearningMode, ModeStats> entry : modeStats.entrySet()) {
+            ModeStats ms = entry.getValue();
+            modeStatus.put(entry.getKey().toString(), Map.of(
+                    "requests", ms.requestCount.get(),
+                    "avgTime", ms.getAverageTime(),
+                    "successRate", ms.getSuccessRate(),
+                    "totalTokens", ms.totalTokens.get()
+            ));
+        }
+        status.put("modes", modeStatus);
+
+        return status;
+    }
+
     public void clearPromptCache() {
         promptCache.clear();
-        logger.info("Кэш промптов очищен");
+        cacheTimestamp.clear();
+        logger.info("Prompt cache cleared");
     }
 
     public String getProvider() { return provider; }
     public String getModel() { return model; }
     public String getApiUrl() { return apiUrl; }
     public int getRequestCount() { return requestCounter.get(); }
+    public int getErrorCount() { return errorCount.get(); }
+    public double getAverageResponseTime() {
+        return requestCounter.get() > 0 ?
+                (double) totalResponseTime.get() / requestCounter.get() : 0;
+    }
 }

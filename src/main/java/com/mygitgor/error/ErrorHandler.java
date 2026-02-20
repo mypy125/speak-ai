@@ -5,7 +5,6 @@ import javafx.scene.control.Alert;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -13,11 +12,7 @@ import java.util.function.Supplier;
 public class ErrorHandler {
     private static final Logger logger = LoggerFactory.getLogger(ErrorHandler.class);
 
-    private ErrorHandler() {} // Prevent instantiation
-
-    // ========================================
-    // Synchronous error handling
-    // ========================================
+    private ErrorHandler() {}
 
     public static <T> T handle(Supplier<T> operation,
                                Function<Exception, T> fallback,
@@ -41,10 +36,6 @@ public class ErrorHandler {
         }
     }
 
-    // ========================================
-    // Asynchronous error handling
-    // ========================================
-
     public static <T> CompletableFuture<T> handleAsync(Supplier<CompletableFuture<T>> operation,
                                                        Function<Throwable, T> fallback) {
         try {
@@ -62,10 +53,6 @@ public class ErrorHandler {
             return null;
         });
     }
-
-    // ========================================
-    // UI Error handling
-    // ========================================
 
     public static void showError(String title, String message) {
         Platform.runLater(() -> {
@@ -102,10 +89,6 @@ public class ErrorHandler {
         });
     }
 
-    // ========================================
-    // Retry logic
-    // ========================================
-
     public static <T> T retry(Supplier<T> operation,
                               int maxRetries,
                               long delayMs,
@@ -138,10 +121,6 @@ public class ErrorHandler {
                 String.format("Не удалось выполнить %s", operationName));
     }
 
-    // ========================================
-    // Resource cleanup
-    // ========================================
-
     public static void safeClose(AutoCloseable closeable, String resourceName) {
         if (closeable != null) {
             try {
@@ -161,10 +140,6 @@ public class ErrorHandler {
             return defaultValue;
         }
     }
-
-    // ========================================
-    // Validation
-    // ========================================
 
     public static <T> T requireNonNull(T obj, String message) {
         if (obj == null) {

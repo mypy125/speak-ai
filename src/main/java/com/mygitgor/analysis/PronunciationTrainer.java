@@ -25,6 +25,14 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
     private static final float MEDIUM_PRIORITY_IMPROVEMENT = 18.0f;
     private static final float LOW_PRIORITY_IMPROVEMENT = 10.0f;
 
+    private static final int EXCELLENT_SCORE = 90;
+    private static final int GOOD_SCORE = 75;
+    private static final int FAIR_SCORE = 60;
+
+    private static final double BEGINNER_LEVEL = 60.0;
+    private static final double INTERMEDIATE_LEVEL = 75.0;
+    private static final double ADVANCED_LEVEL = 85.0;
+
     private final AudioAnalyzer audioAnalyzer;
     private final Map<String, String> phonemeExamples;
 
@@ -40,7 +48,7 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
         this.audioAnalyzer = new AudioAnalyzer();
         this.phonemeExamples = createPhonemeExamples();
 
-        logger.info("Инициализирован тренажер произношения");
+        logger.info("Инициализирован тренажер произношения с {} фонемами", phonemeExamples.size());
     }
 
     @Override
@@ -53,25 +61,20 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
 
         List<RecommendationEngine.PersonalizedRecommendation> recommendations = new ArrayList<>();
 
-        // Рекомендации на основе слабых фонем
         addPhonemeRecommendations(analysis, recommendations);
 
-        // Рекомендации на основе произношения
         if (analysis.getPronunciationScore() < WEAK_PHONEME_THRESHOLD) {
             recommendations.add(createPronunciationRecommendation(analysis));
         }
 
-        // Рекомендации на основе беглости
         if (analysis.getFluencyScore() < 65) {
             recommendations.add(createFluencyRecommendation(analysis));
         }
 
-        // Рекомендации на основе интонации
         if (analysis.getIntonationScore() < WEAK_PHONEME_THRESHOLD) {
             recommendations.add(createIntonationRecommendation(analysis));
         }
 
-        // Рекомендации на основе громкости
         if (analysis.getVolumeScore() < 65) {
             recommendations.add(createVolumeRecommendation(analysis));
         }
@@ -125,19 +128,19 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
     }
 
     private PlanConfig determinePlanConfig(double overallScore) {
-        if (overallScore < 60) {
+        if (overallScore < BEGINNER_LEVEL) {
             return new PlanConfig(
                     "A2 (Элементарный)",
                     15.0f,
                     "Освоить базовые звуки и простые фразы"
             );
-        } else if (overallScore < 75) {
+        } else if (overallScore < INTERMEDIATE_LEVEL) {
             return new PlanConfig(
                     "B1 (Средний)",
                     12.0f,
                     "Улучшить произношение сложных звуков и беглость речи"
             );
-        } else if (overallScore < 85) {
+        } else if (overallScore < ADVANCED_LEVEL) {
             return new PlanConfig(
                     "B2 (Выше среднего)",
                     8.0f,
@@ -190,7 +193,7 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
         List<String> exercises = new ArrayList<>();
 
         for (String phoneme : weakPhonemes) {
-            String difficulty = analysis.getPronunciationScore() < 60 ? "beginner" : "intermediate";
+            String difficulty = analysis.getPronunciationScore() < BEGINNER_LEVEL ? "beginner" : "intermediate";
             PronunciationExercise exercise = createExercise(phoneme, difficulty);
 
             if (exercise.getExamples() != null && !exercise.getExamples().isEmpty()) {
@@ -483,13 +486,13 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
 
     private String generateInstructions(String phoneme, String difficulty) {
         StringBuilder instructions = new StringBuilder();
-        instructions.append("УПРАЖНЕНИЕ: Произношение звука /").append(phoneme).append("/\n\n");
-        instructions.append("ИНСТРУКЦИИ:\n");
+        instructions.append("🎯 **УПРАЖНЕНИЕ: Произношение звука /").append(phoneme).append("/**\n\n");
+        instructions.append("📝 **ИНСТРУКЦИИ:**\n");
         instructions.append("1. Прослушайте пример произношения\n");
         instructions.append("2. Повторите слова, обращая внимание на целевой звук\n");
         instructions.append("3. Запишите свою речь\n");
         instructions.append("4. Получите обратную связь и рекомендации\n\n");
-        instructions.append("КАК ПРОИЗНОСИТСЯ:\n");
+        instructions.append("🔊 **КАК ПРОИЗНОСИТСЯ:**\n");
         instructions.append(getPhonemeDescription(phoneme));
 
         return instructions.toString();
@@ -588,18 +591,21 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
 
     private String generatePhonemeFeedback(String phoneme, double score, EnhancedSpeechAnalysis analysis) {
         StringBuilder feedback = new StringBuilder();
-        feedback.append("РЕЗУЛЬТАТ ПРОВЕРКИ ПРОИЗНОШЕНИЯ /").append(phoneme).append("/\n\n");
-        feedback.append("Ваша оценка: ").append(String.format("%.1f", score)).append("/100\n\n");
+        feedback.append("🔊 **РЕЗУЛЬТАТ ПРОВЕРКИ ПРОИЗНОШЕНИЯ /").append(phoneme).append("/**\n\n");
+        feedback.append("📊 **Ваша оценка:** ").append(String.format("%.1f", score)).append("/100\n\n");
 
-        if (score >= 90) {
-            feedback.append("🌟 ОТЛИЧНО! Произношение практически идеальное!\n");
-        } else if (score >= 75) {
-            feedback.append("✅ ХОРОШО! Звук распознается правильно.\n");
-        } else if (score >= 60) {
-            feedback.append("⚠️ НЕПЛОХО, но нужна практика.\n");
+        if (score >= EXCELLENT_SCORE) {
+            feedback.append("🌟 **ОТЛИЧНО!** Произношение практически идеальное!\n");
+        } else if (score >= GOOD_SCORE) {
+            feedback.append("✅ **ХОРОШО!** Звук распознается правильно.\n");
+        } else if (score >= FAIR_SCORE) {
+            feedback.append("⚠️ **НЕПЛОХО**, но нужна практика.\n");
         } else {
-            feedback.append("📝 НУЖНО УЛУЧШИТЬ.\n");
+            feedback.append("📝 **НУЖНО УЛУЧШИТЬ.** Обратите внимание на инструкции.\n");
         }
+
+        feedback.append("\n💡 **Советы:**\n");
+        generateTips(phoneme).forEach(tip -> feedback.append("• ").append(tip).append("\n"));
 
         return feedback.toString();
     }
@@ -632,6 +638,13 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
         return closed.get();
     }
 
+    public Map<String, Object> getStats() {
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("closed", closed.get());
+        stats.put("totalPhonemes", phonemeExamples.size());
+        return stats;
+    }
+
     private static class PlanConfig {
         final String targetLevel;
         final float expectedImprovement;
@@ -652,7 +665,6 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
         private List<String> practiceWords;
         private List<String> tips;
 
-        // Getters and Setters
         public String getTargetPhoneme() { return targetPhoneme; }
         public void setTargetPhoneme(String targetPhoneme) { this.targetPhoneme = targetPhoneme; }
         public String getDifficulty() { return difficulty; }

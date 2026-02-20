@@ -8,43 +8,25 @@ import javafx.util.Duration;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * Централизованный менеджер пулов потоков для всего приложения.
- * Обеспечивает единое управление потоками и предотвращает создание новых потоков без необходимости.
- */
 public class ThreadPoolManager {
     private static final Logger logger = LoggerFactory.getLogger(ThreadPoolManager.class);
 
-    // Singleton instance
     private static volatile ThreadPoolManager instance;
-
-    // Пул для TTS операций
     private final ExecutorService ttsExecutor;
-
-    // Пул для операций распознавания речи
     private final ExecutorService speechRecognitionExecutor;
-
-    // Пул для анализа аудио
     private final ExecutorService audioAnalysisExecutor;
-
-    // Пул для общих фоновых задач
     private final ExecutorService backgroundExecutor;
-
-    // Пул для таймеров и задержек
     private final ScheduledExecutorService scheduledExecutor;
 
-    // Состояние менеджера
     private volatile boolean shutdown = false;
 
     private ThreadPoolManager() {
-        // Создаем именованные ThreadFactory для легкой отладки
         ThreadFactory ttsFactory = new NamedThreadFactory("TTS");
         ThreadFactory speechFactory = new NamedThreadFactory("Speech-Rec");
         ThreadFactory analysisFactory = new NamedThreadFactory("Audio-Analysis");
         ThreadFactory backgroundFactory = new NamedThreadFactory("Background");
         ThreadFactory scheduledFactory = new NamedThreadFactory("Scheduled");
 
-        // Инициализируем пулы с оптимальными размерами
         this.ttsExecutor = Executors.newFixedThreadPool(2, ttsFactory);
         this.speechRecognitionExecutor = Executors.newFixedThreadPool(2, speechFactory);
         this.audioAnalysisExecutor = Executors.newFixedThreadPool(2, analysisFactory);
@@ -54,9 +36,6 @@ public class ThreadPoolManager {
         logger.info("ThreadPoolManager инициализирован");
     }
 
-    /**
-     * ThreadFactory с именованными потоками для удобной отладки
-     */
     private static class NamedThreadFactory implements ThreadFactory {
         private final String namePrefix;
         private final AtomicInteger threadNumber = new AtomicInteger(1);
@@ -84,8 +63,6 @@ public class ThreadPoolManager {
         }
         return instance;
     }
-
-    // ========== Геттеры для ExecutorService ==========
 
     public ExecutorService getTtsExecutor() {
         checkShutdown();
@@ -118,36 +95,25 @@ public class ThreadPoolManager {
         }
     }
 
-    // ========== Утилитные методы для задержек ==========
 
-    /**
-     * Выполнить задачу с задержкой (JavaFX PauseTransition)
-     * Рекомендуется для UI операций
-     */
     public static void runWithDelay(Runnable task, long delayMillis) {
         PauseTransition pause = new PauseTransition(Duration.millis(delayMillis));
         pause.setOnFinished(event -> task.run());
         pause.play();
     }
 
-    /**
-     * Выполнить задачу с задержкой (ScheduledExecutorService)
-     * Рекомендуется для не-UI операций
-     */
+
     public ScheduledFuture<?> schedule(Runnable task, long delay, TimeUnit unit) {
         checkShutdown();
         return scheduledExecutor.schedule(task, delay, unit);
     }
 
-    /**
-     * Выполнить задачу с фиксированной задержкой
-     */
+
     public ScheduledFuture<?> scheduleWithFixedDelay(Runnable task, long initialDelay, long delay, TimeUnit unit) {
         checkShutdown();
         return scheduledExecutor.scheduleWithFixedDelay(task, initialDelay, delay, unit);
     }
 
-    // ========== Методы для graceful shutdown ==========
 
     public void shutdown() {
         if (shutdown) return;

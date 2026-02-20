@@ -22,7 +22,6 @@ public class ConversationManager {
 
     private User currentUser;
 
-    // Константы для расчета прогресса
     private static final double PROGRESS_PER_CONVERSATION = 0.5;
     private static final double BONUS_PROGRESS_GOOD_SCORE = 2.0;
     private static final double GOOD_SCORE_THRESHOLD = 80.0;
@@ -127,13 +126,6 @@ public class ConversationManager {
         });
     }
 
-    // ========================================
-    // Управление разговорами
-    // ========================================
-
-    /**
-     * Сохранение разговора
-     */
     public void saveConversation(String userMessage, String botResponse,
                                  SpeechAnalysis analysis, String audioPath) {
         try {
@@ -160,7 +152,6 @@ public class ConversationManager {
             conversationDao.createConversation(conversation);
             logger.info("Разговор сохранен в БД, ID: {}", conversation.getId());
 
-            // Обновляем прогресс асинхронно
             updateProgressAfterConversation(user, analysis);
 
         } catch (Exception e) {
@@ -168,31 +159,23 @@ public class ConversationManager {
         }
     }
 
-    /**
-     * Обновление прогресса после разговора
-     */
     private void updateProgressAfterConversation(User user, SpeechAnalysis analysis) {
         CompletableFuture.runAsync(() -> {
             try {
                 LearningMode mode = LearningMode.CONVERSATION;
 
-                // Базовый прогресс за разговор
                 double progressDelta = PROGRESS_PER_CONVERSATION;
 
-                // Бонус за хорошую оценку
                 if (analysis != null && analysis.getPronunciationScore() > GOOD_SCORE_THRESHOLD) {
                     progressDelta += BONUS_PROGRESS_GOOD_SCORE;
 
-                    // Добавляем достижение за отличное произношение
                     if (analysis.getPronunciationScore() > 90) {
                         progressManager.addAchievement(user, mode, "🎤 Отличное произношение!");
                     }
                 }
 
-                // Обновляем прогресс
                 progressManager.updateProgress(user, mode, progressDelta, 1, 300);
 
-                // Обновляем навыки
                 if (analysis != null) {
                     progressManager.updateSkillProgress(user, mode, "pronunciation",
                             analysis.getPronunciationScore());
@@ -208,9 +191,6 @@ public class ConversationManager {
         });
     }
 
-    /**
-     * Получение истории разговоров
-     */
     public List<Conversation> getHistory() {
         try {
             User user = getOrCreateDefaultUser();
@@ -221,9 +201,6 @@ public class ConversationManager {
         }
     }
 
-    /**
-     * Очистка истории
-     */
     public void clearHistory() {
         try {
             User user = getOrCreateDefaultUser();
@@ -234,13 +211,6 @@ public class ConversationManager {
         }
     }
 
-    // ========================================
-    // Дополнительные методы
-    // ========================================
-
-    /**
-     * Получение количества разговоров
-     */
     public int getConversationCount() {
         try {
             return getHistory().size();
@@ -250,9 +220,6 @@ public class ConversationManager {
         }
     }
 
-    /**
-     * Получение последнего разговора
-     */
     public Conversation getLastConversation() {
         try {
             List<Conversation> history = getHistory();
@@ -263,9 +230,6 @@ public class ConversationManager {
         }
     }
 
-    /**
-     * Получение средней оценки за разговоры
-     */
     public double getAverageScore() {
         try {
             List<Conversation> history = getHistory();
@@ -282,16 +246,10 @@ public class ConversationManager {
         }
     }
 
-    /**
-     * Получение менеджера прогресса
-     */
     public LearningProgressManager getProgressManager() {
         return progressManager;
     }
 
-    /**
-     * Экспорт истории в текст
-     */
     public String exportHistory() {
         StringBuilder sb = new StringBuilder();
         List<Conversation> history = getHistory();
@@ -311,9 +269,6 @@ public class ConversationManager {
         return sb.toString();
     }
 
-    /**
-     * Поиск разговоров по дате
-     */
     public List<Conversation> getConversationsByDate(Date date) {
         try {
             // В реальном приложении здесь должен быть запрос к БД

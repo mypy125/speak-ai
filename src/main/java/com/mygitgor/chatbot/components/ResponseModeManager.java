@@ -219,6 +219,45 @@ public class ResponseModeManager {
         }
     }
 
+    private void updatePlayButtonState() {
+        if (playResponseButton == null) return;
+
+        try {
+            boolean isSpeaking = isSpeechPlaying.get() || (state != null && state.isPlayingSpeech());
+
+            Platform.runLater(() -> {
+                try {
+                    if (isSpeaking) {
+                        playResponseButton.setText("⏸️ Остановить");
+                        playResponseButton.setStyle(
+                                "-fx-background-color: #e74c3c; " +
+                                        "-fx-text-fill: white; " +
+                                        "-fx-font-weight: bold; " +
+                                        "-fx-cursor: hand; " +
+                                        "-fx-background-radius: 5;"
+                        );
+                        playResponseButton.setTooltip(new Tooltip("Остановить озвучку"));
+                    } else {
+                        playResponseButton.setText("▶️ Прослушать");
+                        playResponseButton.setStyle(
+                                "-fx-background-color: #3498db; " +
+                                        "-fx-text-fill: white; " +
+                                        "-fx-font-weight: bold; " +
+                                        "-fx-cursor: hand; " +
+                                        "-fx-background-radius: 5;"
+                        );
+                        playResponseButton.setTooltip(new Tooltip("Прослушать ответ"));
+                    }
+                    playResponseButton.setDisable(false);
+                } catch (Exception e) {
+                    logger.error("Ошибка при обновлении состояния кнопки", e);
+                }
+            });
+        } catch (Exception e) {
+            logger.error("Ошибка в updatePlayButtonState", e);
+        }
+    }
+
     public void playLastResponse() {
         if (state == null) {
             logger.error("state is null, cannot play response");
@@ -244,10 +283,8 @@ public class ResponseModeManager {
 
         try {
             state.setPlayingSpeech(true);
-            Platform.runLater(() -> {
-                updatePlayButtonState();
-                logger.info("▶️ Запуск озвучки...");
-            });
+            updatePlayButtonState();
+            logger.info("▶️ Запуск озвучки...");
 
             CompletableFuture<Void> oldFuture = currentSpeechFuture.getAndSet(null);
             if (oldFuture != null && !oldFuture.isDone()) {
@@ -319,7 +356,7 @@ public class ResponseModeManager {
             if (state != null) {
                 state.setPlayingSpeech(false);
             }
-            Platform.runLater(() -> updatePlayButtonState());
+            updatePlayButtonState();
             ErrorHandler.showError("Ошибка", "Не удалось запустить озвучку: " + e.getMessage());
         }
     }
@@ -378,7 +415,6 @@ public class ResponseModeManager {
 
     public void stopSpeaking() {
         try {
-            // CAS операция - если флаг уже false, выходим
             if (!isSpeechPlaying.compareAndSet(true, false)) {
                 return;
             }
@@ -387,14 +423,8 @@ public class ResponseModeManager {
                 state.setPlayingSpeech(false);
             }
 
-            Platform.runLater(() -> {
-                try {
-                    updatePlayButtonState();
-                    logger.info("⏹️ Озвучка остановлена");
-                } catch (Exception e) {
-                    logger.error("Ошибка при обновлении UI после остановки", e);
-                }
-            });
+            updatePlayButtonState();
+            logger.info("⏹️ Озвучка остановлена");
 
             CompletableFuture.runAsync(() -> {
                 try {
@@ -413,37 +443,6 @@ public class ResponseModeManager {
 
         } catch (Exception e) {
             logger.error("Ошибка в stopSpeaking", e);
-        }
-    }
-
-    private void updatePlayButtonState() {
-        if (playResponseButton == null) return;
-
-        try {
-            boolean isSpeaking = isSpeechPlaying.get() || (state != null && state.isPlayingSpeech());
-
-            if (isSpeaking) {
-                playResponseButton.setText("⏸️ Остановить");
-                playResponseButton.setStyle(
-                        "-fx-background-color: #e74c3c; " +
-                                "-fx-text-fill: white; " +
-                                "-fx-font-weight: bold; " +
-                                "-fx-cursor: hand;"
-                );
-                playResponseButton.setTooltip(new Tooltip("Остановить озвучку"));
-            } else {
-                playResponseButton.setText("▶️ Прослушать");
-                playResponseButton.setStyle(
-                        "-fx-background-color: #3498db; " +
-                                "-fx-text-fill: white; " +
-                                "-fx-font-weight: bold; " +
-                                "-fx-cursor: hand;"
-                );
-                playResponseButton.setTooltip(new Tooltip("Прослушать ответ"));
-            }
-            playResponseButton.setDisable(false);
-        } catch (Exception e) {
-            logger.error("Ошибка при обновлении состояния кнопки", e);
         }
     }
 
@@ -506,10 +505,15 @@ public class ResponseModeManager {
         return state != null ? state.getCurrentResponseMode() : ResponseMode.TEXT;
     }
 
+    public boolean isPlayingSpeech() {
+        return isSpeechPlaying.get() || (state != null && state.isPlayingSpeech());
+    }
+
     public void shutdown() {
         logger.info("Завершение работы ResponseModeManager...");
 
         try {
+            stopSpeaking();
             reset();
             logger.info("ResponseModeManager завершил работу");
         } catch (Exception e) {

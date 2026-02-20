@@ -24,8 +24,9 @@ public class RecordingManager {
     private static final Logger logger = LoggerFactory.getLogger(RecordingManager.class);
 
     private static final int TIMER_UPDATE_INTERVAL_MS = 100;
-    private static final int MAX_RECORDING_DURATION_SECONDS = 300;
+    private static final int MAX_RECORDING_DURATION_SECONDS = 300; // 5 минут
     private static final int STOP_TIMEOUT_MS = 100;
+    private static final long FILE_SIZE_KB_DIVISOR = 1024;
 
     private final Button recordButton;
     private final Button stopButton;
@@ -74,10 +75,24 @@ public class RecordingManager {
 
     private void initializeUI() {
         Platform.runLater(() -> {
-            if (stopButton != null) stopButton.setDisable(true);
-            if (recordingIndicator != null) recordingIndicator.setVisible(false);
-            if (recordingTimeLabel != null) recordingTimeLabel.setText("00:00");
-            if (analyzeButton != null) analyzeButton.setDisable(true);
+            if (stopButton != null) {
+                stopButton.setDisable(true);
+                stopButton.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
+            }
+            if (recordingIndicator != null) {
+                recordingIndicator.setVisible(false);
+            }
+            if (recordingTimeLabel != null) {
+                recordingTimeLabel.setText("00:00");
+                recordingTimeLabel.setStyle("-fx-text-fill: #7f8c8d; -fx-font-weight: bold;");
+            }
+            if (analyzeButton != null) {
+                analyzeButton.setDisable(true);
+                analyzeButton.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
+            }
+            if (recordButton != null) {
+                recordButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
+            }
         });
     }
 
@@ -89,6 +104,7 @@ public class RecordingManager {
 
         if (state.isRecording()) {
             logger.warn("Запись уже идет");
+            ErrorHandler.showWarning("Внимание", "Запись уже выполняется");
             return;
         }
 
@@ -159,22 +175,97 @@ public class RecordingManager {
         });
     }
 
+    public void forceStop() {
+        if (state.isRecording()) {
+            logger.info("Принудительная остановка записи");
+            stopTimer();
+
+            try {
+                speechRecorder.stopRecording(null);
+            } catch (Exception e) {
+                logger.warn("Ошибка при принудительной остановке записи: {}", e.getMessage());
+            }
+
+            state.setRecording(false);
+            state.clearCurrentAudioFile();
+
+            Platform.runLater(this::updateUIStopped);
+        }
+    }
+
+    public void reset() {
+        stopTimer();
+
+        state.clearCurrentAudioFile();
+
+        Platform.runLater(() -> {
+            if (recordButton != null) {
+                recordButton.setDisable(false);
+                recordButton.setText("● Запись");
+                recordButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
+            }
+            if (stopButton != null) {
+                stopButton.setDisable(true);
+                stopButton.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
+            }
+            if (recordingIndicator != null) {
+                recordingIndicator.setVisible(false);
+            }
+            if (recordingTimeLabel != null) {
+                recordingTimeLabel.setText("00:00");
+                recordingTimeLabel.setStyle("-fx-text-fill: #7f8c8d; -fx-font-weight: bold;");
+            }
+            if (analyzeButton != null) {
+                analyzeButton.setDisable(true);
+                analyzeButton.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
+            }
+        });
+
+        logger.debug("RecordingManager сброшен");
+    }
+
+    public boolean isRecording() {
+        return state.isRecording();
+    }
+
+    public long getCurrentDuration() {
+        if (!state.isRecording() || recordingStartTime.get() == 0) {
+            return 0;
+        }
+        return (System.currentTimeMillis() - recordingStartTime.get()) / 1000;
+    }
+
+    public String getFormattedDuration() {
+        long seconds = getCurrentDuration();
+        long minutes = seconds / 60;
+        return String.format("%02d:%02d", minutes, seconds % 60);
+    }
+
+    @Override
+    public String toString() {
+        return String.format("RecordingManager{recording=%s, duration=%d сек, file=%s}",
+                state.isRecording(), getCurrentDuration(), state.getCurrentAudioFile());
+    }
+
     private void updateUIRecordingStarted() {
         Platform.runLater(() -> {
             if (recordButton != null) {
                 recordButton.setDisable(true);
                 recordButton.setText("🔴 Запись...");
-                recordButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white;");
+                recordButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-font-weight: bold;");
             }
             if (stopButton != null) {
                 stopButton.setDisable(false);
-                stopButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
+                stopButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white; -fx-font-weight: bold;");
             }
             if (recordingIndicator != null) {
                 recordingIndicator.setVisible(true);
             }
             if (analyzeButton != null) {
                 analyzeButton.setDisable(true);
+            }
+            if (recordingTimeLabel != null) {
+                recordingTimeLabel.setStyle("-fx-text-fill: #e74c3c; -fx-font-weight: bold;");
             }
         });
     }
@@ -184,32 +275,33 @@ public class RecordingManager {
             if (recordButton != null) {
                 recordButton.setDisable(false);
                 recordButton.setText("● Запись");
-                recordButton.setStyle("");
+                recordButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white; -fx-font-weight: bold;");
             }
             if (stopButton != null) {
                 stopButton.setDisable(true);
-                stopButton.setStyle("");
+                stopButton.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
             }
             if (recordingIndicator != null) {
                 recordingIndicator.setVisible(false);
             }
             if (recordingTimeLabel != null) {
                 recordingTimeLabel.setText("00:00");
+                recordingTimeLabel.setStyle("-fx-text-fill: #7f8c8d; -fx-font-weight: bold;");
             }
         });
     }
 
     private void handleSuccessfulRecording(File audioFile) {
-        long fileSize = audioFile.length() / 1024;
+        long fileSize = audioFile.length() / FILE_SIZE_KB_DIVISOR;
         logger.info("✅ Запись завершена. Размер: {} KB", fileSize);
 
         if (analyzeButton != null) {
             analyzeButton.setDisable(false);
-            analyzeButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white;");
+            analyzeButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white; -fx-font-weight: bold;");
         }
 
         ErrorHandler.showInfo("Запись завершена",
-                String.format("Аудиофайл сохранен (%d KB)\nТеперь вы можете проанализировать запись.", fileSize));
+                String.format("Аудиофайл сохранен (%d KB)\n\nТеперь вы можете проанализировать запись.", fileSize));
 
         onRecordingComplete.run();
     }
@@ -219,12 +311,13 @@ public class RecordingManager {
 
         if (analyzeButton != null) {
             analyzeButton.setDisable(true);
+            analyzeButton.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
         }
 
         state.clearCurrentAudioFile();
 
         ErrorHandler.showWarning("Запись не удалась",
-                "Не удалось сохранить аудиофайл. Попробуйте еще раз.");
+                "Не удалось сохранить аудиофайл.\n\nПопробуйте еще раз.");
     }
 
     private void startTimer() {
@@ -276,76 +369,5 @@ public class RecordingManager {
         }
 
         logger.debug("Таймер записи остановлен");
-    }
-
-    public void reset() {
-        stopTimer();
-
-        state.clearCurrentAudioFile();
-
-        Platform.runLater(() -> {
-            if (recordButton != null) {
-                recordButton.setDisable(false);
-                recordButton.setText("● Запись");
-                recordButton.setStyle("");
-            }
-            if (stopButton != null) {
-                stopButton.setDisable(true);
-                stopButton.setStyle("");
-            }
-            if (recordingIndicator != null) {
-                recordingIndicator.setVisible(false);
-            }
-            if (recordingTimeLabel != null) {
-                recordingTimeLabel.setText("00:00");
-            }
-            if (analyzeButton != null) {
-                analyzeButton.setDisable(true);
-                analyzeButton.setStyle("");
-            }
-        });
-
-        logger.debug("RecordingManager сброшен");
-    }
-
-    public void forceStop() {
-        if (state.isRecording()) {
-            logger.info("Принудительная остановка записи");
-            stopTimer();
-
-            try {
-                speechRecorder.stopRecording(null);
-            } catch (Exception e) {
-                logger.warn("Ошибка при принудительной остановке записи: {}", e.getMessage());
-            }
-
-            state.setRecording(false);
-            state.clearCurrentAudioFile();
-
-            Platform.runLater(this::updateUIStopped);
-        }
-    }
-
-    public boolean isRecording() {
-        return state.isRecording();
-    }
-
-    public long getCurrentDuration() {
-        if (!state.isRecording() || recordingStartTime.get() == 0) {
-            return 0;
-        }
-        return (System.currentTimeMillis() - recordingStartTime.get()) / 1000;
-    }
-
-    public String getFormattedDuration() {
-        long seconds = getCurrentDuration();
-        long minutes = seconds / 60;
-        return String.format("%02d:%02d", minutes, seconds % 60);
-    }
-
-    @Override
-    public String toString() {
-        return String.format("RecordingManager{recording=%s, duration=%d сек, file=%s}",
-                state.isRecording(), getCurrentDuration(), state.getCurrentAudioFile());
     }
 }

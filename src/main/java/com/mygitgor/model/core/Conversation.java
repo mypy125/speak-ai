@@ -9,7 +9,7 @@ import com.j256.ormlite.field.DataType;
 public class Conversation {
     @DatabaseField(generatedId = true)
     private int id;
-    @DatabaseField(foreign = true, foreignAutoRefresh = true, columnName = "user_id", canBeNull = false)
+    @DatabaseField(foreign = true, columnName = "user_id", canBeNull = false)
     private User user;
     @DatabaseField(canBeNull = false, width = 2000)
     private String userMessage;

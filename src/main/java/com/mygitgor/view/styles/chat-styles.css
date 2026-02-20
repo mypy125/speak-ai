@@ -1,0 +1,200 @@
+/* Основные стили чата */
+.chat-container {
+    -fx-background-color: #fafafa;
+}
+
+/* Контейнер сообщения */
+.message-container {
+    -fx-spacing: 8;
+    -fx-padding: 0 0 5 0;
+    -fx-max-width: Infinity;
+}
+
+.message-container-left {
+    -fx-alignment: top-left;
+}
+
+.message-container-right {
+    -fx-alignment: top-right;
+}
+
+/* Контент сообщения */
+.message-content {
+    -fx-spacing: 3;
+    -fx-max-width: Infinity;
+}
+
+/* Аватар */
+.avatar {
+    -fx-background-radius: 50%;
+    -fx-alignment: center;
+    -fx-min-width: 32px;
+    -fx-min-height: 32px;
+    -fx-max-width: 32px;
+    -fx-max-height: 32px;
+    -fx-pref-width: 32px;
+    -fx-pref-height: 32px;
+}
+
+.avatar-label {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+}
+
+.avatar-user {
+    -fx-background-color: #27ae60;
+}
+
+.avatar-user .avatar-label {
+    -fx-text-fill: white;
+}
+
+.avatar-ai {
+    -fx-background-color: #3498db;
+}
+
+.avatar-ai .avatar-label {
+    -fx-text-fill: white;
+}
+
+/* Пузырьки сообщений */
+.message-bubble {
+    -fx-padding: 12 16;
+    -fx-max-width: 400px;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.05), 3, 0, 0, 1);
+}
+
+.message-bubble-user {
+    -fx-background-color: linear-gradient(to bottom, #3498db, #2980b9);
+    -fx-background-radius: 12 12 4 12;
+    -fx-effect: dropshadow(gaussian, rgba(52, 152, 219, 0.2), 4, 0, 0, 2);
+}
+
+.message-bubble-ai {
+    -fx-background-color: linear-gradient(to bottom, #f8f9fa, #ecf0f1);
+    -fx-background-radius: 12 12 12 4;
+    -fx-border-color: #e0e0e0;
+    -fx-border-width: 1;
+    -fx-border-radius: 12 12 12 4;
+}
+
+/* Текст сообщений */
+.message-text-user {
+    -fx-text-fill: white;
+    -fx-font-size: 13px;
+    -fx-font-family: 'Segoe UI', sans-serif;
+    -fx-wrap-text: true;
+    -fx-max-width: 380px;
+}
+
+.message-text-ai {
+    -fx-text-fill: #2c3e50;
+    -fx-font-size: 13px;
+    -fx-font-family: 'Segoe UI', sans-serif;
+    -fx-wrap-text: true;
+    -fx-max-width: 380px;
+}
+
+/* Информация о сообщении */
+.message-info {
+    -fx-alignment: center-right;
+    -fx-spacing: 8;
+}
+
+.time-label {
+    -fx-text-fill: #7f8c8d;
+    -fx-font-size: 11px;
+    -fx-font-style: italic;
+}
+
+.status-label {
+    -fx-text-fill: #27ae60;
+    -fx-font-size: 11px;
+}
+
+/* Разделитель времени */
+.time-divider {
+    -fx-alignment: center;
+    -fx-spacing: 10;
+    -fx-padding: 5 0 5 0;
+}
+
+.divider-line {
+    -fx-background-color: #e0e0e0;
+    -fx-pref-height: 1;
+    -fx-min-height: 1;
+    -fx-max-height: 1;
+    -fx-hgrow: always;
+}
+
+.divider-label {
+    -fx-text-fill: #95a5a6;
+    -fx-font-size: 11px;
+    -fx-background-color: white;
+    -fx-padding: 0 10;
+}
+
+/* WebView сообщения */
+.webview-bubble {
+    -fx-background-color: linear-gradient(to bottom, #f8f9fa, #ecf0f1);
+    -fx-background-radius: 12 12 12 4;
+    -fx-border-color: #e0e0e0;
+    -fx-border-width: 1;
+    -fx-border-radius: 12 12 12 4;
+    -fx-padding: 8 12;
+    -fx-max-width: 400px;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.05), 3, 0, 0, 1);
+}
+
+.webview {
+    -fx-context-menu-enabled: false;
+    -fx-focus-traversable: false;
+}
+
+/* Анимации */
+.message-bubble-user, .message-bubble-ai, .webview-bubble {
+    -fx-transition: all 0.2s ease;
+}
+
+.message-bubble-user:hover, .message-bubble-ai:hover, .webview-bubble:hover {
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.1), 5, 0, 0, 2);
+}
+
+/* Скроллбар */
+.scroll-pane {
+    -fx-background-color: transparent;
+}
+
+.scroll-pane > .viewport {
+    -fx-background-color: transparent;
+}
+
+.scroll-bar:vertical {
+    -fx-background-color: transparent;
+    -fx-pref-width: 12px;
+}
+
+.scroll-bar:vertical .thumb {
+    -fx-background-color: #bdc3c7;
+    -fx-background-radius: 6px;
+}
+
+.scroll-bar:vertical .thumb:hover {
+    -fx-background-color: #95a5a6;
+}
+
+.scroll-bar:vertical .track {
+    -fx-background-color: transparent;
+}
+
+/* Адаптивность */
+@media (max-width: 400px) {
+    .message-bubble, .webview-bubble {
+        -fx-max-width: 300px;
+    }
+
+    .message-text-user, .message-text-ai {
+        -fx-max-width: 280px;
+        -fx-font-size: 12px;
+    }
+}

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 13px;
+            color: #2c3e50;
+            margin: 0;
+            padding: 8px;
+            line-height: 1.5;
+        }
+        h1, h2, h3, h4 {
+            margin: 8px 0 4px 0;
+            font-weight: 600;
+        }
+        h3 {
+            color: #2980b9;
+            font-size: 15px;
+            margin-top: 0;
+        }
+        p { margin: 5px 0; }
+        ul, ol { margin: 5px 0; padding-left: 20px; }
+        li { margin: 3px 0; }
+
+        /* Цветные блоки для секций */
+        .opening-box {
+            background-color: #e8f4f8;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border-left: 4px solid #3498db;
+        }
+        .correct-word-box {
+            background-color: #e8f5e9;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border-left: 4px solid #27ae60;
+        }
+        .improvements-box {
+            background-color: #fef9e7;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border-left: 4px solid #f39c12;
+        }
+        .new-vocab-box {
+            background-color: #f3e5f5;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border-left: 4px solid #8e44ad;
+        }
+        .tip-box {
+            background-color: #e1f5fe;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border-left: 4px solid #00acc1;
+        }
+        .challenge-box {
+            background-color: #fff3e0;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border-left: 4px solid #ff9800;
+        }
+        .closing-box {
+            background-color: #e0f2f1;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border-left: 4px solid #009688;
+        }
+
+        /* Стили для заголовков секций */
+        .section-title {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+        }
+        .opening-box .section-title { color: #3498db; }
+        .correct-word-box .section-title { color: #27ae60; }
+        .improvements-box .section-title { color: #f39c12; }
+        .new-vocab-box .section-title { color: #8e44ad; }
+        .tip-box .section-title { color: #00acc1; }
+        .challenge-box .section-title { color: #ff9800; }
+        .closing-box .section-title { color: #009688; }
+
+        /* Стили для слов */
+        .word-chip {
+            display: inline-block;
+            background-color: #2ecc71;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            margin: 3px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .word-chip:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        /* Разные цвета для разных категорий слов */
+        .word-chip.heritage { background-color: #8e44ad; }
+        .word-chip.diversity { background-color: #e67e22; }
+        .word-chip.community { background-color: #3498db; }
+        .word-chip.identity { background-color: #27ae60; }
+
+        /* Стили для примеров */
+        .example {
+            background-color: #f8f9fa;
+            padding: 8px;
+            border-radius: 6px;
+            margin: 5px 0;
+            font-style: italic;
+            border-left: 2px solid #bdc3c7;
+        }
+
+        /* Стили для выделения */
+        .highlight {
+            background-color: #fffacd;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-weight: 500;
+        }
+
+        /* Сетка для слов */
+        .word-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 10px 0;
+        }
+
+        /* Разделитель */
+        .divider {
+            height: 1px;
+            background: linear-gradient(to right, transparent, #e0e0e0, transparent);
+            margin: 15px 0;
+        }
+
+        /* Анимации */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .opening-box, .correct-word-box, .improvements-box, .new-vocab-box,
+        .tip-box, .challenge-box, .closing-box {
+            animation: fadeIn 0.3s ease;
+        }
+
+        /* Адаптивность */
+        @media (max-width: 400px) {
+            body { font-size: 12px; }
+            .word-chip { font-size: 12px; padding: 3px 8px; }
+        }
+    </style>
+</head>
+<body>
+<!-- Warm Positive Opening - Синий блок -->
+<div class='opening-box'>
+    <div class='section-title'>✨ Warm Positive Opening</div>
+    <p>Great job starting our conversation with the word "<span class='highlight'>tournament</span>"! You're off to a fantastic start, and I'm excited to help you build your vocabulary. Your enthusiasm is contagious, and I'm looking forward to a productive session together.</p>
+</div>
+
+<!-- Correctly Used Word - Зеленый блок -->
+<div class='correct-word-box'>
+    <div class='section-title'>Correctly Used Word</div>
+    <p>By the way, I noticed you've used the word "<span class='highlight'>tournament</span>" correctly. It's a noun, and it refers to a series of contests or competitions, often with a specific theme or objective. Well done!</p>
+</div>
+
+<!-- Improvements and Alternatives - Желтый блок -->
+<div class='improvements-box'>
+    <div class='section-title'>Improvements and Alternatives</div>
+    <p>To further enhance your vocabulary, let's explore some synonyms for "tournament". How about "<span class='highlight'>competition</span>", "<span class='highlight'>event</span>", or "<span class='highlight'>gathering</span>"? These words can help you express similar ideas in different contexts.</p>
+    <div class='example'>
+        For instance, you could say: "The annual music competition is a highlight of our community's culture."
+    </div>
+</div>
+
+<!-- New Vocabulary - Фиолетовый блок -->
+<div class='new-vocab-box'>
+    <div class='section-title'>New Vocabulary</div>
+    <p>Now, let's introduce some new words related to culture. Can you guess what these words mean based on their definitions and examples?</p>
+
+    <div style='margin-top: 10px;'>
+        <div style='margin-bottom: 12px;'>
+            <span class='word-chip heritage'>Heritage</span>
+            <p><strong>Meaning:</strong> The customs, traditions, and values passed down from previous generations.</p>
+            <div class='example'>Example: "Preserving our cultural heritage is essential to our identity."</div>
+        </div>
+
+        <div style='margin-bottom: 12px;'>
+            <span class='word-chip diversity'>Diversity</span>
+            <p><strong>Meaning:</strong> The presence of different cultures, traditions, and backgrounds within a community.</p>
+            <div class='example'>Example: "Our city's diversity is one of its greatest strengths."</div>
+        </div>
+
+        <div style='margin-bottom: 12px;'>
+            <span class='word-chip community'>Community</span>
+            <p><strong>Meaning:</strong> A group of people with shared interests, values, or customs.</p>
+            <div class='example'>Example: "The community came together to support the local festival."</div>
+        </div>
+
+        <div style='margin-bottom: 12px;'>
+            <span class='word-chip identity'>Identity</span>
+            <p><strong>Meaning:</strong> The sense of self and belonging that comes from one's culture, traditions, and values.</p>
+            <div class='example'>Example: "Her identity as an artist is deeply rooted in her cultural heritage."</div>
+        </div>
+    </div>
+</div>
+
+<!-- Memorable Tip for Retention - Голубой блок -->
+<div class='tip-box'>
+    <div class='section-title'>💡 Memorable Tip for Retention</div>
+    <p>To help you remember these new words, try creating a story or association with each word. For example, imagine a person from a diverse community participating in a celebration, which highlights the word "<span class='highlight'>community</span>". The more creative and personal your associations are, the better you'll retain the words.</p>
+</div>
+
+<!-- Interactive Challenge - Оранжевый блок -->
+<div class='challenge-box'>
+    <div class='section-title'>Interactive Challenge</div>
+    <p>Let's put your vocabulary to the test. Can you think of a situation where someone's cultural heritage influenced their identity? Perhaps a family recipe or a traditional dance? Share your example with me, and I'll give you feedback on your use of the new vocabulary.</p>
+</div>
+
+<!-- Motivating Closing - Бирюзовый блок -->
+<div class='closing-box'>
+    <div class='section-title'>Motivating Closing</div>
+    <p>You're doing fantastic, and I'm proud of your progress! Keep up the great work, and don't hesitate to ask for help when you need it. Remember, building vocabulary is a lifelong journey, and every step counts. Let's continue exploring the world of culture and language together!</p>
+</div>
+</body>
+</html>

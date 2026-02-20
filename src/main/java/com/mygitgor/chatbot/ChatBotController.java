@@ -151,29 +151,56 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
-        logger.info("Инициализация ChatBotController");
+        logger.info("Начало инициализации ChatBotController");
 
         ErrorHandler.handle(() -> {
             initializeComponents();
-            setupServices();
-            setupLearningStrategies();
-            setupManagers();
             setupUI();
             setupLearningModeUI();
-            Platform.runLater(() -> {
-                updateModeStats();
-            });
-            showWelcomeMessage();
-            logger.info("ChatBotController успешно инициализирован");
+
+            if (statusLabel != null) {
+                statusLabel.setText("Загрузка моделей...");
+            }
             return null;
         }, e -> {
-            logger.error("Критическая ошибка при инициализации", e);
-            Platform.runLater(() -> {
-                ErrorHandler.showError("Ошибка инициализации",
-                        "Не удалось инициализировать приложение: " + e.getMessage());
-            });
+            logger.error("Ошибка при сборке UI", e);
             return null;
-        }, "Ошибка инициализации контроллера");
+        }, "Настройка интерфейса");
+
+        Thread initThread = new Thread(() -> {
+            try {
+                Thread.sleep(300);
+
+                logger.info("Запуск фоновой загрузки сервисов (Vosk, Google TTS, AI)...");
+
+                setupServices();
+                setupLearningStrategies();
+                setupManagers();
+
+                Platform.runLater(() -> {
+                    updateModeStats();
+                    showWelcomeMessage();
+
+                    if (statusLabel != null && state != null) {
+                        statusLabel.setText(state.isAiServiceAvailable() ? "Online" : "Offline");
+                    }
+
+                    logger.info("ChatBotController полностью загружен и готов к работе!");
+                });
+
+            } catch (Exception e) {
+                logger.error("Критическая ошибка при фоновой инициализации", e);
+                Platform.runLater(() -> {
+                    if (statusLabel != null) statusLabel.setText("Ошибка загрузки");
+                    ErrorHandler.showError("Ошибка сервисов",
+                            "Не удалось загрузить компоненты ИИ: " + e.getMessage());
+                });
+            }
+        });
+
+        initThread.setName("JPro-Background-Init");
+        initThread.setDaemon(true);
+        initThread.start();
     }
 
     private void initializeComponents() {
@@ -233,433 +260,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
         } catch (Exception e) {
             logger.error("Ошибка при инициализации стратегий обучения", e);
         }
-    }
-
-    private void setupLearningModeUI() {
-        Platform.runLater(() -> {
-            if (learningModeComboBox != null) {
-                learningModeComboBox.getItems().addAll(LearningMode.values());
-                learningModeComboBox.setValue(currentLearningMode);
-                learningModeComboBox.setCellFactory(this::createModeCell);
-                learningModeComboBox.setButtonCell(createModeCell(null));
-            }
-
-            if (switchModeButton != null) {
-                switchModeButton.setOnAction(e -> switchLearningMode());
-            }
-
-            if (currentModeLabel != null) {
-                updateCurrentModeDisplay();
-            }
-        });
-    }
-
-    private ListCell<LearningMode> createModeCell(ListView<LearningMode> param) {
-        return new ListCell<>() {
-            @Override
-            protected void updateItem(LearningMode mode, boolean empty) {
-                super.updateItem(mode, empty);
-                if (empty || mode == null) {
-                    setText(null);
-                } else {
-                    setText(mode.getDisplayName());
-                    setTooltip(new Tooltip(mode.getDescription()));
-                }
-            }
-        };
-    }
-
-    @FXML
-    private void switchLearningMode() {
-        if (learningModeComboBox == null || learningModeManager == null) {
-            logger.warn("LearningModeManager не инициализирован");
-            return;
-        }
-
-        LearningMode newMode = learningModeComboBox.getValue();
-        if (newMode == null) {
-            ErrorHandler.showWarning("Внимание", "Выберите режим обучения");
-            return;
-        }
-
-        if (newMode == currentLearningMode) {
-            logger.debug("Режим {} уже активен", newMode);
-            return;
-        }
-
-        String userId = chatBotService.getCurrentUserIdSafely();
-        if (userId == null) {
-            ErrorHandler.showError("Ошибка", "Не удалось определить пользователя");
-            return;
-        }
-
-        logger.info("Смена режима обучения для пользователя {}: {} -> {}",
-                userId, currentLearningMode, newMode);
-
-        showLoadingIndicator(true);
-
-        learningModeManager.switchMode(userId, newMode)
-                .thenAccept(response -> {
-                    currentLearningMode = newMode;
-                    Platform.runLater(() -> {
-                        try {
-                            updateCurrentModeDisplay();
-                            messagesManager.addAIMessage(formatModeSwitchMessage(response));
-                            showLoadingIndicator(false);
-
-                            if (modeProgressBar != null) {
-                                modeProgressBar.setProgress(response.getProgress() / 100.0);
-                            }
-                            if (modeInfoArea != null) {
-                                modeInfoArea.setText(formatModeInfo(response));
-                            }
-                        } catch (Exception e) {
-                            logger.error("Ошибка при обновлении UI после смены режима", e);
-                            showLoadingIndicator(false);
-                        }
-                    });
-                })
-                .exceptionally(throwable -> {
-                    logger.error("Ошибка при смене режима", throwable);
-                    Platform.runLater(() -> {
-                        ErrorHandler.showError("Ошибка",
-                                "Не удалось сменить режим обучения: " + throwable.getMessage());
-                        showLoadingIndicator(false);
-                    });
-                    return null;
-                });
-    }
-
-    private String formatModeSwitchMessage(LearningResponse response) {
-        return String.format("""
-            ### 🔄 Режим изменен
-            
-            **Новый режим:** %s
-            
-            **Описание:** %s
-            
-            **Следующее задание:**
-            %s
-            
-            **Прогресс:** %.1f%%
-            
-            %s
-            """,
-                currentLearningMode.getDisplayName(),
-                currentLearningMode.getDescription(),
-                response.getNextTask() != null ? response.getNextTask().getDescription() : "Начните практику!",
-                response.getProgress(),
-                formatRecommendations(response.getRecommendations())
-        );
-    }
-
-    private String formatRecommendations(List<String> recommendations) {
-        if (recommendations == null || recommendations.isEmpty()) {
-            return "";
-        }
-
-        StringBuilder sb = new StringBuilder("\n**Рекомендации:**\n");
-        recommendations.forEach(r -> sb.append("• ").append(r).append("\n"));
-        return sb.toString();
-    }
-
-    private String formatModeInfo(LearningResponse response) {
-        return String.format("""
-            Режим: %s
-            Прогресс: %.1f%%
-            Заданий выполнено: %d
-            """,
-                currentLearningMode.getDisplayName(),
-                response.getProgress(),
-                response.getNextTask() != null ? 1 : 0
-        );
-    }
-
-    private ITTSService initializeTTSService() {
-        setupGoogleCloudTTSCredentials();
-
-        try {
-            GoogleCloudTextToSpeechService googleService = ErrorHandler.retry(() -> {
-                try {
-                    GoogleCloudTextToSpeechService service = new GoogleCloudTextToSpeechService();
-
-                    Thread.sleep(AppConstants.GOOGLE_TTS_INIT_DELAY_MS);
-
-                    if (service.isAvailable()) {
-                        logger.info("✅ Google Cloud TTS успешно инициализирован");
-                        logger.info("   Голос: {}", service.getCurrentVoice().getDescription());
-                        logger.info("   Метод аутентификации: {}", service.getAuthMethod());
-                        return service;
-                    } else {
-                        logger.warn("⚠️ Google Cloud TTS создан, но недоступен");
-                        return null;
-                    }
-                } catch (Exception e) {
-                    logger.error("❌ Ошибка при создании Google Cloud TTS: {}", e.getMessage());
-                    return null;
-                }
-            }, 2, 1000, "инициализация Google Cloud TTS");
-
-            if (googleService != null && googleService.isAvailable()) {
-                showTTSConnectionSuccess(googleService);
-                return googleService;
-            }
-
-        } catch (Exception e) {
-            logger.warn("Не удалось инициализировать Google Cloud TTS: {}", e.getMessage());
-        }
-
-        return initializeDemoTTSService();
-    }
-
-    private ITTSService initializeDemoTTSService() {
-        logger.warn("⚠️ Используется демо-режим TTS (без реальной озвучки)");
-
-        DemoTextToSpeechService demoServices = new DemoTextToSpeechService();
-
-        Platform.runLater(() -> {
-            showTTSConnectionWarning();
-
-            if (ttsStatusLabel != null) {
-                ttsStatusLabel.setText("⚠️ Демо-режим TTS");
-                ttsStatusLabel.setStyle("-fx-text-fill: #f39c12; -fx-font-weight: bold;");
-            }
-            if (ttsStatusIndicator != null) {
-                ttsStatusIndicator.setFill(Color.ORANGE);
-            }
-            if (ttsModeLabel != null) {
-                ttsModeLabel.setText("Демо-режим TTS");
-                ttsModeLabel.setStyle("-fx-text-fill: #f39c12; -fx-font-weight: bold;");
-            }
-            if (ttsInfoTextArea != null) {
-                ttsInfoTextArea.setText(getDemoTTSInfoText());
-            }
-        });
-
-        return demoServices;
-    }
-
-    private String getDemoTTSInfoText() {
-        return """
-            ⚠️ TTS В ДЕМО-РЕЖИМЕ
-            =======================
-            
-            Google Cloud TTS не настроен или недоступен.
-            
-            📋 ЧТОБЫ ВКЛЮЧИТЬ РЕАЛЬНУЮ ОЗВУЧКУ:
-            
-            1. Получите файл учетных данных:
-               • Перейдите в Google Cloud Console
-               • Создайте Service Account
-               • Скачайте ключ в формате JSON
-               • Переименуйте в google-credentials.json
-            
-            2. Поместите файл в одну из папок:
-               • Корень проекта
-               • src/main/resources/
-               • Укажите путь в переменной GOOGLE_APPLICATION_CREDENTIALS
-            
-            3. Включите Text-to-Speech API в Google Cloud Console
-            
-            4. Перезапустите приложение
-            
-            🔧 ТЕКУЩИЙ СТАТУС:
-            • Режим: Демо (без звука)
-            • Функция: Только логирование
-            """;
-    }
-
-    private void showTTSConnectionSuccess(GoogleCloudTextToSpeechService service) {
-        Platform.runLater(() -> {
-            Alert alert = new Alert(Alert.AlertType.INFORMATION);
-            alert.setTitle("Google Cloud TTS подключен");
-            alert.setHeaderText("✅ Голосовая озвучка активирована");
-            alert.setContentText(String.format("""
-            Google Cloud Text-to-Speech успешно подключен!
-            
-            📊 ИНФОРМАЦИЯ:
-            • Метод: %s
-            • Голос: %s
-            • Язык: %s
-            • Качество: %s
-            
-            🔊 Теперь приложение может озвучивать ответы голосом.
-            """,
-                    service.getAuthMethod(),
-                    service.getCurrentVoice().getDescription(),
-                    service.getCurrentLanguage(),
-                    service.getCurrentVoice().getModelType()
-            ));
-            alert.show();
-        });
-    }
-
-    private void showTTSConnectionWarning() {
-        Alert alert = new Alert(Alert.AlertType.WARNING);
-        alert.setTitle("TTS в демо-режиме");
-        alert.setHeaderText("⚠️ Google Cloud TTS не настроен");
-
-        StringBuilder content = new StringBuilder();
-        content.append("Используется демо-режим без реальной озвучки.\n\n");
-        content.append("📁 ПРОВЕРЕННЫЕ ПУТИ:\n");
-
-        String projectRoot = System.getProperty("user.dir");
-        String[] paths = {
-                projectRoot + "/google-credentials.json",
-                projectRoot + "/src/main/resources/google-credentials.json",
-                "google-credentials.json",
-                "./google-credentials.json"
-        };
-
-        boolean foundAny = false;
-        for (String path : paths) {
-            File file = new File(path);
-            String status = file.exists() ? "✅ Файл существует" : "❌ Не найден";
-            if (file.exists()) foundAny = true;
-            content.append("  • ").append(path).append(" - ").append(status).append("\n");
-        }
-
-        String envPath = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
-        if (envPath != null && !envPath.isEmpty()) {
-            File envFile = new File(envPath);
-            String status = envFile.exists() ? "✅ Файл существует" : "❌ Не найден";
-            content.append("  • ").append(envPath).append(" (переменная окружения) - ").append(status).append("\n");
-            if (envFile.exists()) foundAny = true;
-        }
-
-        if (foundAny) {
-            content.append("\n⚠️ Файл найден, но Google Cloud TTS недоступен.\n");
-            content.append("   Проверьте:\n");
-            content.append("   • Включен ли Text-to-Speech API в проекте\n");
-            content.append("   • Есть ли у Service Account права на TTS\n");
-            content.append("   • Работает ли интернет-соединение\n");
-        } else {
-            content.append("\n📋 ИНСТРУКЦИЯ ПО НАСТРОЙКЕ:\n");
-            content.append("   1. Создайте проект в Google Cloud Console\n");
-            content.append("   2. Включите Text-to-Speech API\n");
-            content.append("   3. Создайте Service Account и скачайте ключ JSON\n");
-            content.append("   4. Сохраните файл как google-credentials.json\n");
-            content.append("   5. Перезапустите приложение\n");
-        }
-
-        alert.setContentText(content.toString());
-        alert.setResizable(true);
-        alert.getDialogPane().setPrefWidth(700);
-        alert.show();
-    }
-
-    private void setupGoogleCloudTTSCredentials() {
-        try {
-            logger.info("=== НАСТРОЙКА GOOGLE CLOUD TTS ===");
-
-            String projectRoot = System.getProperty("user.dir");
-            logger.info("Корневая папка проекта: {}", projectRoot);
-
-            String[] possiblePaths = {
-                    projectRoot + "/google-credentials.json",
-                    projectRoot + "/src/main/resources/google-credentials.json",
-                    "google-credentials.json",
-                    "./google-credentials.json"
-            };
-
-            File credentialsFile = null;
-            for (String path : possiblePaths) {
-                File file = new File(path);
-                logger.info("Проверяем путь: {} -> существует: {}", path, file.exists());
-                if (file.exists() && file.canRead()) {
-                    credentialsFile = file;
-                    logger.info("✅ Найден файл учетных данных: {}", path);
-                    break;
-                }
-            }
-
-            String envPath = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
-            if (credentialsFile == null && envPath != null && !envPath.isEmpty()) {
-                File envFile = new File(envPath);
-                if (envFile.exists() && envFile.canRead()) {
-                    credentialsFile = envFile;
-                    logger.info("✅ Найден файл учетных данных из переменной окружения: {}", envPath);
-                }
-            }
-
-            if (credentialsFile == null) {
-                logger.error("❌ Файл google-credentials.json не найден ни в одном из возможных мест");
-                logger.info("Создайте файл google-credentials.json в корне проекта или в папке src/main/resources/");
-                return;
-            }
-
-            System.setProperty("GOOGLE_APPLICATION_CREDENTIALS", credentialsFile.getAbsolutePath());
-            logger.info("✅ Установлена переменная: GOOGLE_APPLICATION_CREDENTIALS={}",
-                    credentialsFile.getAbsolutePath());
-
-            try {
-                String content = new String(Files.readAllBytes(credentialsFile.toPath()));
-                logger.info("✅ Файл успешно прочитан, размер: {} байт", content.length());
-
-                JSONObject json = new JSONObject(content);
-                String projectId = json.optString("project_id", "не указан");
-                String clientEmail = json.optString("client_email", "не указан");
-                logger.info("✅ Project ID: {}", projectId);
-                logger.info("✅ Client Email: {}", clientEmail);
-
-            } catch (Exception e) {
-                logger.error("❌ Ошибка при чтении файла: {}", e.getMessage());
-            }
-
-            logger.info("=== НАСТРОЙКА ЗАВЕРШЕНА ===");
-
-        } catch (Exception e) {
-            logger.error("Ошибка при настройке Google Cloud TTS", e);
-        }
-    }
-
-    private GoogleCloudTextToSpeechService createGoogleTTSService() {
-        String credentialsPath = findGoogleCredentials();
-
-        if (credentialsPath == null) {
-            throw new ServiceInitializationException(
-                    "Файл google-credentials.json не найден");
-        }
-
-        System.setProperty("GOOGLE_APPLICATION_CREDENTIALS", credentialsPath);
-        return new GoogleCloudTextToSpeechService(credentialsPath);
-    }
-
-    private String findGoogleCredentials() {
-        String projectRoot = System.getProperty("user.dir");
-
-        for (String path : AppConstants.GOOGLE_CREDENTIALS_PATHS) {
-            String fullPath = path.startsWith("./") ?
-                    projectRoot + path.substring(1) : path;
-
-            File file = new File(fullPath);
-            logger.debug("Проверка пути: {} -> {}", fullPath, file.exists());
-
-            if (file.exists() && file.canRead()) {
-                logger.info("✅ Найден файл учетных данных: {}", fullPath);
-                return fullPath;
-            }
-        }
-
-        String envPath = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
-        if (envPath != null && !envPath.isEmpty()) {
-            File envFile = new File(envPath);
-            if (envFile.exists() && envFile.canRead()) {
-                logger.info("✅ Найден файл учетных данных из переменной окружения: {}", envPath);
-                return envPath;
-            }
-        }
-
-        return null;
-    }
-
-    private AiService initializeAIService() {
-        return ErrorHandler.orElse(() -> {
-            AiService service = AIServiceFactory.createService(config.getRawProperties());
-            logger.info("✅ AI сервис инициализирован: {}",
-                    service.getClass().getSimpleName());
-            return service;
-        }, new MockAiService(), "Ошибка инициализации AI сервиса, используется Mock");
     }
 
     private void setupManagers() {
@@ -761,89 +361,52 @@ public class ChatBotController implements Initializable, AutoCloseable {
     private void setupButtonStyles() {
         Platform.runLater(() -> {
             if (sendButton != null) {
-                sendButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
+                sendButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white; -fx-font-weight: bold;");
             }
             if (clearButton != null) {
-                clearButton.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white;");
+                clearButton.setStyle("-fx-background-color: #95a5a6; -fx-text-fill: white; -fx-font-weight: bold;");
             }
             if (historyButton != null) {
-                historyButton.setStyle("-fx-background-color: #34495e; -fx-text-fill: white;");
+                historyButton.setStyle("-fx-background-color: #34495e; -fx-text-fill: white; -fx-font-weight: bold;");
             }
             if (switchModeButton != null) {
-                switchModeButton.setStyle("-fx-background-color: #9b59b6; -fx-text-fill: white;");
+                switchModeButton.setStyle("-fx-background-color: #9b59b6; -fx-text-fill: white; -fx-font-weight: bold;");
             }
         });
     }
 
-    private void showWelcomeMessage() {
-        String ttsMode = textToSpeechService != null && textToSpeechService.isAvailable()
-                ? "Google Cloud TTS (WaveNet)"
-                : "TTS недоступен";
-
-        ResponseMode currentResponseMode = state.getCurrentResponseMode();
-        String responseModeText = currentResponseMode == ResponseMode.VOICE ? "🔊 Голосовой" : "📝 Текстовый";
-
-        String welcomeMessage = String.format("""
-            🌟 Добро пожаловать в SpeakAI!
-            
-            Текущий режим: %s
-            Режим ответа: %s
-            Режим обучения: %s
-            
-            Как это работает:
-            1. Выберите режим обучения в панели справа
-            2. Напишите сообщение или нажмите кнопку записи 🎤
-            3. Получите анализ речи и рекомендации
-            4. Используйте тренажер произношения для проблемных звуков
-            
-            Доступные режимы обучения:
-            • 💬 Conversation - разговорная практика
-            • 🔊 Pronunciation - тренировка произношения
-            • 📚 Grammar - изучение грамматики
-            • 🎯 Exercise - выполнение упражнений
-            • 📖 Vocabulary - расширение словарного запаса
-            • ✍️ Writing - практика письма
-            • 🎧 Listening - развитие аудирования
-            
-            Давайте начнем! ✨
-            """, ttsMode, responseModeText, currentLearningMode.getDisplayName());
-
-        messagesManager.addAIMessage(welcomeMessage);
-
-        ThreadPoolManager.runWithDelay(() -> {
-            logger.debug("Приветственное сообщение показано");
-        }, 100);
-    }
-
-    private void updateStatusLabel() {
-        if (statusLabel == null) return;
-
-        String status = state.isAiServiceAvailable()
-                ? "✅ ИИ-сервис доступен"
-                : "⚠️ Демо-режим";
-
+    private void setupLearningModeUI() {
         Platform.runLater(() -> {
-            statusLabel.setText(status);
-            statusLabel.setStyle("-fx-font-weight: bold;");
-        });
-    }
+            if (learningModeComboBox != null) {
+                learningModeComboBox.getItems().addAll(LearningMode.values());
+                learningModeComboBox.setValue(currentLearningMode);
+                learningModeComboBox.setCellFactory(this::createModeCell);
+                learningModeComboBox.setButtonCell(createModeCell(null));
+            }
 
-    private void showLoadingIndicator(boolean show) {
-        Platform.runLater(() -> {
-            if (statusLabel != null) {
-                statusLabel.setText(show ? "⏳ Обработка..." :
-                        state.isAiServiceAvailable() ? "✅ ИИ-сервис доступен" : "⚠️ Демо-режим");
-            }
-            if (sendButton != null) {
-                sendButton.setDisable(show);
-                sendButton.setStyle(show ?
-                        "-fx-background-color: #95a5a6; -fx-text-fill: white;" :
-                        "-fx-background-color: #3498db; -fx-text-fill: white;");
-            }
             if (switchModeButton != null) {
-                switchModeButton.setDisable(show);
+                switchModeButton.setOnAction(e -> switchLearningMode());
+            }
+
+            if (currentModeLabel != null) {
+                updateCurrentModeDisplay();
             }
         });
+    }
+
+    private ListCell<LearningMode> createModeCell(ListView<LearningMode> param) {
+        return new ListCell<>() {
+            @Override
+            protected void updateItem(LearningMode mode, boolean empty) {
+                super.updateItem(mode, empty);
+                if (empty || mode == null) {
+                    setText(null);
+                } else {
+                    setText(mode.getDisplayName());
+                    setTooltip(new Tooltip(mode.getDescription()));
+                }
+            }
+        };
     }
 
     @FXML
@@ -899,300 +462,72 @@ public class ChatBotController implements Initializable, AutoCloseable {
         currentOperation.set(future);
     }
 
-    private String getCurrentUserIdSafely() {
-        try {
-            if (chatBotService != null) {
-                String userId = chatBotService.getCurrentUserIdSafely();
-                if (userId != null && !userId.trim().isEmpty()) {
-                    return userId;
-                }
-
-                User user = chatBotService.getCurrentUser();
-                if (user != null) {
-                    return String.valueOf(user.getId());
-                }
-            }
-        } catch (Exception e) {
-            logger.error("Ошибка в getCurrentUserIdSafely", e);
+    @FXML
+    private void switchLearningMode() {
+        if (learningModeComboBox == null || learningModeManager == null) {
+            logger.warn("LearningModeManager не инициализирован");
+            return;
         }
 
-        String tempId = "temp_" + System.currentTimeMillis();
-        logger.warn("Создан временный ID в контроллере: {}", tempId);
-        return tempId;
-    }
-
-    private String formatLearningResponse(LearningResponse response) {
-        StringBuilder sb = new StringBuilder();
-
-        sb.append("### 🤖 AI Репетитор\n\n");
-        sb.append(response.getMessage()).append("\n\n");
-
-        if (response.getNextTask() != null) {
-            sb.append("**📋 Следующее задание:**\n");
-            sb.append(response.getNextTask().getDescription()).append("\n\n");
+        LearningMode newMode = learningModeComboBox.getValue();
+        if (newMode == null) {
+            ErrorHandler.showWarning("Внимание", "Выберите режим обучения");
+            return;
         }
 
-        if (response.getRecommendations() != null && !response.getRecommendations().isEmpty()) {
-            sb.append("**💡 Рекомендации:**\n");
-            response.getRecommendations().forEach(r -> sb.append("• ").append(r).append("\n"));
-            sb.append("\n");
+        if (newMode == currentLearningMode) {
+            logger.debug("Режим {} уже активен", newMode);
+            return;
         }
 
-        sb.append(String.format("**📊 Прогресс в режиме %s:** %.1f%%",
-                currentLearningMode.getDisplayName(), response.getProgress()));
+        String userId = chatBotService.getCurrentUserIdSafely();
+        if (userId == null) {
+            ErrorHandler.showError("Ошибка", "Не удалось определить пользователя");
+            return;
+        }
 
-        Platform.runLater(() -> {
-            updateCurrentModeDisplay();
-            updateModeStats();
-        });
+        logger.info("Смена режима обучения для пользователя {}: {} -> {}",
+                userId, currentLearningMode, newMode);
 
-        return sb.toString();
-    }
+        showLoadingIndicator(true);
 
-    private CompletableFuture<Void> processWithLearningMode(String userId, String text, String audioFile) {
-        return learningModeManager.processInput(userId, text, Optional.ofNullable(audioFile))
+        learningModeManager.switchMode(userId, newMode)
                 .thenAccept(response -> {
+                    currentLearningMode = newMode;
                     Platform.runLater(() -> {
                         try {
-                            messagesManager.addAIMessage(formatLearningResponse(response));
-                            state.setLastBotResponse(response.getMessage());
+                            updateCurrentModeDisplay();
+
+                            messagesManager.addAIMessage(
+                                    formatModeSwitchMessage(response),
+                                    response.getTtsText()
+                            );
+
+                            showLoadingIndicator(false);
 
                             if (modeProgressBar != null) {
                                 modeProgressBar.setProgress(response.getProgress() / 100.0);
                             }
-
-                            // ВАЖНО: Добавляем анализ аудио, если есть файл
-                            if (audioFile != null && !audioFile.isEmpty()) {
-                                analyzeAudioWithManagers(audioFile, text);
+                            if (modeInfoArea != null) {
+                                modeInfoArea.setText(formatModeInfo(response));
                             }
 
                             responseModeManager.updatePlayButtonVisibility();
-                            showLoadingIndicator(false);
-
-                            if (state.hasAudioFile()) {
-                                state.clearCurrentAudioFile();
-                            }
-
-                            logger.debug("Сообщение успешно обработано через LearningModeManager");
                         } catch (Exception e) {
-                            logger.error("Ошибка при обработке ответа от LearningModeManager", e);
+                            logger.error("Ошибка при обновлении UI после смены режима", e);
                             showLoadingIndicator(false);
-                            ErrorHandler.showError("Ошибка",
-                                    "Не удалось обработать ответ: " + e.getMessage());
                         }
                     });
                 })
                 .exceptionally(throwable -> {
-                    logger.error("Ошибка при обработке сообщения через LearningModeManager", throwable);
+                    logger.error("Ошибка при смене режима", throwable);
                     Platform.runLater(() -> {
                         ErrorHandler.showError("Ошибка",
-                                "Не удалось обработать сообщение в режиме обучения: " + throwable.getMessage());
+                                "Не удалось сменить режим обучения: " + throwable.getMessage());
                         showLoadingIndicator(false);
                     });
                     return null;
                 });
-    }
-
-    private CompletableFuture<Void> processWithChatBotService(String text, String audioFile,
-                                                              ResponseMode responseMode) {
-        return CompletableFuture.runAsync(() -> {
-            try {
-                ChatBotService.ChatResponse response = chatBotService.processUserInput(
-                        text,
-                        audioFile,
-                        responseMode
-                );
-
-                final ChatBotService.ChatResponse finalResponse = response;
-                final String finalAudioFile = audioFile;
-                final String finalText = text;
-
-                Platform.runLater(() -> {
-                    try {
-                        messagesManager.addAIMessage(finalResponse.getFullResponse());
-                        state.setLastBotResponse(finalResponse.getFullResponse());
-
-                        // Анализ речи через существующий механизм
-                        if (finalResponse.getSpeechAnalysis() != null) {
-                            analysisManager.processAnalysisResponse(finalResponse);
-                        }
-                        // Альтернативный анализ для аудио
-                        else if (finalAudioFile != null && !finalAudioFile.isEmpty()) {
-                            analyzeAudioWithManagers(finalAudioFile, finalText);
-                        }
-
-                        responseModeManager.updatePlayButtonVisibility();
-                        showLoadingIndicator(false);
-
-                        if (state.hasAudioFile()) {
-                            state.clearCurrentAudioFile();
-                        }
-
-                        logger.debug("Сообщение успешно обработано через ChatBotService");
-                    } catch (Exception e) {
-                        logger.error("Ошибка при обновлении UI после получения ответа", e);
-                        showLoadingIndicator(false);
-                    }
-                });
-
-            } catch (Exception e) {
-                logger.error("Ошибка при обработке сообщения через ChatBotService", e);
-                Platform.runLater(() -> {
-                    ErrorHandler.showError("Ошибка",
-                            "Не удалось обработать сообщение: " + e.getMessage());
-                    showLoadingIndicator(false);
-                });
-            }
-        }, threadPoolManager.getBackgroundExecutor());
-    }
-
-    private void analyzeAudioWithManagers(String audioFile, String text) {
-        if (audioFile == null || audioFile.isEmpty()) {
-            logger.debug("Нет аудиофайла для анализа");
-            return;
-        }
-
-        logger.debug("Запуск анализа аудио: {}", audioFile);
-
-        // Показываем индикатор анализа
-        Platform.runLater(() -> {
-            if (analysisProgress != null) {
-                analysisProgress.setVisible(true);
-            }
-            if (detailedAnalysisArea != null) {
-                detailedAnalysisArea.setVisible(true);
-            }
-        });
-
-        CompletableFuture.runAsync(() -> {
-            try {
-                EnhancedSpeechAnalysis analysis = audioAnalyzer.analyzeAudio(audioFile, text);
-
-                Platform.runLater(() -> {
-                    if (analysisArea != null) {
-                        analysisArea.setText(analysis.getSummary());
-                    }
-
-                    if (detailedAnalysisArea != null && analysis.getDetailedReport() != null) {
-                        detailedAnalysisArea.setText(analysis.getDetailedReport());
-                        detailedAnalysisArea.setVisible(true);
-                    }
-
-                    updatePhonemeLabel(analysis);
-
-                    if (analyzeButton != null) {
-                        analyzeButton.setDisable(false);
-                    }
-                    if (pronunciationButton != null) {
-                        pronunciationButton.setDisable(false);
-                        updatePronunciationButtonText(analysis);
-                    }
-
-                    updateRecommendationsFromAnalysis(analysis);
-
-                    if (statisticsManager != null) {
-                        statisticsManager.onAnalysisPerformed();
-                    }
-
-                    if (analysisProgress != null) {
-                        analysisProgress.setVisible(false);
-                    }
-
-                    logger.info("Анализ аудио завершен. Общий балл: {}/100",
-                            String.format("%.1f", analysis.getOverallScore()));
-                });
-
-            } catch (Exception e) {
-                logger.error("Ошибка при анализе аудио", e);
-                Platform.runLater(() -> {
-                    ErrorHandler.showError("Ошибка анализа",
-                            "Не удалось выполнить анализ аудио: " + e.getMessage());
-                    if (analysisProgress != null) {
-                        analysisProgress.setVisible(false);
-                    }
-                });
-            }
-        }, threadPoolManager.getBackgroundExecutor());
-    }
-
-    private void updatePhonemeLabel(EnhancedSpeechAnalysis analysis) {
-        if (phonemeLabel == null) return;
-
-        if (analysis.getPhonemeScores() != null && !analysis.getPhonemeScores().isEmpty()) {
-            analysis.getPhonemeScores().entrySet().stream()
-                    .min(Map.Entry.comparingByValue())
-                    .ifPresent(entry -> {
-                        String phoneme = "/" + entry.getKey() + "/";
-                        float score = entry.getValue();
-
-                        String text = String.format("🔊 Слабая фонема: %s (%.1f/100)", phoneme, score);
-                        phonemeLabel.setText(text);
-                        phonemeLabel.setVisible(true);
-                        phonemeLabel.setStyle("-fx-text-fill: #e67e22; -fx-font-weight: bold;");
-                    });
-        } else {
-            phonemeLabel.setVisible(false);
-        }
-    }
-
-    private void updatePronunciationButtonText(EnhancedSpeechAnalysis analysis) {
-        if (pronunciationButton == null) return;
-
-        if (analysis.getPhonemeScores() != null && !analysis.getPhonemeScores().isEmpty()) {
-            long weakPhonemesCount = analysis.getPhonemeScores().values().stream()
-                    .filter(score -> score < 70)
-                    .count();
-
-            if (weakPhonemesCount > 0) {
-                pronunciationButton.setText("🎯 Тренажер (" + weakPhonemesCount + " проблем)");
-                pronunciationButton.setStyle("-fx-background-color: #e67e22; -fx-text-fill: white;");
-            } else {
-                pronunciationButton.setText("✅ Тренажер произношения");
-                pronunciationButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white;");
-            }
-        }
-    }
-
-    private void updateRecommendationsFromAnalysis(EnhancedSpeechAnalysis analysis) {
-        if (recommendationsArea == null) return;
-
-        StringBuilder recText = new StringBuilder();
-
-        if (analysis.getOverallScore() < 70) {
-            recText.append("📋 **ОСНОВНЫЕ РЕКОМЕНДАЦИИ:**\n\n");
-        } else {
-            recText.append("📋 **РЕКОМЕНДАЦИИ ПО УЛУЧШЕНИЮ:**\n\n");
-        }
-
-        if (analysis.getRecommendations() != null && !analysis.getRecommendations().isEmpty()) {
-            analysis.getRecommendations().forEach(rec ->
-                    recText.append("• ").append(rec).append("\n"));
-        } else {
-            if (analysis.getPronunciationScore() < 75) {
-                recText.append("• 🔊 Уделите внимание произношению сложных звуков\n");
-            }
-            if (analysis.getFluencyScore() < 70) {
-                recText.append("• ⚡ Работайте над беглостью речи - меньше пауз\n");
-            }
-            if (analysis.getIntonationScore() < 70) {
-                recText.append("• 🎵 Улучшайте интонацию в вопросах и утверждениях\n");
-            }
-            if (analysis.getVolumeScore() < 70) {
-                recText.append("• 🔊 Говорите громче и увереннее\n");
-            }
-        }
-
-        if (analysis.getPhonemeScores() != null && !analysis.getPhonemeScores().isEmpty()) {
-            recText.append("\n**🔊 ПРОБЛЕМНЫЕ ЗВУКИ:**\n");
-            analysis.getPhonemeScores().entrySet().stream()
-                    .filter(e -> e.getValue() < 70)
-                    .limit(3)
-                    .forEach(e -> recText.append("• /").append(e.getKey())
-                            .append("/ - ").append(String.format("%.1f", e.getValue()))
-                            .append("/100\n"));
-        }
-
-        recommendationsArea.setText(recText.toString());
     }
 
     @FXML
@@ -1282,6 +617,30 @@ public class ChatBotController implements Initializable, AutoCloseable {
             speechControlPanel.setVisible(false);
             speechControlPanel.setManaged(false);
         }
+    }
+
+    @FXML
+    private void toggleLearningModePanel() {
+        if (learningModePanel == null) return;
+
+        boolean isVisible = learningModePanel.isVisible();
+        learningModePanel.setVisible(!isVisible);
+        learningModePanel.setManaged(!isVisible);
+
+        if (isVisible) {
+            updateModeStats();
+        } else {
+            if (speechControlPanel != null) {
+                speechControlPanel.setVisible(false);
+                speechControlPanel.setManaged(false);
+            }
+            if (ttsControlPanel != null) {
+                ttsControlPanel.setVisible(false);
+                ttsControlPanel.setManaged(false);
+            }
+        }
+
+        logger.info("Панель обучения {}", isVisible ? "скрыта" : "показана");
     }
 
     @FXML
@@ -1474,7 +833,8 @@ public class ChatBotController implements Initializable, AutoCloseable {
                • 🎧 Listening - развитие аудирования
             
             📞 КОНТАКТЫ:
-            support@speakai.com
+            +(374)44082124
+            gor1990.mkhitatryan@gmail.com
             """;
 
         ErrorHandler.showInfo("Помощь", helpText);
@@ -1484,6 +844,483 @@ public class ChatBotController implements Initializable, AutoCloseable {
     private void onSettings() {
         ErrorHandler.showInfo("Настройки",
                 "Настройки будут доступны в следующей версии");
+    }
+
+    @FXML
+    public void onTestTTS(ActionEvent actionEvent) {
+        onTestGoogleTTS();
+    }
+
+    private CompletableFuture<Void> processWithLearningMode(String userId, String text, String audioFile) {
+        return learningModeManager.processInput(userId, text, Optional.ofNullable(audioFile))
+                .thenAccept(response -> {
+                    Platform.runLater(() -> {
+                        try {
+                            messagesManager.addAIMessage(
+                                    formatLearningResponse(response),
+                                    response.getTtsText()
+                            );
+
+                            state.setLastBotResponse(response.getMessage());
+                            state.setLastTtsText(response.getTtsText());
+
+                            if (modeProgressBar != null) {
+                                modeProgressBar.setProgress(response.getProgress() / 100.0);
+                            }
+
+                            if (audioFile != null && !audioFile.isEmpty()) {
+                                analyzeAudioWithManagers(audioFile, text);
+                            }
+
+                            responseModeManager.updatePlayButtonVisibility();
+                            showLoadingIndicator(false);
+
+                            if (state.hasAudioFile()) {
+                                state.clearCurrentAudioFile();
+                            }
+
+                            logger.debug("Сообщение успешно обработано через LearningModeManager");
+                        } catch (Exception e) {
+                            logger.error("Ошибка при обработке ответа от LearningModeManager", e);
+                            showLoadingIndicator(false);
+                            ErrorHandler.showError("Ошибка",
+                                    "Не удалось обработать ответ: " + e.getMessage());
+                        }
+                    });
+                })
+                .exceptionally(throwable -> {
+                    logger.error("Ошибка при обработке сообщения через LearningModeManager", throwable);
+                    Platform.runLater(() -> {
+                        ErrorHandler.showError("Ошибка",
+                                "Не удалось обработать сообщение в режиме обучения: " + throwable.getMessage());
+                        showLoadingIndicator(false);
+                    });
+                    return null;
+                });
+    }
+
+    private CompletableFuture<Void> processWithChatBotService(String text, String audioFile,
+                                                              ResponseMode responseMode) {
+        return CompletableFuture.runAsync(() -> {
+            try {
+                ChatBotService.ChatResponse response = chatBotService.processUserInput(
+                        text,
+                        audioFile,
+                        responseMode
+                );
+
+                final ChatBotService.ChatResponse finalResponse = response;
+                final String finalAudioFile = audioFile;
+                final String finalText = text;
+
+                Platform.runLater(() -> {
+                    try {
+                        messagesManager.addAIMessage(finalResponse.getFullResponse());
+                        state.setLastBotResponse(finalResponse.getFullResponse());
+
+                        if (finalResponse.getSpeechAnalysis() != null) {
+                            analysisManager.processAnalysisResponse(finalResponse);
+                        }
+                        else if (finalAudioFile != null && !finalAudioFile.isEmpty()) {
+                            analyzeAudioWithManagers(finalAudioFile, finalText);
+                        }
+
+                        responseModeManager.updatePlayButtonVisibility();
+                        showLoadingIndicator(false);
+
+                        if (state.hasAudioFile()) {
+                            state.clearCurrentAudioFile();
+                        }
+
+                        logger.debug("Сообщение успешно обработано через ChatBotService");
+                    } catch (Exception e) {
+                        logger.error("Ошибка при обновлении UI после получения ответа", e);
+                        showLoadingIndicator(false);
+                    }
+                });
+
+            } catch (Exception e) {
+                logger.error("Ошибка при обработке сообщения через ChatBotService", e);
+                Platform.runLater(() -> {
+                    ErrorHandler.showError("Ошибка",
+                            "Не удалось обработать сообщение: " + e.getMessage());
+                    showLoadingIndicator(false);
+                });
+            }
+        }, threadPoolManager.getBackgroundExecutor());
+    }
+
+    private void analyzeAudioWithManagers(String audioFile, String text) {
+        if (audioFile == null || audioFile.isEmpty()) {
+            logger.debug("Нет аудиофайла для анализа");
+            return;
+        }
+
+        logger.debug("Запуск анализа аудио: {}", audioFile);
+
+        Platform.runLater(() -> {
+            if (analysisProgress != null) {
+                analysisProgress.setVisible(true);
+            }
+            if (detailedAnalysisArea != null) {
+                detailedAnalysisArea.setVisible(true);
+            }
+        });
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                EnhancedSpeechAnalysis analysis = audioAnalyzer.analyzeAudio(audioFile, text);
+
+                Platform.runLater(() -> {
+                    if (analysisArea != null) {
+                        analysisArea.setText(analysis.getSummary());
+                    }
+
+                    if (detailedAnalysisArea != null && analysis.getDetailedReport() != null) {
+                        detailedAnalysisArea.setText(analysis.getDetailedReport());
+                        detailedAnalysisArea.setVisible(true);
+                    }
+
+                    updatePhonemeLabel(analysis);
+
+                    if (analyzeButton != null) {
+                        analyzeButton.setDisable(false);
+                    }
+                    if (pronunciationButton != null) {
+                        pronunciationButton.setDisable(false);
+                        updatePronunciationButtonText(analysis);
+                    }
+
+                    updateRecommendationsFromAnalysis(analysis);
+
+                    if (statisticsManager != null) {
+                        statisticsManager.onAnalysisPerformed();
+                    }
+
+                    if (analysisProgress != null) {
+                        analysisProgress.setVisible(false);
+                    }
+
+                    logger.info("Анализ аудио завершен. Общий балл: {}/100",
+                            String.format("%.1f", analysis.getOverallScore()));
+                });
+
+            } catch (Exception e) {
+                logger.error("Ошибка при анализе аудио", e);
+                Platform.runLater(() -> {
+                    ErrorHandler.showError("Ошибка анализа",
+                            "Не удалось выполнить анализ аудио: " + e.getMessage());
+                    if (analysisProgress != null) {
+                        analysisProgress.setVisible(false);
+                    }
+                });
+            }
+        }, threadPoolManager.getBackgroundExecutor());
+    }
+
+    private String formatLearningResponse(LearningResponse response) {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("### 🤖 AI Репетитор\n\n");
+        sb.append(response.getMessage()).append("\n\n");
+
+        if (response.getNextTask() != null) {
+            sb.append("**📋 Следующее задание:**\n");
+            sb.append(response.getNextTask().getDescription()).append("\n\n");
+        }
+
+        if (response.getRecommendations() != null && !response.getRecommendations().isEmpty()) {
+            sb.append("**💡 Рекомендации:**\n");
+            response.getRecommendations().forEach(r -> sb.append("• ").append(r).append("\n"));
+            sb.append("\n");
+        }
+
+        sb.append(String.format("**📊 Прогресс в режиме %s:** %.1f%%",
+                currentLearningMode.getDisplayName(), response.getProgress()));
+
+        Platform.runLater(() -> {
+            updateCurrentModeDisplay();
+            updateModeStats();
+        });
+
+        return sb.toString();
+    }
+
+    private String formatModeSwitchMessage(LearningResponse response) {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("🔄 **Режим обучения изменен**\n\n");
+        sb.append("**Новый режим:** ").append(currentLearningMode.getDisplayName()).append("\n");
+        sb.append("**Описание:** ").append(currentLearningMode.getDescription()).append("\n\n");
+
+        if (response.getNextTask() != null) {
+            sb.append("📋 **Следующее задание:**\n");
+            sb.append(response.getNextTask().getDescription()).append("\n\n");
+        }
+
+        sb.append(String.format("📊 **Прогресс:** %.1f%%\n", response.getProgress()));
+
+        if (response.getRecommendations() != null && !response.getRecommendations().isEmpty()) {
+            sb.append("\n💡 **Рекомендации:**\n");
+            response.getRecommendations().forEach(r -> sb.append("• ").append(r).append("\n"));
+        }
+
+        return sb.toString();
+    }
+
+    private String formatModeInfo(LearningResponse response) {
+        return String.format("""
+            Режим: %s
+            Прогресс: %.1f%%
+            Заданий выполнено: %d
+            """,
+                currentLearningMode.getDisplayName(),
+                response.getProgress(),
+                response.getNextTask() != null ? 1 : 0
+        );
+    }
+
+    private String formatRecommendations(List<String> recommendations) {
+        if (recommendations == null || recommendations.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder sb = new StringBuilder("\n**Рекомендации:**\n");
+        recommendations.forEach(r -> sb.append("• ").append(r).append("\n"));
+        return sb.toString();
+    }
+
+    private void updatePhonemeLabel(EnhancedSpeechAnalysis analysis) {
+        if (phonemeLabel == null) return;
+
+        if (analysis.getPhonemeScores() != null && !analysis.getPhonemeScores().isEmpty()) {
+            analysis.getPhonemeScores().entrySet().stream()
+                    .min(Map.Entry.comparingByValue())
+                    .ifPresent(entry -> {
+                        String phoneme = "/" + entry.getKey() + "/";
+                        float score = entry.getValue();
+
+                        String text = String.format("🔊 Слабая фонема: %s (%.1f/100)", phoneme, score);
+                        phonemeLabel.setText(text);
+                        phonemeLabel.setVisible(true);
+                        phonemeLabel.setStyle("-fx-text-fill: #e67e22; -fx-font-weight: bold;");
+                    });
+        } else {
+            phonemeLabel.setVisible(false);
+        }
+    }
+
+    private void updatePronunciationButtonText(EnhancedSpeechAnalysis analysis) {
+        if (pronunciationButton == null) return;
+
+        if (analysis.getPhonemeScores() != null && !analysis.getPhonemeScores().isEmpty()) {
+            long weakPhonemesCount = analysis.getPhonemeScores().values().stream()
+                    .filter(score -> score < 70)
+                    .count();
+
+            if (weakPhonemesCount > 0) {
+                pronunciationButton.setText("🎯 Тренажер (" + weakPhonemesCount + " проблем)");
+                pronunciationButton.setStyle("-fx-background-color: #e67e22; -fx-text-fill: white;");
+            } else {
+                pronunciationButton.setText("✅ Тренажер произношения");
+                pronunciationButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white;");
+            }
+        }
+    }
+
+    private void updateRecommendationsFromAnalysis(EnhancedSpeechAnalysis analysis) {
+        if (recommendationsArea == null) return;
+
+        StringBuilder recText = new StringBuilder();
+
+        if (analysis.getOverallScore() < 70) {
+            recText.append("📋 **ОСНОВНЫЕ РЕКОМЕНДАЦИИ:**\n\n");
+        } else {
+            recText.append("📋 **РЕКОМЕНДАЦИИ ПО УЛУЧШЕНИЮ:**\n\n");
+        }
+
+        if (analysis.getRecommendations() != null && !analysis.getRecommendations().isEmpty()) {
+            analysis.getRecommendations().forEach(rec ->
+                    recText.append("• ").append(rec).append("\n"));
+        } else {
+            if (analysis.getPronunciationScore() < 75) {
+                recText.append("• 🔊 Уделите внимание произношению сложных звуков\n");
+            }
+            if (analysis.getFluencyScore() < 70) {
+                recText.append("• ⚡ Работайте над беглостью речи - меньше пауз\n");
+            }
+            if (analysis.getIntonationScore() < 70) {
+                recText.append("• 🎵 Улучшайте интонацию в вопросах и утверждениях\n");
+            }
+            if (analysis.getVolumeScore() < 70) {
+                recText.append("• 🔊 Говорите громче и увереннее\n");
+            }
+        }
+
+        if (analysis.getPhonemeScores() != null && !analysis.getPhonemeScores().isEmpty()) {
+            recText.append("\n**🔊 ПРОБЛЕМНЫЕ ЗВУКИ:**\n");
+            analysis.getPhonemeScores().entrySet().stream()
+                    .filter(e -> e.getValue() < 70)
+                    .limit(3)
+                    .forEach(e -> recText.append("• /").append(e.getKey())
+                            .append("/ - ").append(String.format("%.1f", e.getValue()))
+                            .append("/100\n"));
+        }
+
+        recommendationsArea.setText(recText.toString());
+    }
+
+    private void showWelcomeMessage() {
+        String ttsMode = textToSpeechService != null && textToSpeechService.isAvailable()
+                ? "Google Cloud TTS (WaveNet)"
+                : "TTS недоступен";
+
+        ResponseMode currentResponseMode = state.getCurrentResponseMode();
+        String responseModeText = currentResponseMode == ResponseMode.VOICE ? "🔊 Голосовой" : "📝 Текстовый";
+
+        String welcomeMessage = String.format("""
+            🌟 Добро пожаловать в SpeakAI!
+            
+            Текущий режим: %s
+            Режим ответа: %s
+            Режим обучения: %s
+            
+            Как это работает:
+            1. Выберите режим обучения в панели справа
+            2. Напишите сообщение или нажмите кнопку записи 🎤
+            3. Получите анализ речи и рекомендации
+            4. Используйте тренажер произношения для проблемных звуков
+            
+            Доступные режимы обучения:
+            • 💬 Conversation - разговорная практика
+            • 🔊 Pronunciation - тренировка произношения
+            • 📚 Grammar - изучение грамматики
+            • 🎯 Exercise - выполнение упражнений
+            • 📖 Vocabulary - расширение словарного запаса
+            • ✍️ Writing - практика письма
+            • 🎧 Listening - развитие аудирования
+            
+            Давайте начнем! ✨
+            """, ttsMode, responseModeText, currentLearningMode.getDisplayName());
+
+        messagesManager.addAIMessage(welcomeMessage);
+
+        ThreadPoolManager.runWithDelay(() -> {
+            logger.debug("Приветственное сообщение показано");
+        }, 100);
+    }
+
+    private void updateStatusLabel() {
+        if (statusLabel == null) return;
+
+        String status = state.isAiServiceAvailable()
+                ? "✅ ИИ-сервис доступен"
+                : "⚠️ Демо-режим";
+
+        Platform.runLater(() -> {
+            statusLabel.setText(status);
+            statusLabel.setStyle("-fx-font-weight: bold;");
+        });
+    }
+
+    private void showLoadingIndicator(boolean show) {
+        Platform.runLater(() -> {
+            if (statusLabel != null) {
+                statusLabel.setText(show ? "⏳ Обработка..." :
+                        state.isAiServiceAvailable() ? "✅ ИИ-сервис доступен" : "⚠️ Демо-режим");
+            }
+            if (sendButton != null) {
+                sendButton.setDisable(show);
+                sendButton.setStyle(show ?
+                        "-fx-background-color: #95a5a6; -fx-text-fill: white;" :
+                        "-fx-background-color: #3498db; -fx-text-fill: white;");
+            }
+            if (switchModeButton != null) {
+                switchModeButton.setDisable(show);
+            }
+        });
+    }
+
+    private String getCurrentUserIdSafely() {
+        try {
+            if (chatBotService != null) {
+                String userId = chatBotService.getCurrentUserIdSafely();
+                if (userId != null && !userId.trim().isEmpty()) {
+                    return userId;
+                }
+
+                User user = chatBotService.getCurrentUser();
+                if (user != null) {
+                    return String.valueOf(user.getId());
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Ошибка в getCurrentUserIdSafely", e);
+        }
+
+        String tempId = "temp_" + System.currentTimeMillis();
+        logger.warn("Создан временный ID в контроллере: {}", tempId);
+        return tempId;
+    }
+
+    private void updateModeStats() {
+        if (learningModeManager == null || modeStatsArea == null) return;
+
+        String userId = getCurrentUserIdSafely();
+
+        learningModeManager.analyzeOverallProgress(userId)
+                .thenAccept(progress -> {
+                    Platform.runLater(() -> {
+                        StringBuilder stats = new StringBuilder();
+                        progress.forEach((mode, value) ->
+                                stats.append(String.format("• %s: %.1f%%\n",
+                                        mode.getDisplayName(), value)));
+
+                        if (stats.isEmpty()) {
+                            stats.append("Нет данных. Начните обучение!");
+                        }
+
+                        modeStatsArea.setText(stats.toString());
+                    });
+                })
+                .exceptionally(throwable -> {
+                    logger.error("Ошибка при получении статистики", throwable);
+                    Platform.runLater(() ->
+                            modeStatsArea.setText("Ошибка загрузки статистики"));
+                    return null;
+                });
+    }
+
+    private void updateCurrentModeDisplay() {
+        if (currentModeLabel != null) {
+            currentModeLabel.setText(currentLearningMode.getDisplayName());
+            currentModeLabel.setTooltip(new Tooltip(currentLearningMode.getDescription()));
+        }
+
+        if (modeStatusLabel != null) {
+            modeStatusLabel.setText("✅ Активен");
+        }
+
+        if (modeProgressLabel != null && modeProgressBar != null) {
+            double progress = getCurrentModeProgress();
+            modeProgressBar.setProgress(progress / 100.0);
+            modeProgressLabel.setText(String.format("%.1f%%", progress));
+        }
+    }
+
+    private double getCurrentModeProgress() {
+        if (learningModeManager == null) return 0;
+
+        String userId = getCurrentUserIdSafely();
+
+        try {
+            return learningModeManager.analyzeOverallProgress(userId)
+                    .thenApply(progress -> progress.getOrDefault(currentLearningMode, 0.0))
+                    .get(1, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            logger.debug("Не удалось получить прогресс: {}", e.getMessage());
+            return 0;
+        }
     }
 
     private void showTextWindow(String title, String content, int width, int height) {
@@ -1504,6 +1341,253 @@ public class ChatBotController implements Initializable, AutoCloseable {
         Scene scene = new Scene(scrollPane, width, height);
         textStage.setScene(scene);
         textStage.show();
+    }
+
+    private ITTSService initializeTTSService() {
+        setupGoogleCloudTTSCredentials();
+
+        try {
+            GoogleCloudTextToSpeechService googleService = ErrorHandler.retry(() -> {
+                try {
+                    GoogleCloudTextToSpeechService service = new GoogleCloudTextToSpeechService();
+
+                    Thread.sleep(AppConstants.GOOGLE_TTS_INIT_DELAY_MS);
+
+                    if (service.isAvailable()) {
+                        logger.info("✅ Google Cloud TTS успешно инициализирован");
+                        logger.info("   Голос: {}", service.getCurrentVoice().getDescription());
+                        logger.info("   Метод аутентификации: {}", service.getAuthMethod());
+                        return service;
+                    } else {
+                        logger.warn("⚠️ Google Cloud TTS создан, но недоступен");
+                        return null;
+                    }
+                } catch (Exception e) {
+                    logger.error("❌ Ошибка при создании Google Cloud TTS: {}", e.getMessage());
+                    return null;
+                }
+            }, 2, 1000, "инициализация Google Cloud TTS");
+
+            if (googleService != null && googleService.isAvailable()) {
+                showTTSConnectionSuccess(googleService);
+                return googleService;
+            }
+
+        } catch (Exception e) {
+            logger.warn("Не удалось инициализировать Google Cloud TTS: {}", e.getMessage());
+        }
+
+        return initializeDemoTTSService();
+    }
+
+    private ITTSService initializeDemoTTSService() {
+        logger.warn("⚠️ Используется демо-режим TTS (без реальной озвучки)");
+
+        DemoTextToSpeechService demoServices = new DemoTextToSpeechService();
+
+        Platform.runLater(() -> {
+            showTTSConnectionWarning();
+
+            if (ttsStatusLabel != null) {
+                ttsStatusLabel.setText("⚠️ Демо-режим TTS");
+                ttsStatusLabel.setStyle("-fx-text-fill: #f39c12; -fx-font-weight: bold;");
+            }
+            if (ttsStatusIndicator != null) {
+                ttsStatusIndicator.setFill(Color.ORANGE);
+            }
+            if (ttsModeLabel != null) {
+                ttsModeLabel.setText("Демо-режим TTS");
+                ttsModeLabel.setStyle("-fx-text-fill: #f39c12; -fx-font-weight: bold;");
+            }
+            if (ttsInfoTextArea != null) {
+                ttsInfoTextArea.setText(getDemoTTSInfoText());
+            }
+        });
+
+        return demoServices;
+    }
+
+    private String getDemoTTSInfoText() {
+        return """
+            ⚠️ TTS В ДЕМО-РЕЖИМЕ
+            =======================
+            
+            Google Cloud TTS не настроен или недоступен.
+            
+            📋 ЧТОБЫ ВКЛЮЧИТЬ РЕАЛЬНУЮ ОЗВУЧКУ:
+            
+            1. Получите файл учетных данных:
+               • Перейдите в Google Cloud Console
+               • Создайте Service Account
+               • Скачайте ключ в формате JSON
+               • Переименуйте в google-credentials.json
+            
+            2. Поместите файл в одну из папок:
+               • Корень проекта
+               • src/main/resources/
+               • Укажите путь в переменной GOOGLE_APPLICATION_CREDENTIALS
+            
+            3. Включите Text-to-Speech API в Google Cloud Console
+            
+            4. Перезапустите приложение
+            
+            🔧 ТЕКУЩИЙ СТАТУС:
+            • Режим: Демо (без звука)
+            • Функция: Только логирование
+            """;
+    }
+
+    private void setupGoogleCloudTTSCredentials() {
+        try {
+            logger.info("=== НАСТРОЙКА GOOGLE CLOUD TTS ===");
+
+            String projectRoot = System.getProperty("user.dir");
+            logger.info("Корневая папка проекта: {}", projectRoot);
+
+            String[] possiblePaths = {
+                    projectRoot + "/google-credentials.json",
+                    projectRoot + "/src/main/resources/google-credentials.json",
+                    "google-credentials.json",
+                    "./google-credentials.json"
+            };
+
+            File credentialsFile = null;
+            for (String path : possiblePaths) {
+                File file = new File(path);
+                logger.info("Проверяем путь: {} -> существует: {}", path, file.exists());
+                if (file.exists() && file.canRead()) {
+                    credentialsFile = file;
+                    logger.info("✅ Найден файл учетных данных: {}", path);
+                    break;
+                }
+            }
+
+            String envPath = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
+            if (credentialsFile == null && envPath != null && !envPath.isEmpty()) {
+                File envFile = new File(envPath);
+                if (envFile.exists() && envFile.canRead()) {
+                    credentialsFile = envFile;
+                    logger.info("✅ Найден файл учетных данных из переменной окружения: {}", envPath);
+                }
+            }
+
+            if (credentialsFile == null) {
+                logger.error("❌ Файл google-credentials.json не найден ни в одном из возможных мест");
+                logger.info("Создайте файл google-credentials.json в корне проекта или в папке src/main/resources/");
+                return;
+            }
+
+            System.setProperty("GOOGLE_APPLICATION_CREDENTIALS", credentialsFile.getAbsolutePath());
+            logger.info("✅ Установлена переменная: GOOGLE_APPLICATION_CREDENTIALS={}",
+                    credentialsFile.getAbsolutePath());
+
+            try {
+                String content = new String(Files.readAllBytes(credentialsFile.toPath()));
+                logger.info("✅ Файл успешно прочитан, размер: {} байт", content.length());
+
+                JSONObject json = new JSONObject(content);
+                String projectId = json.optString("project_id", "не указан");
+                String clientEmail = json.optString("client_email", "не указан");
+                logger.info("✅ Project ID: {}", projectId);
+                logger.info("✅ Client Email: {}", clientEmail);
+
+            } catch (Exception e) {
+                logger.error("❌ Ошибка при чтении файла: {}", e.getMessage());
+            }
+
+            logger.info("=== НАСТРОЙКА ЗАВЕРШЕНА ===");
+
+        } catch (Exception e) {
+            logger.error("Ошибка при настройке Google Cloud TTS", e);
+        }
+    }
+
+    private void showTTSConnectionSuccess(GoogleCloudTextToSpeechService service) {
+        Platform.runLater(() -> {
+            Alert alert = new Alert(Alert.AlertType.INFORMATION);
+            alert.setTitle("Google Cloud TTS подключен");
+            alert.setHeaderText("✅ Голосовая озвучка активирована");
+            alert.setContentText(String.format("""
+            Google Cloud Text-to-Speech успешно подключен!
+            
+            📊 ИНФОРМАЦИЯ:
+            • Метод: %s
+            • Голос: %s
+            • Язык: %s
+            • Качество: %s
+            
+            🔊 Теперь приложение может озвучивать ответы голосом.
+            """,
+                    service.getAuthMethod(),
+                    service.getCurrentVoice().getDescription(),
+                    service.getCurrentLanguage(),
+                    service.getCurrentVoice().getModelType()
+            ));
+            alert.show();
+        });
+    }
+
+    private void showTTSConnectionWarning() {
+        Alert alert = new Alert(Alert.AlertType.WARNING);
+        alert.setTitle("TTS в демо-режиме");
+        alert.setHeaderText("⚠️ Google Cloud TTS не настроен");
+
+        StringBuilder content = new StringBuilder();
+        content.append("Используется демо-режим без реальной озвучки.\n\n");
+        content.append("📁 ПРОВЕРЕННЫЕ ПУТИ:\n");
+
+        String projectRoot = System.getProperty("user.dir");
+        String[] paths = {
+                projectRoot + "/google-credentials.json",
+                projectRoot + "/src/main/resources/google-credentials.json",
+                "google-credentials.json",
+                "./google-credentials.json"
+        };
+
+        boolean foundAny = false;
+        for (String path : paths) {
+            File file = new File(path);
+            String status = file.exists() ? "✅ Файл существует" : "❌ Не найден";
+            if (file.exists()) foundAny = true;
+            content.append("  • ").append(path).append(" - ").append(status).append("\n");
+        }
+
+        String envPath = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
+        if (envPath != null && !envPath.isEmpty()) {
+            File envFile = new File(envPath);
+            String status = envFile.exists() ? "✅ Файл существует" : "❌ Не найден";
+            content.append("  • ").append(envPath).append(" (переменная окружения) - ").append(status).append("\n");
+            if (envFile.exists()) foundAny = true;
+        }
+
+        if (foundAny) {
+            content.append("\n⚠️ Файл найден, но Google Cloud TTS недоступен.\n");
+            content.append("   Проверьте:\n");
+            content.append("   • Включен ли Text-to-Speech API в проекте\n");
+            content.append("   • Есть ли у Service Account права на TTS\n");
+            content.append("   • Работает ли интернет-соединение\n");
+        } else {
+            content.append("\n📋 ИНСТРУКЦИЯ ПО НАСТРОЙКЕ:\n");
+            content.append("   1. Создайте проект в Google Cloud Console\n");
+            content.append("   2. Включите Text-to-Speech API\n");
+            content.append("   3. Создайте Service Account и скачайте ключ JSON\n");
+            content.append("   4. Сохраните файл как google-credentials.json\n");
+            content.append("   5. Перезапустите приложение\n");
+        }
+
+        alert.setContentText(content.toString());
+        alert.setResizable(true);
+        alert.getDialogPane().setPrefWidth(700);
+        alert.show();
+    }
+
+    private AiService initializeAIService() {
+        return ErrorHandler.orElse(() -> {
+            AiService service = AIServiceFactory.createService(config.getRawProperties());
+            logger.info("✅ AI сервис инициализирован: {}",
+                    service.getClass().getSimpleName());
+            return service;
+        }, new MockAiService(), "Ошибка инициализации AI сервиса, используется Mock");
     }
 
     public void setStage(Stage stage) {
@@ -1586,94 +1670,5 @@ public class ChatBotController implements Initializable, AutoCloseable {
         });
 
         logger.info("ChatBotController закрыт");
-    }
-
-    @FXML
-    public void onTestTTS(ActionEvent actionEvent) {
-        onTestGoogleTTS();
-    }
-
-    @FXML
-    private void toggleLearningModePanel() {
-        if (learningModePanel == null) return;
-
-        boolean isVisible = learningModePanel.isVisible();
-        learningModePanel.setVisible(!isVisible);
-        learningModePanel.setManaged(!isVisible);
-
-        if (isVisible) {
-            updateModeStats();
-        } else {
-            if (speechControlPanel != null) {
-                speechControlPanel.setVisible(false);
-                speechControlPanel.setManaged(false);
-            }
-            if (ttsControlPanel != null) {
-                ttsControlPanel.setVisible(false);
-                ttsControlPanel.setManaged(false);
-            }
-        }
-
-        logger.info("Панель обучения {}", isVisible ? "скрыта" : "показана");
-    }
-
-    private void updateModeStats() {
-        if (learningModeManager == null || modeStatsArea == null) return;
-
-        String userId = getCurrentUserIdSafely();
-
-        learningModeManager.analyzeOverallProgress(userId)
-                .thenAccept(progress -> {
-                    Platform.runLater(() -> {
-                        StringBuilder stats = new StringBuilder();
-                        progress.forEach((mode, value) ->
-                                stats.append(String.format("• %s: %.1f%%\n",
-                                        mode.getDisplayName(), value)));
-
-                        if (stats.isEmpty()) {
-                            stats.append("Нет данных. Начните обучение!");
-                        }
-
-                        modeStatsArea.setText(stats.toString());
-                    });
-                })
-                .exceptionally(throwable -> {
-                    logger.error("Ошибка при получении статистики", throwable);
-                    Platform.runLater(() ->
-                            modeStatsArea.setText("Ошибка загрузки статистики"));
-                    return null;
-                });
-    }
-
-    private void updateCurrentModeDisplay() {
-        if (currentModeLabel != null) {
-            currentModeLabel.setText(currentLearningMode.getDisplayName());
-            currentModeLabel.setTooltip(new Tooltip(currentLearningMode.getDescription()));
-        }
-
-        if (modeStatusLabel != null) {
-            modeStatusLabel.setText("✅ Активен");
-        }
-
-        if (modeProgressLabel != null && modeProgressBar != null) {
-            double progress = getCurrentModeProgress();
-            modeProgressBar.setProgress(progress / 100.0);
-            modeProgressLabel.setText(String.format("%.1f%%", progress));
-        }
-    }
-
-    private double getCurrentModeProgress() {
-        if (learningModeManager == null) return 0;
-
-        String userId = getCurrentUserIdSafely();
-
-        try {
-            return learningModeManager.analyzeOverallProgress(userId)
-                    .thenApply(progress -> progress.getOrDefault(currentLearningMode, 0.0))
-                    .get(1, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            logger.debug("Не удалось получить прогресс: {}", e.getMessage());
-            return 0;
-        }
     }
 }

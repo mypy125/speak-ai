@@ -8,7 +8,6 @@ import com.mygitgor.config.AppConstants;
 public class TextCleanerService {
     private static final Logger logger = LoggerFactory.getLogger(TextCleanerService.class);
 
-    // Паттерны для очистки текста
     private static final Pattern MARKDOWN_PATTERN = Pattern.compile("#+\\s*|\\*\\*|\\*|`|\\[.*?\\]\\(.*?\\)");
     private static final Pattern HTML_PATTERN = Pattern.compile("<[^>]*>");
     private static final Pattern EMOJI_PATTERN = Pattern.compile("[🤖🎤📝📊🗣️✅⚠️🔴🔊▶️🏆🎉👍💪📚🔧❤️✨🌟🔥💡🎯📅❌ℹ️]");
@@ -24,7 +23,6 @@ public class TextCleanerService {
 
         String cleanText = text;
 
-        // Применяем все паттерны очистки
         cleanText = MARKDOWN_PATTERN.matcher(cleanText).replaceAll("");
         cleanText = HTML_PATTERN.matcher(cleanText).replaceAll("");
         cleanText = EMOJI_PATTERN.matcher(cleanText).replaceAll("");
@@ -35,7 +33,6 @@ public class TextCleanerService {
 
         cleanText = cleanText.trim();
 
-        // Ограничиваем длину
         if (cleanText.length() > AppConstants.MAX_SPEECH_TEXT_LENGTH) {
             cleanText = cleanText.substring(0, AppConstants.MAX_SPEECH_TEXT_LENGTH) +
                     "... [текст сокращен]";
@@ -47,7 +44,6 @@ public class TextCleanerService {
 
     public String cleanForDisplay(String text) {
         if (text == null) return "";
-        // Очистка для отображения в UI
         return text.trim();
     }
 }

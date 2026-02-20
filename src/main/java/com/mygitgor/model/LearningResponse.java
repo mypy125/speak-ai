@@ -2,10 +2,11 @@ package com.mygitgor.model;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.*;
+import java.util.ArrayList;
 
 public class LearningResponse {
     private final String message;
+    private final String ttsText;
     private final LearningMode nextMode;
     private final LearningTask nextTask;
     private final double progress;
@@ -13,6 +14,7 @@ public class LearningResponse {
 
     private LearningResponse(Builder builder) {
         this.message = builder.message;
+        this.ttsText = builder.ttsText;
         this.nextMode = builder.nextMode;
         this.nextTask = builder.nextTask;
         this.progress = Math.min(100, Math.max(0, builder.progress));
@@ -27,6 +29,7 @@ public class LearningResponse {
 
     public static class Builder {
         private String message;
+        private String ttsText;
         private LearningMode nextMode;
         private LearningTask nextTask;
         private double progress;
@@ -34,6 +37,11 @@ public class LearningResponse {
 
         public Builder message(String message) {
             this.message = message;
+            return this;
+        }
+
+        public Builder ttsText(String ttsText) {
+            this.ttsText = ttsText;
             return this;
         }
 
@@ -74,10 +82,14 @@ public class LearningResponse {
             if (message == null || message.trim().isEmpty()) {
                 message = "Готов к обучению!";
             }
+            if (ttsText == null || ttsText.trim().isEmpty()) {
+                ttsText = message;
+            }
         }
     }
 
     public String getMessage() { return message; }
+    public String getTtsText() { return ttsText; }
     public LearningMode getNextMode() { return nextMode; }
     public LearningTask getNextTask() { return nextTask; }
     public double getProgress() { return progress; }
@@ -85,7 +97,7 @@ public class LearningResponse {
 
     @Override
     public String toString() {
-        return String.format("LearningResponse{progress=%.1f%%, mode=%s, hasTask=%s}",
-                progress, nextMode, nextTask != null);
+        return String.format("LearningResponse{progress=%.1f%%, mode=%s, hasTask=%s, hasTts=%s}",
+                progress, nextMode, nextTask != null, ttsText != null);
     }
 }

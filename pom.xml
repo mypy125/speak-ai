@@ -12,8 +12,35 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <javafx.version>21</javafx.version>
+        <javafx.version>21.0.6</javafx.version>
+        <jpro.version>2024.4.1</jpro.version>
+<!--        <jpro.version>2025.2.1</jpro.version>-->
     </properties>
+
+    <!-- Репозиторий для ЗАВИСИМОСТЕЙ -->
+    <repositories>
+        <repository>
+            <id>jpro-sandec</id>
+            <name>JPro repository</name>
+            <url>https://sandec.jfrog.io/artifactory/repo/</url>
+            <releases>
+                <enabled>true</enabled>
+                <updatePolicy>always</updatePolicy>
+            </releases>
+        </repository>
+    </repositories>
+    <pluginRepositories>
+        <pluginRepository>
+            <id>jpro-sandec-plugins</id>
+            <name>JPro plugin repository</name>
+            <url>https://sandec.jfrog.io/artifactory/repo/</url>
+            <releases>
+                <enabled>true</enabled>
+                <updatePolicy>always</updatePolicy>
+            </releases>
+        </pluginRepository>
+    </pluginRepositories>
+
     <dependencies>
         <dependency>
             <groupId>org.openjfx</groupId>
@@ -35,60 +62,75 @@
             <artifactId>javafx-web</artifactId>
             <version>${javafx.version}</version>
         </dependency>
+        <!-- Source: https://mvnrepository.com/artifact/one.jpro/jpro-client-javafx -->
+        <dependency>
+            <groupId>one.jpro</groupId>
+            <artifactId>jpro-client-javafx_2.12</artifactId>
+            <version>${jpro.version}</version>
+        </dependency>
+
+        <!-- JPRO: Серверная часть -->
+        <dependency>
+            <groupId>one.jpro</groupId>
+            <artifactId>jpro-server_2.12</artifactId>
+            <version>${jpro.version}</version>
+        </dependency>
+
+        <!-- Source: https://mvnrepository.com/artifact/one.jpro/jpro-routing-core -->
+        <dependency>
+            <groupId>one.jpro.platform</groupId>
+            <artifactId>jpro-routing-core</artifactId>
+            <version>0.5.7</version>
+            <scope>compile</scope>
+        </dependency>
+
+        <!-- Source: https://mvnrepository.com/artifact/one.jpro/jpro-webapi -->
+        <dependency>
+            <groupId>one.jpro</groupId>
+            <artifactId>jpro-webapi</artifactId>
+            <version>${jpro.version}</version>
+        </dependency>
 
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
             <version>2.10.1</version>
         </dependency>
-
-        <!-- Официальная библиотека OpenAI Java -->
         <dependency>
             <groupId>com.openai</groupId>
             <artifactId>openai-java</artifactId>
             <version>0.41.0</version>
         </dependency>
-
-        <!-- Или Theokanning OpenAI (альтернатива) -->
         <dependency>
             <groupId>com.theokanning.openai-gpt3-java</groupId>
             <artifactId>service</artifactId>
             <version>0.18.2</version>
         </dependency>
-
-        <!-- В файле pom.xml в разделе <dependencies> -->
         <dependency>
             <groupId>javazoom</groupId>
             <artifactId>jlayer</artifactId>
             <version>1.0.1</version>
         </dependency>
-
-        <!-- Для работы с аудио -->
         <dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
             <version>32.1.3-jre</version>
         </dependency>
-
         <dependency>
             <groupId>com.google.auth</groupId>
             <artifactId>google-auth-library-oauth2-http</artifactId>
             <version>1.19.0</version>
         </dependency>
-
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
             <version>2.16.1</version>
         </dependency>
-
         <dependency>
             <groupId>org.json</groupId>
             <artifactId>json</artifactId>
             <version>20240303</version>
         </dependency>
-
-        <!-- База данных -->
         <dependency>
             <groupId>org.xerial</groupId>
             <artifactId>sqlite-jdbc</artifactId>
@@ -104,19 +146,16 @@
             <artifactId>ormlite-core</artifactId>
             <version>6.1</version>
         </dependency>
-
         <dependency>
             <groupId>com.alphacephei</groupId>
             <artifactId>vosk</artifactId>
             <version>0.3.45</version>
         </dependency>
-
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>okhttp</artifactId>
             <version>4.12.0</version>
         </dependency>
-
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
@@ -166,6 +205,25 @@
                     <source>17</source>
                     <target>17</target>
                     <encoding>UTF-8</encoding>
+                </configuration>
+            </plugin>
+
+            <!-- JPro Maven Plugin -->
+            <plugin>
+                <groupId>one.jpro</groupId>
+                <artifactId>jpro-maven-plugin</artifactId>
+                <version>${jpro.version}</version>
+                <configuration>
+                    <mainClassName>com.mygitgor.JProWebApp</mainClassName>
+<!--                    <httpPort>8080</httpPort>-->
+<!--                    <jvmArgs>-->
+<!--                        <jvmArg>&#45;&#45;add-opens=java.base/java.lang=ALL-UNNAMED</jvmArg>-->
+<!--                        <jvmArg>&#45;&#45;add-opens=javafx.graphics/javafx.scene=ALL-UNNAMED</jvmArg>-->
+<!--                        <jvmArg>&#45;&#45;add-opens=javafx.graphics/com.sun.javafx.application=ALL-UNNAMED</jvmArg>-->
+<!--                        <jvmArg>&#45;&#45;add-opens=javafx.controls/com.sun.javafx.scene.control=ALL-UNNAMED</jvmArg>-->
+<!--                        <jvmArg>&#45;&#45;add-opens=javafx.fxml/javafx.fxml=ALL-UNNAMED</jvmArg>-->
+<!--                    </jvmArgs>-->
+<!--                    <configFile>jpro-config.json</configFile>-->
                 </configuration>
             </plugin>
 
