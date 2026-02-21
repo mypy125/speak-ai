@@ -84,7 +84,6 @@ public class RecommendationEngine {
 
         currentOperation.set(future);
 
-        // Таймаут на случай зависания
         threadPoolManager.getScheduledExecutor().schedule(() -> {
             if (!future.isDone()) {
                 future.cancel(true);
@@ -325,15 +324,12 @@ public class RecommendationEngine {
         if (analysis.getVolumeScore() < 70) {
             recommendations.add(createVolumeImprovementRecommendation());
         }
-
         if (analysis.getClarityScore() < 70) {
             recommendations.add(createClarityImprovementRecommendation());
         }
-
         if (analysis.getConfidenceScore() < 70) {
             recommendations.add(createConfidenceBuildingRecommendation());
         }
-
         return recommendations;
     }
 

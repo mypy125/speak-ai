@@ -8,7 +8,6 @@ import com.mygitgor.chatbot.components.*;
 import com.mygitgor.config.AppConstants;
 import com.mygitgor.config.ServicesConfig;
 import com.mygitgor.error.ErrorHandler;
-import com.mygitgor.error.ServiceInitializationException;
 import com.mygitgor.model.core.Conversation;
 import com.mygitgor.model.EnhancedSpeechAnalysis;
 import com.mygitgor.model.core.User;

@@ -1,7 +1,7 @@
-package com.mygitgor.ai.strategy.type;
+package com.mygitgor.ai.learning.strategy;
 
 import com.mygitgor.ai.AiService;
-import com.mygitgor.ai.strategy.*;
+import com.mygitgor.ai.learning.*;
 import com.mygitgor.model.LearningContext;
 import com.mygitgor.model.LearningMode;
 import com.mygitgor.model.LearningResponse;

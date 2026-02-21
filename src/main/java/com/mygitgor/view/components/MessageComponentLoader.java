@@ -148,7 +148,9 @@ public class MessageComponentLoader {
 
         if (webView != null) {
             configureWebView(webView);
-            webView.getEngine().loadContent(html);
+
+            String fullHtml = wrapHtmlWithStyles(html);
+            webView.getEngine().loadContent(fullHtml);
         }
         if (timeLabel != null) timeLabel.setText(time);
 
@@ -412,7 +414,9 @@ public class MessageComponentLoader {
         webView.setFocusTraversable(false);
         webView.setPrefHeight(50);
         configureWebView(webView);
-        webView.getEngine().loadContent(html);
+
+        String fullHtml = wrapHtmlWithStyles(html);
+        webView.getEngine().loadContent(fullHtml);
 
         Label timeLabel = new Label(time);
         timeLabel.getStyleClass().add("time-label");
@@ -483,5 +487,298 @@ public class MessageComponentLoader {
                 });
             }
         });
+    }
+
+    private static String wrapHtmlWithStyles(String content) {
+        return String.format("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                /* ==================== БАЗОВЫЕ СТИЛИ ==================== */
+                * {
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                }
+                
+                body {
+                    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+                    font-size: 14px;
+                    line-height: 1.6;
+                    color: #2c3e50;
+                    background: transparent;
+                    padding: 8px;
+                }
+                
+                /* ==================== ЗАГОЛОВКИ ==================== */
+                h1 {
+                    color: #2c3e50;
+                    font-size: 20px;
+                    font-weight: 600;
+                    margin: 15px 0 10px;
+                    padding-bottom: 8px;
+                    border-bottom: 2px solid #3498db;
+                }
+                
+                h2 {
+                    color: #34495e;
+                    font-size: 18px;
+                    font-weight: 600;
+                    margin: 12px 0 8px;
+                    padding-left: 10px;
+                    border-left: 4px solid #9b59b6;
+                }
+                
+                h3 {
+                    color: #7f8c8d;
+                    font-size: 16px;
+                    font-weight: 600;
+                    margin: 10px 0 5px;
+                }
+                
+                /* ==================== ПАРАГРАФЫ ==================== */
+                p {
+                    margin: 8px 0;
+                    color: #2c3e50;
+                }
+                
+                /* ==================== СПИСКИ ==================== */
+                ul, ol {
+                    margin: 8px 0 8px 20px;
+                    padding-left: 10px;
+                }
+                
+                li {
+                    margin: 4px 0;
+                    line-height: 1.5;
+                }
+                
+                li::marker {
+                    color: #3498db;
+                }
+                
+                /* ==================== ТАБЛИЦЫ ==================== */
+                table {
+                    width: 100%%;
+                    border-collapse: collapse;
+                    margin: 15px 0;
+                    background: white;
+                    border-radius: 8px;
+                    overflow: hidden;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                }
+                
+                th {
+                    background: #3498db;
+                    color: white;
+                    font-weight: 600;
+                    padding: 10px;
+                    text-align: left;
+                }
+                
+                td {
+                    padding: 8px 10px;
+                    border-bottom: 1px solid #ecf0f1;
+                }
+                
+                tr:last-child td {
+                    border-bottom: none;
+                }
+                
+                tr:hover {
+                    background: #f5f9ff;
+                }
+                
+                /* ==================== БЛОКИ КОДА ==================== */
+                pre {
+                    background: #2c3e50;
+                    color: #ecf0f1;
+                    padding: 12px;
+                    border-radius: 8px;
+                    overflow-x: auto;
+                    font-family: 'Consolas', 'Monaco', monospace;
+                    font-size: 13px;
+                    margin: 10px 0;
+                }
+                
+                code {
+                    background: #ecf0f1;
+                    color: #e74c3c;
+                    padding: 2px 5px;
+                    border-radius: 4px;
+                    font-family: 'Consolas', monospace;
+                    font-size: 12px;
+                }
+                
+                /* ==================== ЦИТАТЫ ==================== */
+                blockquote {
+                    background: #f9f9f9;
+                    border-left: 4px solid #9b59b6;
+                    margin: 10px 0;
+                    padding: 10px 15px;
+                    color: #7f8c8d;
+                    font-style: italic;
+                    border-radius: 0 8px 8px 0;
+                }
+                
+                /* ==================== ИНФОРМАЦИОННЫЕ КАРТОЧКИ ==================== */
+                .info-card {
+                    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+                    border-radius: 10px;
+                    padding: 15px;
+                    margin: 15px 0;
+                    border-left: 4px solid #3498db;
+                }
+                
+                .success-card {
+                    background: linear-gradient(135deg, #d4edda, #c3e6cb);
+                    border-radius: 10px;
+                    padding: 15px;
+                    margin: 15px 0;
+                    border-left: 4px solid #28a745;
+                    color: #155724;
+                }
+                
+                .warning-card {
+                    background: linear-gradient(135deg, #fff3cd, #ffeeba);
+                    border-radius: 10px;
+                    padding: 15px;
+                    margin: 15px 0;
+                    border-left: 4px solid #ffc107;
+                    color: #856404;
+                }
+                
+                /* ==================== ТЕГИ И ЧИПСЫ ==================== */
+                .tag {
+                    display: inline-block;
+                    background: #e0e0e0;
+                    color: #2c3e50;
+                    padding: 4px 12px;
+                    border-radius: 20px;
+                    font-size: 12px;
+                    margin: 2px;
+                    transition: all 0.3s ease;
+                }
+                
+                .tag:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                }
+                
+                .tag-primary {
+                    background: #3498db;
+                    color: white;
+                }
+                
+                .tag-success {
+                    background: #27ae60;
+                    color: white;
+                }
+                
+                .tag-warning {
+                    background: #f39c12;
+                    color: white;
+                }
+                
+                /* ==================== ПРОГРЕСС-БАРЫ ==================== */
+                .progress-container {
+                    background: #ecf0f1;
+                    height: 24px;
+                    border-radius: 12px;
+                    overflow: hidden;
+                    margin: 10px 0;
+                }
+                
+                .progress-bar {
+                    height: 100%%;
+                    background: linear-gradient(90deg, #3498db, #9b59b6);
+                    color: white;
+                    text-align: center;
+                    line-height: 24px;
+                    font-size: 12px;
+                    font-weight: bold;
+                }
+                
+                /* ==================== КАРТОЧКИ ==================== */
+                .card {
+                    background: white;
+                    border-radius: 10px;
+                    padding: 15px;
+                    margin: 10px 0;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                    border: 1px solid #ecf0f1;
+                }
+                
+                /* ==================== ССЫЛКИ ==================== */
+                a {
+                    color: #3498db;
+                    text-decoration: none;
+                    transition: color 0.3s ease;
+                }
+                
+                a:hover {
+                    color: #2980b9;
+                    text-decoration: underline;
+                }
+                
+                /* ==================== РАЗДЕЛИТЕЛИ ==================== */
+                hr {
+                    border: none;
+                    height: 1px;
+                    background: linear-gradient(to right, transparent, #e0e0e0, transparent);
+                    margin: 15px 0;
+                }
+                
+                /* ==================== АНИМАЦИИ ==================== */
+                @keyframes fadeIn {
+                    from {
+                        opacity: 0;
+                        transform: translateY(10px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
+                }
+                
+                .message-content {
+                    animation: fadeIn 0.5s ease;
+                }
+                
+                /* ==================== АДАПТИВНОСТЬ ==================== */
+                @media (max-width: 400px) {
+                    body {
+                        font-size: 13px;
+                    }
+                    
+                    h1 {
+                        font-size: 18px;
+                    }
+                    
+                    h2 {
+                        font-size: 16px;
+                    }
+                    
+                    table {
+                        font-size: 12px;
+                    }
+                    
+                    .tag {
+                        padding: 3px 8px;
+                        font-size: 11px;
+                    }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="message-content">
+                %s
+            </div>
+        </body>
+        </html>
+        """, content);
     }
 }

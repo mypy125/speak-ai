@@ -12,8 +12,8 @@
       style="-fx-background-color: #f5f7fa; -fx-padding: 15;">
 
     <stylesheets>
-        <URL value="@../styles/main.css"/>
-        <URL value="@../styles/chat-styles.css"/>
+        <URL value="@/com/mygitgor/view/styles/main.css"/>
+        <URL value="@/com/mygitgor/view/styles/chat-styles.css"/>
     </stylesheets>
 
     <fx:define>

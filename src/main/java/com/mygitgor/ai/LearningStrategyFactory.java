@@ -1,8 +1,8 @@
 package com.mygitgor.ai;
 
 import com.mygitgor.model.LearningMode;
-import com.mygitgor.ai.strategy.LearningModeStrategy;
-import com.mygitgor.ai.strategy.type.*;
+import com.mygitgor.ai.learning.LearningModeStrategy;
+import com.mygitgor.ai.learning.strategy.*;
 import com.mygitgor.analysis.PronunciationTrainer;
 import com.mygitgor.service.AudioAnalyzer;
 import org.slf4j.Logger;

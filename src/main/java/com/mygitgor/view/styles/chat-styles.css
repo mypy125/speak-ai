@@ -64,7 +64,7 @@
 /* ==================== ПУЗЫРЬКИ СООБЩЕНИЙ ==================== */
 .message-bubble {
     -fx-padding: 12 16;
-    -fx-max-width: 400px;
+    -fx-max-width: 600px;
     -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.05), 3, 0, 0, 1);
     -fx-transition: all 0.2s ease;
 }
@@ -101,7 +101,7 @@
     -fx-font-size: 13px;
     -fx-font-family: 'Segoe UI', sans-serif;
     -fx-wrap-text: true;
-    -fx-max-width: 380px;
+    -fx-max-width: 560px;
 }
 
 /* ==================== ИНФОРМАЦИЯ О СООБЩЕНИИ ==================== */
@@ -151,7 +151,7 @@
     -fx-border-width: 1;
     -fx-border-radius: 12 12 12 4;
     -fx-padding: 8 12;
-    -fx-max-width: 400px;
+    -fx-max-width: 600px;
     -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.05), 3, 0, 0, 1);
 }
 

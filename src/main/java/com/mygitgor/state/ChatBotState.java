@@ -165,8 +165,6 @@ public class ChatBotState {
         logger.debug("ChatBotState инициализирован");
     }
 
-    // ==================== ГЕТТЕРЫ И СЕТТЕРЫ ====================
-
     public boolean isClosed() {
         return closed.get();
     }
@@ -226,7 +224,6 @@ public class ChatBotState {
         return previous;
     }
 
-    // ДОБАВЛЕННЫЕ МЕТОДЫ ДЛЯ TTS
     public String getLastTtsText() {
         return lastTtsText.get();
     }
@@ -305,8 +302,6 @@ public class ChatBotState {
         return previous;
     }
 
-    // ==================== СТАТИСТИКА ====================
-
     public Statistics getStatistics() {
         return statistics.snapshot();
     }
@@ -368,8 +363,6 @@ public class ChatBotState {
         return stats;
     }
 
-    // ==================== МЕТОДЫ ПРОВЕРКИ ====================
-
     public boolean canSendMessage() {
         return !isClosed() && (hasTextInput() || hasAudioFile());
     }
@@ -405,11 +398,10 @@ public class ChatBotState {
         return !closed.get();
     }
 
-    // ==================== МЕТОДЫ СБРОСА ====================
 
     public void reset() {
         setLastBotResponse("");
-        setLastTtsText(""); // ДОБАВЛЕНО
+        setLastTtsText("");
         clearCurrentAudioFile();
         clearCurrentTextInput();
         setPlayingSpeech(false);
@@ -425,8 +417,6 @@ public class ChatBotState {
         resetStatistics();
         logger.debug("Полный сброс состояния выполнен");
     }
-
-    // ==================== МЕТОДЫ ОТЛАДКИ ====================
 
     public String getStateString() {
         return String.format(

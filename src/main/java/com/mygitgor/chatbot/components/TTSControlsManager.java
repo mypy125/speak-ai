@@ -11,11 +11,9 @@ import javafx.scene.shape.Circle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.*;
-import javafx.scene.control.*;
-import javafx.scene.paint.Color;
-import java.util.*;
 
-import java.util.*;
+import javafx.scene.paint.Color;
+
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;

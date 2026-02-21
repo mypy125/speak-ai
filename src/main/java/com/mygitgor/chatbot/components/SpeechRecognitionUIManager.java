@@ -12,7 +12,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import javafx.scene.control.*;
 import java.io.File;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;

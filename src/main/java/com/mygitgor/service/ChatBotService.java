@@ -321,7 +321,6 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
         try {
             User user = conversationManager.getCurrentUser();
             if (user != null) {
-                // ID теперь int, не может быть null
                 return String.valueOf(user.getId());
             }
         } catch (Exception e) {
@@ -331,7 +330,6 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
     }
 
     public String getCurrentUserIdSafely() {
-        // Пробуем получить существующего пользователя
         String userId = getCurrentUserId();
         if (userId != null && !userId.trim().isEmpty()) {
             logger.debug("Получен ID существующего пользователя: {}", userId);
@@ -340,7 +338,6 @@ public class ChatBotService implements IChatBotService, ISpeechRecognitionServic
 
         logger.warn("Пользователь не найден, создаем временного");
 
-        // Создаем временного пользователя
         User tempUser = createTemporaryUser();
         conversationManager.setCurrentUser(tempUser);
         String tempId = String.valueOf(tempUser.getId());

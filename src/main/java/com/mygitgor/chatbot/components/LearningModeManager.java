@@ -4,7 +4,7 @@ import com.mygitgor.model.*;
 import com.mygitgor.model.core.LearningProgress;
 import com.mygitgor.model.core.LearningSession;
 import com.mygitgor.ai.LearningStrategyFactory;
-import com.mygitgor.ai.strategy.LearningModeStrategy;
+import com.mygitgor.ai.learning.LearningModeStrategy;
 import com.mygitgor.model.core.User;
 import com.mygitgor.repository.DAO.LearningSessionDao;
 import com.mygitgor.service.components.LearningProgressManager;

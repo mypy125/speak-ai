@@ -406,6 +406,24 @@ public class ChatMessagesManager {
         return exportMessages();
     }
 
+    public String exportChatForTtsWithPauses(long pauseMs) {
+        StringBuilder sb = new StringBuilder();
+        int messageCount = 0;
+
+        for (Node node : messagesContainer.getChildren()) {
+            Optional<String> ttsOpt = extractTtsFromNode(node);
+            if (ttsOpt.isPresent()) {
+                if (messageCount > 0) {
+                    sb.append("<break time=\"").append(pauseMs).append("ms\"/> ");
+                }
+                sb.append(ttsOpt.get()).append(" ");
+                messageCount++;
+            }
+        }
+
+        return sb.toString();
+    }
+
     public static class ChatMessage {
         private final String id;
         private final String text;

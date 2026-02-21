@@ -60,25 +60,20 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
         }
 
         List<RecommendationEngine.PersonalizedRecommendation> recommendations = new ArrayList<>();
-
         addPhonemeRecommendations(analysis, recommendations);
 
         if (analysis.getPronunciationScore() < WEAK_PHONEME_THRESHOLD) {
             recommendations.add(createPronunciationRecommendation(analysis));
         }
-
         if (analysis.getFluencyScore() < 65) {
             recommendations.add(createFluencyRecommendation(analysis));
         }
-
         if (analysis.getIntonationScore() < WEAK_PHONEME_THRESHOLD) {
             recommendations.add(createIntonationRecommendation(analysis));
         }
-
         if (analysis.getVolumeScore() < 65) {
             recommendations.add(createVolumeRecommendation(analysis));
         }
-
         logger.info("Сгенерировано {} персонализированных рекомендаций", recommendations.size());
         return recommendations;
     }
@@ -202,7 +197,6 @@ public class PronunciationTrainer implements IRecommendationService, AutoCloseab
                         .collect(Collectors.toList()));
             }
         }
-
         return exercises;
     }
 

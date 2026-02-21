@@ -135,7 +135,6 @@ public class SpeechRecorder implements AutoCloseable {
             logger.warn("Запись не идет");
             return null;
         }
-
         currentFilePath.set(filePath);
 
         TargetDataLine line = targetLine.getAndSet(null);

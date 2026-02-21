@@ -59,7 +59,7 @@ public class SpeechServiceManager {
     }
 
     public String recognizeSpeechInRealTime() {
-        SpeechRecorder recorder = this.speechRecorder; // Используем переданный рекордер
+        SpeechRecorder recorder = this.speechRecorder;
 
         try {
             logger.info("Начало распознавания речи в реальном времени...");
