@@ -257,33 +257,50 @@ public class ConversationStrategy implements LearningModeStrategy {
     private String buildConversationPrompt(String userInput, ConversationState state,
                                            LearningContext context) {
         return String.format("""
-            %s
-            
-            You are an AI English tutor. Help the student practice conversation.
-            
-            === Conversation Context ===
-            Student Level: %s (%.1f/100)
-            Current Topic: %s
-            Exchanges so far: %d
-            Average Response Time: %.1fs
-            
-            === Recent Messages (last %d) ===
-            %s
-            
-            === Student's Latest Message ===
-            %s
-            
-            === Your Response Guidelines ===
-            %s
-            
-            Remember: Respond ONLY in English. Be natural, engaging, and supportive.
-            """,
+        %s
+        
+        You are an AI English tutor specializing in technical interview preparation. 
+        Your goal is to help the student practice English conversation skills needed 
+        for an upcoming technical interview while maintaining a friendly and supportive 
+        atmosphere. Get to know their interests and adapt to their personality and 
+        communication style.
+        
+        === Interview & Conversation Context ===
+        Student Level: %s (%.1f/100)
+        Current Topic: %s
+        Exchanges so far: %d
+        Average Response Time: %.1fs
+        Technical Interview Focus: %s
+        
+        === Recent Messages (last %d) ===
+        %s
+        
+        === Student's Latest Message ===
+        %s
+        
+        === Your Response Guidelines ===
+        %s
+        
+        === Interview Preparation Integration ===
+        1. Naturally weave in technical vocabulary relevant to their field
+        2. Practice common interview question patterns
+        3. Help them articulate technical concepts clearly
+        4. Build confidence in discussing their experience and projects
+        5. Balance friendly conversation with interview preparation
+        
+        Remember: 
+        - Be friendly and engaging - get to know them as a person
+        - Adapt to their communication style and personality
+        - Discuss their interests while gently steering toward interview-relevant topics
+        - Respond ONLY in English. Be natural, supportive, and professional.
+        """,
                 getSystemPrompt(context.getCurrentLevel()),
                 getLevelDescription(context.getCurrentLevel()),
                 context.getCurrentLevel(),
-                state.currentTopic != null ? state.currentTopic : "general conversation",
+                state.currentTopic != null ? state.currentTopic : "getting to know you",
                 state.turnCount,
                 state.averageResponseTime / 1000.0,
+                getTechnicalFocus(context),
                 Math.min(4, state.history.size()),
                 String.join("\n", state.history.subList(
                         Math.max(0, state.history.size() - 4), state.history.size())),
@@ -294,47 +311,57 @@ public class ConversationStrategy implements LearningModeStrategy {
 
     private String getSystemPrompt(double level) {
         if (level < 30)
-            return "You are speaking with a BEGINNER English learner. Use VERY simple vocabulary, " +
-                    "short sentences (5-10 words), and basic grammar (present simple, past simple). " +
-                    "Be EXTREMELY patient and encouraging. Avoid idioms and complex structures.";
+            return "You are speaking with a BEGINNER English learner preparing for a technical interview. " +
+                    "Use VERY simple vocabulary and short sentences. Be EXTREMELY patient and encouraging. " +
+                    "Focus on basic自我介绍 and simple technical terms. Show genuine interest in their " +
+                    "personality and background.";
         if (level < 60)
-            return "You are speaking with an INTERMEDIATE English learner. Use moderate vocabulary " +
-                    "and grammar (present perfect, conditionals). You can introduce some common idioms " +
-                    "but explain them briefly if needed. Encourage elaboration.";
+            return "You are speaking with an INTERMEDIATE English learner preparing for a technical interview. " +
+                    "Use moderate vocabulary and help them practice describing their experience and projects. " +
+                    "Encourage elaboration while maintaining a friendly conversation about their interests. " +
+                    "Correct gently by rephrasing.";
         if (level < 85)
-            return "You are speaking with an ADVANCED English learner. Use natural idiomatic " +
-                    "expressions, complex grammar (passive voice, reported speech), and varied vocabulary. " +
-                    "Engage in deeper discussions about abstract topics.";
-        return "You are speaking with an EXPERT English speaker. Feel free to use sophisticated " +
-                "vocabulary, complex grammatical structures, and nuanced expressions. Challenge the " +
-                "speaker with thought-provoking questions and topics.";
+            return "You are speaking with an ADVANCED English learner preparing for a technical interview. " +
+                    "Use natural professional language. Help them articulate complex technical concepts clearly. " +
+                    "Engage in deeper discussions about their career goals and technical philosophy while " +
+                    "keeping the conversation friendly and personalized.";
+        return "You are speaking with an EXPERT English speaker preparing for a senior technical interview. " +
+                "Use sophisticated professional vocabulary. Challenge them with nuanced technical questions " +
+                "while maintaining engaging conversation about their interests and leadership style. " +
+                "Focus on cultural fit and communication effectiveness.";
     }
 
     private String getInstructionsForLevel(double level) {
         if (level < 30) return """
-                1. Keep responses under 50 words
-                2. Focus on basic comprehension
-                3. Use simple question structures
-                4. Repeat key vocabulary naturally
-                5. Praise often for encouragement""";
+            1. Keep responses under 50 words
+            2. Introduce 1-2 basic technical terms naturally
+            3. Ask simple questions about their background
+            4. Praise their efforts and progress
+            5. Show enthusiasm for their interests""";
         if (level < 60) return """
-                1. Keep responses between 50-100 words
-                2. Encourage elaboration with follow-up questions
-                3. Gently introduce new vocabulary in context
-                4. Correct major errors by rephrasing
-                5. Vary sentence structures""";
+            1. Keep responses between 50-100 words
+            2. Practice describing work experience and projects
+            3. Gently correct technical term usage
+            4. Ask follow-up questions about their interests
+            5. Model good interview response structure""";
         if (level < 85) return """
-                1. Responses can be up to 150 words
-                2. Use a mix of simple and complex structures
-                3. Introduce idioms and explain subtly
-                4. Challenge with nuanced topics
-                5. Provide constructive feedback on style""";
+            1. Responses can be up to 150 words
+            2. Practice STAR method responses naturally
+            3. Discuss technical challenges they've faced
+            4. Help refine technical explanations
+            5. Balance technical and personal conversation""";
         return """
-                1. Responses up to 200 words, be thorough
-                2. Use sophisticated vocabulary naturally
-                3. Discuss abstract concepts and ideas
-                4. Provide detailed feedback on language use
-                5. Encourage critical thinking and debate""";
+            1. Responses up to 200 words, be thorough
+            2. Discuss system design and architecture concepts
+            3. Practice leadership and conflict resolution scenarios
+            4. Provide detailed feedback on communication style
+            5. Engage in technical debates while being friendly""";
+    }
+
+    private String getTechnicalFocus(LearningContext context) {
+        // This would come from user's profile/preferences
+        // For now, return a default or empty string
+        return "general software engineering";
     }
 
     private String getLevelDescription(double level) {
@@ -461,20 +488,40 @@ public class ConversationStrategy implements LearningModeStrategy {
 
     private String selectPersonalizedTopic(ConversationState state, LearningContext context) {
         String[] beginnerTopics = {
-                "Daily routines", "My family", "Favorite foods", "Weather today",
-                "Weekend plans", "My hobbies", "Learning English", "My hometown",
-                "Favorite movies", "Music preferences"
+                "Your background and interests",
+                "Why you're learning English",
+                "Your favorite technologies",
+                "Daily work routines",
+                "Team collaboration experiences",
+                "Learning programming journey",
+                "Simple project you've built",
+                "Tools you use at work",
+                "Work-life balance preferences",
+                "Career aspirations"
         };
         String[] intermediateTopics = {
-                "Travel experiences", "Career goals", "Technology impact",
-                "Cultural differences", "Environmental issues", "Health and fitness",
-                "Education system", "Social media", "Future predictions", "Work-life balance"
+                "Technical challenges you've solved",
+                "Agile methodology experience",
+                "Code review practices",
+                "Database design decisions",
+                "API development experience",
+                "Testing strategies you use",
+                "Version control workflows",
+                "Cloud platform experience",
+                "Security considerations",
+                "Performance optimization"
         };
         String[] advancedTopics = {
-                "Global economy", "Political systems", "Philosophical questions",
-                "Scientific breakthroughs", "Art and creativity", "Human psychology",
-                "Social justice", "Technological ethics", "Climate change solutions",
-                "Future of humanity"
+                "System architecture decisions",
+                "Scalability challenges",
+                "Microservices vs monoliths",
+                "Technical debt management",
+                "Team leadership experience",
+                "Mentoring junior developers",
+                "Technical roadmap planning",
+                "Emerging technology trends",
+                "Engineering culture building",
+                "Cross-team collaboration"
         };
 
         double level = context.getCurrentLevel();
@@ -483,7 +530,7 @@ public class ConversationStrategy implements LearningModeStrategy {
             if (state.levelAtSessionStart < 0) {
                 state.levelAtSessionStart = level;
             } else if (Math.abs(level - state.levelAtSessionStart) >= 10) {
-                logger.debug("Уровень изменился {:.1f} → {:.1f}, темы сброшены",
+                logger.debug("Level changed {:.1f} → {:.1f}, resetting topics",
                         state.levelAtSessionStart, level);
                 state.topicsDiscussed.clear();
                 state.levelAtSessionStart = level;

@@ -168,7 +168,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
         Thread initThread = new Thread(() -> {
             try {
-                Thread.sleep(300);
+                Thread.sleep(3000);
 
                 logger.info("Запуск фоновой загрузки сервисов (Vosk, Google TTS, AI)...");
 

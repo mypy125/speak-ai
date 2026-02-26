@@ -1,13 +1,13 @@
 package com.mygitgor.model;
 
 public enum LearningMode {
-    CONVERSATION("💬 Разговорная практика", "Общайтесь с AI для развития разговорных навыков"),
-    PRONUNCIATION("🔊 Произношение", "Тренируйте правильное произношение звуков"),
-    GRAMMAR("📚 Грамматика", "Изучайте грамматические правила и структуры"),
-    VOCABULARY("📖 Словарный запас", "Расширяйте словарный запас"),
-    EXERCISE("🎯 Упражнения", "Выполняйте практические упражнения"),
-    WRITING("✍️ Письмо", "Практикуйте письменную речь"),
-    LISTENING("🎧 Аудирование", "Развивайте навыки восприятия на слух");
+    CONVERSATION("💬 Conversation Practice", "Общайтесь с AI для развития разговорных навыков"),
+    PRONUNCIATION("🔊 Pronunciation", "Тренируйте правильное произношение звуков"),
+    GRAMMAR("📚 Grammar", "Изучайте грамматические правила и структуры"),
+    VOCABULARY("📖 Vocabulary", "Расширяйте словарный запас"),
+    EXERCISE("🎯 Exercises", "Выполняйте практические упражнения"),
+    WRITING("✍️ Writing", "Практикуйте письменную речь"),
+    LISTENING("🎧 Listening", "Развивайте навыки восприятия на слух");
 
     private final String displayName;
     private final String description;

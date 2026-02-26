@@ -41,7 +41,7 @@ public class LearningTask {
         this.id = builder.id;
         this.title = builder.title;
         this.description = builder.description;
-        this.ttsDescription = builder.ttsDescription;  // ДОБАВЛЕНО
+        this.ttsDescription = builder.ttsDescription;
         this.mode = builder.mode;
         this.difficulty = builder.difficulty;
         this.examples = builder.examples != null ?

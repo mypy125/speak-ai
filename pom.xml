@@ -13,8 +13,8 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <javafx.version>21.0.6</javafx.version>
+        <javafx.platform>linux</javafx.platform>
         <jpro.version>2024.4.1</jpro.version>
-<!--        <jpro.version>2025.2.1</jpro.version>-->
     </properties>
 
     <!-- Репозиторий для ЗАВИСИМОСТЕЙ -->
@@ -46,21 +46,25 @@
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-controls</artifactId>
             <version>${javafx.version}</version>
+            <classifier>${javafx.platform}</classifier>
         </dependency>
         <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-fxml</artifactId>
             <version>${javafx.version}</version>
+            <classifier>${javafx.platform}</classifier>
         </dependency>
         <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-media</artifactId>
             <version>${javafx.version}</version>
+            <classifier>${javafx.platform}</classifier>
         </dependency>
         <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-web</artifactId>
             <version>${javafx.version}</version>
+            <classifier>${javafx.platform}</classifier>
         </dependency>
         <!-- Source: https://mvnrepository.com/artifact/one.jpro/jpro-client-javafx -->
         <dependency>
@@ -213,9 +217,10 @@
                 <groupId>one.jpro</groupId>
                 <artifactId>jpro-maven-plugin</artifactId>
                 <version>${jpro.version}</version>
+<!--                <version>2024.3.4-M1</version>-->
                 <configuration>
                     <mainClassName>com.mygitgor.JProWebApp</mainClassName>
-<!--                    <httpPort>8080</httpPort>-->
+<!--                    <httpPort>8081</httpPort>-->
 <!--                    <jvmArgs>-->
 <!--                        <jvmArg>&#45;&#45;add-opens=java.base/java.lang=ALL-UNNAMED</jvmArg>-->
 <!--                        <jvmArg>&#45;&#45;add-opens=javafx.graphics/javafx.scene=ALL-UNNAMED</jvmArg>-->
@@ -243,7 +248,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>3.4.1</version>
+                <version>3.2.4</version>
                 <executions>
                     <execution>
                         <phase>package</phase>

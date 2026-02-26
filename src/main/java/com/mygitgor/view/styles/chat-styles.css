@@ -64,7 +64,7 @@
 /* ==================== ПУЗЫРЬКИ СООБЩЕНИЙ ==================== */
 .message-bubble {
     -fx-padding: 12 16;
-    -fx-max-width: 600px;
+    -fx-max-width: 700px;
     -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.05), 3, 0, 0, 1);
     -fx-transition: all 0.2s ease;
 }
@@ -93,7 +93,7 @@
     -fx-font-size: 13px;
     -fx-font-family: 'Segoe UI', sans-serif;
     -fx-wrap-text: true;
-    -fx-max-width: 380px;
+    -fx-max-width: 580px;
 }
 
 .message-text-ai {
@@ -101,7 +101,7 @@
     -fx-font-size: 13px;
     -fx-font-family: 'Segoe UI', sans-serif;
     -fx-wrap-text: true;
-    -fx-max-width: 560px;
+    -fx-max-width: 580px;
 }
 
 /* ==================== ИНФОРМАЦИЯ О СООБЩЕНИИ ==================== */
@@ -151,7 +151,7 @@
     -fx-border-width: 1;
     -fx-border-radius: 12 12 12 4;
     -fx-padding: 8 12;
-    -fx-max-width: 600px;
+    -fx-max-width: 650px;
     -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.05), 3, 0, 0, 1);
 }
 
@@ -162,6 +162,8 @@
 .webview {
     -fx-context-menu-enabled: false;
     -fx-focus-traversable: false;
+    -fx-pref-width: 630px;
+    -fx-min-width: 400px;
 }
 
 /* ==================== СТИЛИ ДЛЯ ПОДСВЕТКИ ==================== */
@@ -196,26 +198,14 @@
     -fx-background-color: transparent;
 }
 
-/* ==================== АДАПТИВНОСТЬ ==================== */
-@media (max-width: 400px) {
-    .message-bubble, .webview-bubble {
-        -fx-max-width: 300px;
-    }
-
-    .message-text-user, .message-text-ai {
-        -fx-max-width: 280px;
-        -fx-font-size: 12px;
-    }
-}
-
 /* ==================== АНИМАЦИИ ==================== */
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
 .message-container {
     -fx-animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    0% { -fx-opacity: 0; -fx-translate-y: 10; }
+    100% { -fx-opacity: 1; -fx-translate-y: 0; }
 }
 
 /* ==================== БЕЙДЖИ ==================== */
@@ -244,4 +234,21 @@
 .badge-danger {
     -fx-background-color: #e74c3c;
     -fx-text-fill: white;
+}
+
+/* ==================== АДАПТИВНОСТЬ ==================== */
+@media (max-width: 400px) {
+    .message-bubble, .webview-bubble {
+        -fx-max-width: 300px;
+    }
+
+    .message-text-user, .message-text-ai {
+        -fx-max-width: 280px;
+        -fx-font-size: 12px;
+    }
+
+    .webview {
+        -fx-pref-width: 280px;
+        -fx-min-width: 250px;
+    }
 }

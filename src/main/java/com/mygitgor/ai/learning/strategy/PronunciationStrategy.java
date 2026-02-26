@@ -203,14 +203,14 @@ public class PronunciationStrategy implements LearningModeStrategy {
     }
 
     private static class PhonemeInfo {
-        final String       name;
-        final String       description;
-        final String       articulation;
+        final String name;
+        final String description;
+        final String articulation;
         final List<String> exampleWords;
 
         PhonemeInfo(String name, String description, String articulation, List<String> exampleWords) {
-            this.name         = name;
-            this.description  = description;
+            this.name = name;
+            this.description = description;
             this.articulation = articulation;
             this.exampleWords = exampleWords;
         }
@@ -328,7 +328,7 @@ public class PronunciationStrategy implements LearningModeStrategy {
 
             state.startExercise();
 
-            double score     = analyzePronunciation(userInput, phoneme, context);
+            double score = analyzePronunciation(userInput, phoneme, context);
             boolean isCorrect = score >= GOOD_PRONUNCIATION;
 
             state.endExercise(isCorrect);

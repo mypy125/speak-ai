@@ -7,11 +7,11 @@ public class EnhancedSpeechAnalysis extends SpeechAnalysis {
     private float volumeScore;
     private float clarityScore;
     private float confidenceScore;
-    private float speakingRate; // слова в минуту
+    private float speakingRate;
     private int pauseCount;
     private float totalPauseDuration;
     private float pausePercentage;
-    private float volumeLevel; // RMS уровень
+    private float volumeLevel;
     private float analysisDuration;
     private String proficiencyLevel;
     private Map<String, Float> phonemeScores;
