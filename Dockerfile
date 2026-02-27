@@ -6,10 +6,11 @@ COPY pom.xml .
 RUN mvn dependency:go-offline -B
 
 COPY src ./src
-
 COPY google-credentials.json ./
 
 RUN mvn clean package -DskipTests
+
+RUN mvn jpro:package -DskipTests
 
 FROM azul/zulu-openjdk:17-jre-headless-latest
 
@@ -30,10 +31,11 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 COPY --from=builder /app/target/speakAI-*.jar app.jar
+COPY --from=builder /app/target/jpro /app/jpro
+
+RUN ln -s /app/jpro/jprocp-file /app/jprocp-file
 
 COPY --from=builder /app/src/main/resources /app/resources
-
-COPY --from=builder /app/google-credentials.json /app/
 
 RUN mkdir -p /app/data /app/recordings /app/logs /app/exports /app/tmp /app/models
 
@@ -57,6 +59,11 @@ ENV GOOGLE_APPLICATION_CREDENTIALS=/app/google-credentials.json
 ENV JAVA_OPTS="--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=javafx.graphics/javafx.scene=ALL-UNNAMED --add-opens=javafx.graphics/com.sun.javafx.application=ALL-UNNAMED --add-opens=javafx.controls/com.sun.javafx.scene.control=ALL-UNNAMED --add-opens=javafx.fxml/javafx.fxml=ALL-UNNAMED -Djava.awt.headless=true -Dprism.order=sw -Dprism.verbose=false -Duser.dir=/app"
 
 CMD java $JAVA_OPTS \
+    -Djpro.port=$JPRO_PORT \
+    -Djpro.host=$JPRO_HOST \
+    -Djpro.http.port=$JPRO_HTTP_PORT \
+    -Djpro.deployment=MAVEN-Normal \
+    -Djpro.mode=dev \
+    -Djprocpfile=/app/jprocp-file \
     -cp app.jar \
-    com.jpro.boot.JProBoot \
-    -Djpro.applications.default=com.mygitgor.JProWebApp
+    com.jpro.boot.JProBoot
