@@ -10,7 +10,14 @@ COPY google-credentials.json ./
 
 RUN mvn clean package -DskipTests
 
-RUN mvn jpro:package -DskipTests
+RUN mkdir -p /app/target/jpro
+
+RUN if [ -d /app/target/jpro ]; then \
+    echo "JPro files already exist"; \
+    else \
+    echo "Creating minimal JPro structure"; \
+    mkdir -p /app/target/jpro; \
+    fi
 
 FROM azul/zulu-openjdk:17-jre-headless-latest
 
@@ -33,9 +40,9 @@ WORKDIR /app
 COPY --from=builder /app/target/speakAI-*.jar app.jar
 COPY --from=builder /app/target/jpro /app/jpro
 
-RUN ln -s /app/jpro/jprocp-file /app/jprocp-file
-
 COPY --from=builder /app/src/main/resources /app/resources
+
+COPY --from=builder /app/google-credentials.json /app/
 
 RUN mkdir -p /app/data /app/recordings /app/logs /app/exports /app/tmp /app/models
 
@@ -57,6 +64,8 @@ ENV JPRO_HOST=0.0.0.0
 ENV JPRO_HTTP_PORT=8080
 ENV GOOGLE_APPLICATION_CREDENTIALS=/app/google-credentials.json
 ENV JAVA_OPTS="--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=javafx.graphics/javafx.scene=ALL-UNNAMED --add-opens=javafx.graphics/com.sun.javafx.application=ALL-UNNAMED --add-opens=javafx.controls/com.sun.javafx.scene.control=ALL-UNNAMED --add-opens=javafx.fxml/javafx.fxml=ALL-UNNAMED -Djava.awt.headless=true -Dprism.order=sw -Dprism.verbose=false -Duser.dir=/app"
+
+RUN echo "-cp /app/app.jar" > /app/jprocp-file
 
 CMD java $JAVA_OPTS \
     -Djpro.port=$JPRO_PORT \
