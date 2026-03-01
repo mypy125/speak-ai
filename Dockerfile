@@ -9,7 +9,7 @@ COPY src ./src
 
 COPY google-credentials.json ./
 
-RUN mvn clean package jpro:package -DskipTests
+RUN mvn clean package -DskipTests
 
 FROM maven:3.9-amazoncorretto-17
 
