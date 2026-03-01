@@ -5,6 +5,8 @@ if [ ! -f /app/jprocp-file ]; then
     echo "/app/app.jar" > /app/jprocp-file
 fi
 
+echo "Starting JPro with application: com.mygitgor.JProWebApp"
+
 exec java \
     --add-opens=java.base/java.lang=ALL-UNNAMED \
     --add-opens=javafx.graphics/javafx.scene=ALL-UNNAMED \
@@ -20,6 +22,7 @@ exec java \
     -Djpro.http.port=8080 \
     -Djpro.deployment=MAVEN-Normal \
     -Djpro.mode=dev \
+    -Djpro.applications.default=com.mygitgor.JProWebApp \
     -Djprocpfile=/app/jprocp-file \
     -cp /app/app.jar \
     com.jpro.boot.JProBoot

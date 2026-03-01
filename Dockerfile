@@ -50,6 +50,8 @@ RUN echo "#!/bin/bash" > /app/start.sh && \
     echo "    echo \"/app/app.jar\" > /app/jprocp-file" >> /app/start.sh && \
     echo "fi" >> /app/start.sh && \
     echo "" >> /app/start.sh && \
+    echo "echo \"Starting JPro with application: com.mygitgor.JProWebApp\"" >> /app/start.sh && \
+    echo "" >> /app/start.sh && \
     echo "exec java \\" >> /app/start.sh && \
     echo "    --add-opens=java.base/java.lang=ALL-UNNAMED \\" >> /app/start.sh && \
     echo "    --add-opens=javafx.graphics/javafx.scene=ALL-UNNAMED \\" >> /app/start.sh && \
@@ -65,6 +67,7 @@ RUN echo "#!/bin/bash" > /app/start.sh && \
     echo "    -Djpro.http.port=8080 \\" >> /app/start.sh && \
     echo "    -Djpro.deployment=MAVEN-Normal \\" >> /app/start.sh && \
     echo "    -Djpro.mode=dev \\" >> /app/start.sh && \
+    echo "    -Djpro.applications.default=com.mygitgor.JProWebApp \\" >> /app/start.sh && \
     echo "    -Djprocpfile=/app/jprocp-file \\" >> /app/start.sh && \
     echo "    -cp /app/app.jar \\" >> /app/start.sh && \
     echo "    com.jpro.boot.JProBoot" >> /app/start.sh && \
