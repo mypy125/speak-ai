@@ -7,6 +7,12 @@ fi
 
 echo "Starting JPro with application: com.mygitgor.JProWebApp"
 
+# Добавляем диагностику
+echo "Java version:"
+java -version
+echo "Classpath contains:"
+cat /app/jprocp-file
+
 exec java \
     --add-opens=java.base/java.lang=ALL-UNNAMED \
     --add-opens=javafx.graphics/javafx.scene=ALL-UNNAMED \
@@ -23,6 +29,7 @@ exec java \
     -Djpro.deployment=MAVEN-Normal \
     -Djpro.mode=dev \
     -Djpro.applications.default=com.mygitgor.JProWebApp \
+    -Djpro.rootPath=/ \
     -Djprocpfile=/app/jprocp-file \
     -cp /app/app.jar \
     com.jpro.boot.JProBoot

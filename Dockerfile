@@ -6,11 +6,12 @@ COPY pom.xml .
 RUN mvn dependency:go-offline -B
 
 COPY src ./src
+
 COPY google-credentials.json ./
 
-RUN mvn clean package -DskipTests
+RUN mvn clean package jpro:package -DskipTests
 
-FROM amazoncorretto:17-al2-jdk
+FROM maven:3.9-amazoncorretto-17
 
 RUN yum update -y && \
     yum install -y \
@@ -29,50 +30,32 @@ RUN yum update -y && \
 
 WORKDIR /app
 
-COPY --from=builder /app/target/speakAI-*.jar app.jar
-COPY --from=builder /app/src/main/resources /app/resources
-COPY --from=builder /app/google-credentials.json /app/
+COPY --from=builder /app /app
+
+RUN if [ ! -f /app/google-credentials.json ]; then \
+    echo "Warning: google-credentials.json not found. Creating empty file."; \
+    echo '{}' > /app/google-credentials.json; \
+    fi
 
 RUN mkdir -p /app/data /app/recordings /app/logs /app/exports /app/tmp /app/models
 
-RUN curl -L https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip -o /tmp/model.zip && \
+RUN if [ ! -d "/app/models/vosk-model-small-en" ]; then \
+    curl -L https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip -o /tmp/model.zip && \
     unzip /tmp/model.zip -d /tmp/ && \
     mkdir -p /app/models/vosk-model-small-en && \
     mv /tmp/vosk-model-small-en-us-0.15/* /app/models/vosk-model-small-en/ && \
-    rm -rf /tmp/model.zip /tmp/vosk-model-small-en-us-0.15
-
-RUN echo "/app/app.jar" > /app/jprocp-file
-
-RUN echo "#!/bin/bash" > /app/start.sh && \
-    echo "" >> /app/start.sh && \
-    echo "if [ ! -f /app/jprocp-file ]; then" >> /app/start.sh && \
-    echo "    echo \"Creating jprocp-file...\"" >> /app/start.sh && \
-    echo "    echo \"/app/app.jar\" > /app/jprocp-file" >> /app/start.sh && \
-    echo "fi" >> /app/start.sh && \
-    echo "" >> /app/start.sh && \
-    echo "echo \"Starting JPro with application: com.mygitgor.JProWebApp\"" >> /app/start.sh && \
-    echo "" >> /app/start.sh && \
-    echo "exec java \\" >> /app/start.sh && \
-    echo "    --add-opens=java.base/java.lang=ALL-UNNAMED \\" >> /app/start.sh && \
-    echo "    --add-opens=javafx.graphics/javafx.scene=ALL-UNNAMED \\" >> /app/start.sh && \
-    echo "    --add-opens=javafx.graphics/com.sun.javafx.application=ALL-UNNAMED \\" >> /app/start.sh && \
-    echo "    --add-opens=javafx.controls/com.sun.javafx.scene.control=ALL-UNNAMED \\" >> /app/start.sh && \
-    echo "    --add-opens=javafx.fxml/javafx.fxml=ALL-UNNAMED \\" >> /app/start.sh && \
-    echo "    -Djava.awt.headless=true \\" >> /app/start.sh && \
-    echo "    -Dprism.order=sw \\" >> /app/start.sh && \
-    echo "    -Dprism.verbose=false \\" >> /app/start.sh && \
-    echo "    -Duser.dir=/app \\" >> /app/start.sh && \
-    echo "    -Djpro.port=8080 \\" >> /app/start.sh && \
-    echo "    -Djpro.host=0.0.0.0 \\" >> /app/start.sh && \
-    echo "    -Djpro.http.port=8080 \\" >> /app/start.sh && \
-    echo "    -Djpro.deployment=MAVEN-Normal \\" >> /app/start.sh && \
-    echo "    -Djpro.mode=dev \\" >> /app/start.sh && \
-    echo "    -Djpro.applications.default=com.mygitgor.JProWebApp \\" >> /app/start.sh && \
-    echo "    -Djprocpfile=/app/jprocp-file \\" >> /app/start.sh && \
-    echo "    -cp /app/app.jar \\" >> /app/start.sh && \
-    echo "    com.jpro.boot.JProBoot" >> /app/start.sh && \
-    chmod +x /app/start.sh
+    rm -rf /tmp/model.zip /tmp/vosk-model-small-en-us-0.15; \
+    fi
 
 EXPOSE 8080
 
-CMD ["/app/start.sh"]
+ENV JPRO_PORT=8080
+ENV JPRO_HOST=0.0.0.0
+ENV JPRO_HTTP_PORT=8080
+ENV GOOGLE_APPLICATION_CREDENTIALS=/app/google-credentials.json
+ENV JAVA_OPTS="--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=javafx.graphics/javafx.scene=ALL-UNNAMED --add-opens=javafx.graphics/com.sun.javafx.application=ALL-UNNAMED --add-opens=javafx.controls/com.sun.javafx.scene.control=ALL-UNNAMED --add-opens=javafx.fxml/javafx.fxml=ALL-UNNAMED -Djava.awt.headless=true -Dprism.order=sw -Dprism.verbose=false -Duser.dir=/app"
+
+CMD mvn jpro:run -DskipTests \
+    -Dhttp.port=$JPRO_PORT \
+    -Djpro.host=$JPRO_HOST \
+    -Djpro.http.port=$JPRO_HTTP_PORT
