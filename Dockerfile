@@ -26,15 +26,14 @@ RUN apt-get update && apt-get install -y \
     libfreetype6 \
     curl \
     unzip \
+    netstat \
+    lsof \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY --from=builder /app/target/speakAI-*.jar app.jar
-COPY --from=builder /app/src/main/resources /app/resources
-COPY --from=builder /app/google-credentials.json /app/
-COPY --from=builder /app/pom.xml /app/
-COPY --from=builder /app/src /app/src
+COPY --from=builder /app /app
 
 RUN mkdir -p /app/data /app/recordings /app/logs /app/exports /app/tmp /app/models
 
@@ -46,8 +45,26 @@ RUN if [ ! -d "/app/models/vosk-model-small-en" ]; then \
     rm -rf /tmp/model.zip /tmp/vosk-model-small-en-us-0.15; \
     fi
 
+RUN echo '#!/bin/bash' > /app/start.sh && \
+    echo 'set -e' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo 'echo "=== Environment Info ==="' >> /app/start.sh && \
+    echo 'echo "Date: $(date)"' >> /app/start.sh && \
+    echo 'echo "Hostname: $(hostname)"' >> /app/start.sh && \
+    echo 'echo "Current directory: $(pwd)"' >> /app/start.sh && \
+    echo 'echo ""' >> /app/start.sh && \
+    echo 'echo "=== Java Version ==="' >> /app/start.sh && \
+    echo 'java -version' >> /app/start.sh && \
+    echo 'echo ""' >> /app/start.sh && \
+    echo 'echo "=== Port Check ==="' >> /app/start.sh && \
+    echo 'echo "PORT environment variable: ${PORT}"' >> /app/start.sh && \
+    echo 'echo "Testing port availability..."' >> /app/start.sh && \
+    echo 'nc -zv localhost ${PORT:-8080} 2>&1 || echo "Port ${PORT:-8080} is free"' >> /app/start.sh && \
+    echo 'echo ""' >> /app/start.sh && \
+    echo 'echo "=== Starting JPro ==="' >> /app/start.sh && \
+    echo 'mvn jpro:run -DskipTests -Dhttp.port=${PORT:-8080} -Djpro.host=0.0.0.0 -X' >> /app/start.sh && \
+    chmod +x /app/start.sh
+
 EXPOSE 8080
 
-RUN mvn dependency:go-offline -B
-
-CMD mvn jpro:run -DskipTests -Dhttp.port=8080 -Djpro.host=0.0.0.0
+CMD ["/app/start.sh"]
