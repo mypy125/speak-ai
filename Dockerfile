@@ -12,7 +12,16 @@ RUN mvn clean package -DskipTests
 
 FROM ubuntu:22.04
 
-RUN apt-get update && apt-get install -y \
+RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
+    echo "nameserver 1.1.1.1" >> /etc/resolv.conf
+
+RUN sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list && \
+    sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
+
+RUN apt-get update && apt-get install -y software-properties-common && \
+    add-apt-repository ppa:openjdk-r/ppa -y
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
     openjdk-21-jre-headless \
     maven \
     libgl1-mesa-glx \
@@ -26,9 +35,10 @@ RUN apt-get update && apt-get install -y \
     libfreetype6 \
     curl \
     unzip \
-    netstat \
+    netcat \
     lsof \
     procps \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
