@@ -12,17 +12,21 @@ RUN mvn clean package -DskipTests
 
 FROM ubuntu:22.04
 
-RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
-    echo "nameserver 1.1.1.1" >> /etc/resolv.conf
+# Обновляем репозитории без изменения resolv.conf
+RUN apt-get update && apt-get install -y \
+    software-properties-common \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list && \
-    sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
+# Добавляем репозиторий openjdk
+RUN add-apt-repository ppa:openjdk-r/ppa -y
 
-RUN apt-get update && apt-get install -y software-properties-common && \
-    add-apt-repository ppa:openjdk-r/ppa -y
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Устанавливаем пакеты (разбиваем на несколько слоев для лучшей диагностики)
+RUN apt-get update && apt-get install -y \
     openjdk-21-jre-headless \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && apt-get install -y \
     maven \
     libgl1-mesa-glx \
     libgl1-mesa-dri \
@@ -33,12 +37,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libfontconfig1 \
     libfreetype6 \
-    curl \
     unzip \
-    netcat \
+    netcat-openbsd \
     lsof \
     procps \
-    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
