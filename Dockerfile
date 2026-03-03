@@ -12,7 +12,6 @@ RUN mvn clean package -DskipTests
 
 FROM ubuntu:22.04
 
-# Убрал попытки изменить /etc/resolv.conf
 RUN apt-get update && apt-get install -y \
     openjdk-21-jre-headless \
     maven \
@@ -30,7 +29,6 @@ RUN apt-get update && apt-get install -y \
     netcat-openbsd \
     lsof \
     procps \
-    dnsutils \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -47,6 +45,7 @@ RUN if [ ! -d "/app/models/vosk-model-small-en" ]; then \
     rm -rf /tmp/model.zip /tmp/vosk-model-small-en-us-0.15; \
     fi
 
+# Создаем улучшенный start.sh
 RUN echo '#!/bin/bash' > /app/start.sh && \
     echo 'set -e' >> /app/start.sh && \
     echo '' >> /app/start.sh && \
@@ -54,17 +53,24 @@ RUN echo '#!/bin/bash' > /app/start.sh && \
     echo 'echo "Date: $(date)"' >> /app/start.sh && \
     echo 'echo "Hostname: $(hostname)"' >> /app/start.sh && \
     echo 'echo "Current directory: $(pwd)"' >> /app/start.sh && \
-    echo 'echo ""' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
     echo 'echo "=== Java Version ==="' >> /app/start.sh && \
     echo 'java -version' >> /app/start.sh && \
-    echo 'echo ""' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
     echo 'echo "=== Port Check ==="' >> /app/start.sh && \
     echo 'echo "PORT environment variable: ${PORT}"' >> /app/start.sh && \
+    echo 'JPRO_PORT=\${PORT:-8080}' >> /app/start.sh && \
+    echo 'echo "Using port: \$JPRO_PORT"' >> /app/start.sh && \
     echo 'echo "Testing port availability..."' >> /app/start.sh && \
-    echo 'nc -zv localhost ${PORT:-8080} 2>&1 || echo "Port ${PORT:-8080} is free"' >> /app/start.sh && \
-    echo 'echo ""' >> /app/start.sh && \
-    echo 'echo "=== Starting JPro ==="' >> /app/start.sh && \
-    echo 'mvn jpro:run -DskipTests -Dhttp.port=${PORT:-8080} -Djpro.host=0.0.0.0 -X' >> /app/start.sh && \
+    echo 'nc -zv localhost \$JPRO_PORT 2>&1 || echo "Port \$JPRO_PORT is free"' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo 'echo "=== Starting JPro on port \$JPRO_PORT ==="' >> /app/start.sh && \
+    echo 'mvn jpro:run -DskipTests \' >> /app/start.sh && \
+    echo '    -Dhttp.port=\$JPRO_PORT \' >> /app/start.sh && \
+    echo '    -Djpro.port=\$JPRO_PORT \' >> /app/start.sh && \
+    echo '    -Djpro.http.port=\$JPRO_PORT \' >> /app/start.sh && \
+    echo '    -Djpro.host=0.0.0.0 \' >> /app/start.sh && \
+    echo '    -X' >> /app/start.sh && \
     chmod +x /app/start.sh
 
 EXPOSE 8080
