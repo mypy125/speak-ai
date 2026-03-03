@@ -12,9 +12,7 @@ RUN mvn clean package -DskipTests
 
 FROM ubuntu:22.04
 
-RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
-    echo "nameserver 1.1.1.1" >> /etc/resolv.conf
-
+# Убрал попытки изменить /etc/resolv.conf
 RUN apt-get update && apt-get install -y \
     openjdk-21-jre-headless \
     maven \
@@ -52,13 +50,6 @@ RUN if [ ! -d "/app/models/vosk-model-small-en" ]; then \
 RUN echo '#!/bin/bash' > /app/start.sh && \
     echo 'set -e' >> /app/start.sh && \
     echo '' >> /app/start.sh && \
-    echo 'echo "=== Network Diagnostics ==="' >> /app/start.sh && \
-    echo 'echo "DNS servers:"' >> /app/start.sh && \
-    echo 'cat /etc/resolv.conf' >> /app/start.sh && \
-    echo 'echo ""' >> /app/start.sh && \
-    echo 'echo "Testing connection to sandec.jfrog.io:"' >> /app/start.sh && \
-    echo 'ping -c 2 sandec.jfrog.io || echo "Ping failed"' >> /app/start.sh && \
-    echo 'echo ""' >> /app/start.sh && \
     echo 'echo "=== Environment Info ==="' >> /app/start.sh && \
     echo 'echo "Date: $(date)"' >> /app/start.sh && \
     echo 'echo "Hostname: $(hostname)"' >> /app/start.sh && \
