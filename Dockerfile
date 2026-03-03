@@ -19,7 +19,7 @@ RUN find /root/.m2/repository/org/openjfx -name "*21.0.6*linux*.jar" -exec cp {}
 # Если нет специфичных для Linux, копируем любые 21.0.6
 RUN if [ -z "$(ls -A /app/javafx-libs)" ]; then \
     find /root/.m2/repository/org/openjfx -name "*21.0.6*.jar" -exec cp {} /app/javafx-libs/ \; \
-    fi
+    ; fi
 
 # Удаляем все не-21 версии на всякий случай
 RUN rm -f /app/javafx-libs/*17.0.12*.jar 2>/dev/null || true
