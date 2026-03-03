@@ -12,21 +12,11 @@ RUN mvn clean package -DskipTests
 
 FROM ubuntu:22.04
 
-# Обновляем репозитории без изменения resolv.conf
-RUN apt-get update && apt-get install -y \
-    software-properties-common \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
+    echo "nameserver 1.1.1.1" >> /etc/resolv.conf
 
-# Добавляем репозиторий openjdk
-RUN add-apt-repository ppa:openjdk-r/ppa -y
-
-# Устанавливаем пакеты (разбиваем на несколько слоев для лучшей диагностики)
 RUN apt-get update && apt-get install -y \
     openjdk-21-jre-headless \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN apt-get update && apt-get install -y \
     maven \
     libgl1-mesa-glx \
     libgl1-mesa-dri \
@@ -37,10 +27,12 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     libfontconfig1 \
     libfreetype6 \
+    curl \
     unzip \
     netcat-openbsd \
     lsof \
     procps \
+    dnsutils \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -60,6 +52,13 @@ RUN if [ ! -d "/app/models/vosk-model-small-en" ]; then \
 RUN echo '#!/bin/bash' > /app/start.sh && \
     echo 'set -e' >> /app/start.sh && \
     echo '' >> /app/start.sh && \
+    echo 'echo "=== Network Diagnostics ==="' >> /app/start.sh && \
+    echo 'echo "DNS servers:"' >> /app/start.sh && \
+    echo 'cat /etc/resolv.conf' >> /app/start.sh && \
+    echo 'echo ""' >> /app/start.sh && \
+    echo 'echo "Testing connection to sandec.jfrog.io:"' >> /app/start.sh && \
+    echo 'ping -c 2 sandec.jfrog.io || echo "Ping failed"' >> /app/start.sh && \
+    echo 'echo ""' >> /app/start.sh && \
     echo 'echo "=== Environment Info ==="' >> /app/start.sh && \
     echo 'echo "Date: $(date)"' >> /app/start.sh && \
     echo 'echo "Hostname: $(hostname)"' >> /app/start.sh && \
