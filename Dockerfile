@@ -71,8 +71,8 @@ RUN echo "#!/bin/bash" > /app/start.sh && \
     echo "JPRO_PORT=\${PORT:-8080}" >> /app/start.sh && \
     echo "echo \"Using port: \$JPRO_PORT\"" >> /app/start.sh && \
     echo "" >> /app/start.sh && \
-    echo "# Проверяем наличие JavaFX модулей" >> /app/start.sh && \
-    echo "/app/check-modules.sh" >> /app/start.sh && \
+    echo "echo \"=== JavaFX 21 Modules Available ===\"" >> /app/start.sh && \
+    echo "ls -la /app/javafx-libs/ | grep javafx-.*21" >> /app/start.sh && \
     echo "" >> /app/start.sh && \
     echo "JAVAFX_PATH=\"/app/javafx-libs\"" >> /app/start.sh && \
     echo "if [ -d \"\$JAVAFX_PATH\" ] && [ \"\$(ls -A \$JAVAFX_PATH)\" ]; then" >> /app/start.sh && \
@@ -85,12 +85,16 @@ RUN echo "#!/bin/bash" > /app/start.sh && \
     echo "" >> /app/start.sh && \
     echo "echo \"=== Java command ===\"" >> /app/start.sh && \
     echo "echo java \$MODULE_PARAMS \\" >> /app/start.sh && \
-    echo "    --add-opens=java.base/java.lang=ALL-UNNAMED \\" >> /app/start.sh && \
-    echo "    --add-opens=javafx.graphics/javafx.scene=ALL-UNNAMED \\" >> /app/start.sh && \
-    echo "    --add-opens=javafx.graphics/com.sun.javafx.application=ALL-UNNAMED \\" >> /app/start.sh && \
     echo "    -Djava.awt.headless=true \\" >> /app/start.sh && \
     echo "    -Dprism.order=sw \\" >> /app/start.sh && \
     echo "    -Dprism.verbose=false \\" >> /app/start.sh && \
+    echo "    -Djavafx.platform=monocle \\" >> /app/start.sh && \
+    echo "    -Dglass.platform=Monocle \\" >> /app/start.sh && \
+    echo "    -Dmonocle.platform=Headless \\" >> /app/start.sh && \
+    echo "    -Djavafx.verbose=true \\" >> /app/start.sh && \
+    echo "    --add-opens=java.base/java.lang=ALL-UNNAMED \\" >> /app/start.sh && \
+    echo "    --add-opens=javafx.graphics/javafx.scene=ALL-UNNAMED \\" >> /app/start.sh && \
+    echo "    --add-opens=javafx.graphics/com.sun.javafx.application=ALL-UNNAMED \\" >> /app/start.sh && \
     echo "    -Duser.dir=/app \\" >> /app/start.sh && \
     echo "    -Djpro.port=\$JPRO_PORT \\" >> /app/start.sh && \
     echo "    -Djpro.host=0.0.0.0 \\" >> /app/start.sh && \
@@ -99,12 +103,16 @@ RUN echo "#!/bin/bash" > /app/start.sh && \
     echo "    -jar app.jar" >> /app/start.sh && \
     echo "" >> /app/start.sh && \
     echo "exec java \$MODULE_PARAMS \\" >> /app/start.sh && \
-    echo "    --add-opens=java.base/java.lang=ALL-UNNAMED \\" >> /app/start.sh && \
-    echo "    --add-opens=javafx.graphics/javafx.scene=ALL-UNNAMED \\" >> /app/start.sh && \
-    echo "    --add-opens=javafx.graphics/com.sun.javafx.application=ALL-UNNAMED \\" >> /app/start.sh && \
     echo "    -Djava.awt.headless=true \\" >> /app/start.sh && \
     echo "    -Dprism.order=sw \\" >> /app/start.sh && \
     echo "    -Dprism.verbose=false \\" >> /app/start.sh && \
+    echo "    -Djavafx.platform=monocle \\" >> /app/start.sh && \
+    echo "    -Dglass.platform=Monocle \\" >> /app/start.sh && \
+    echo "    -Dmonocle.platform=Headless \\" >> /app/start.sh && \
+    echo "    -Djavafx.verbose=true \\" >> /app/start.sh && \
+    echo "    --add-opens=java.base/java.lang=ALL-UNNAMED \\" >> /app/start.sh && \
+    echo "    --add-opens=javafx.graphics/javafx.scene=ALL-UNNAMED \\" >> /app/start.sh && \
+    echo "    --add-opens=javafx.graphics/com.sun.javafx.application=ALL-UNNAMED \\" >> /app/start.sh && \
     echo "    -Duser.dir=/app \\" >> /app/start.sh && \
     echo "    -Djpro.port=\$JPRO_PORT \\" >> /app/start.sh && \
     echo "    -Djpro.host=0.0.0.0 \\" >> /app/start.sh && \
