@@ -1,29 +1,38 @@
 #!/bin/bash
 set -e
 
-echo "=== Starting JPro with JAR ==="
+echo "=== Starting JPro with JavaFX modules ==="
 JPRO_PORT=${PORT:-8080}
 echo "Using port: $JPRO_PORT"
 
-# Определяем путь к JavaFX модулям
-JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
-JAVAFX_PATH="/app/jpro-libs"
+JAVAFX_PATH="/app/javafx-libs"
+MODULE_PARAMS=""
 
-# Создаем папку для JavaFX модулей если её нет
-mkdir -p $JAVAFX_PATH
-
-# Копируем JavaFX модули из Maven кэша (если есть)
-if [ -d "/root/.m2/repository/org/openjfx" ]; then
-    echo "Copying JavaFX modules from Maven cache..."
-    cp -r /root/.m2/repository/org/openjfx/* $JAVAFX_PATH/ 2>/dev/null || true
+if [ -d "$JAVAFX_PATH" ]; then
+    echo "JavaFX modules found at: $JAVAFX_PATH"
+    # Формируем параметры правильно
+    MODULE_PARAMS="--module-path $JAVAFX_PATH --add-modules javafx.controls,javafx.fxml,javafx.web,javafx.media"
+else
+    echo "WARNING: JavaFX modules not found, trying without module-path"
 fi
 
-echo "JavaFX path: $JAVAFX_PATH"
-echo "Java home: $JAVA_HOME"
+echo "=== Java command ==="
+echo java $MODULE_PARAMS \
+    --add-opens=java.base/java.lang=ALL-UNNAMED \
+    --add-opens=javafx.graphics/javafx.scene=ALL-UNNAMED \
+    --add-opens=javafx.graphics/com.sun.javafx.application=ALL-UNNAMED \
+    -Djava.awt.headless=true \
+    -Dprism.order=sw \
+    -Dprism.verbose=false \
+    -Duser.dir=/app \
+    -Djpro.port=$JPRO_PORT \
+    -Djpro.host=0.0.0.0 \
+    -Djpro.http.port=$JPRO_PORT \
+    -Djpro.applications.default=com.mygitgor.JProWebApp \
+    -jar app.jar
 
-exec java \
-    --module-path $JAVAFX_PATH \
-    --add-modules javafx.controls,javafx.fxml,javafx.web,javafx.media \
+# Исполняем команду
+exec java $MODULE_PARAMS \
     --add-opens=java.base/java.lang=ALL-UNNAMED \
     --add-opens=javafx.graphics/javafx.scene=ALL-UNNAMED \
     --add-opens=javafx.graphics/com.sun.javafx.application=ALL-UNNAMED \

@@ -47,36 +47,51 @@ RUN if [ ! -d "/app/models/vosk-model-small-en" ]; then \
     rm -rf /tmp/model.zip /tmp/vosk-model-small-en-us-0.15; \
     fi
 
-# Создаем скрипт запуска с module-path
-RUN echo '#!/bin/bash' > /app/start.sh && \
-    echo 'set -e' >> /app/start.sh && \
-    echo '' >> /app/start.sh && \
-    echo 'echo "=== Starting JPro with JavaFX modules ==="' >> /app/start.sh && \
-    echo 'JPRO_PORT=${PORT:-8080}' >> /app/start.sh && \
-    echo 'echo "Using port: $JPRO_PORT"' >> /app/start.sh && \
-    echo '' >> /app/start.sh && \
-    echo 'JAVAFX_PATH="/app/javafx-libs"' >> /app/start.sh && \
-    echo 'if [ -d "$JAVAFX_PATH" ]; then' >> /app/start.sh && \
-    echo '    echo "JavaFX modules found at: $JAVAFX_PATH"' >> /app/start.sh && \
-    echo '    MODULE_PATH="--module-path $JAVAFX_PATH --add-modules javafx.controls,javafx.fxml,javafx.web,javafx.media"' >> /app/start.sh && \
-    echo 'else' >> /app/start.sh && \
-    echo '    echo "WARNING: JavaFX modules not found, trying without module-path"' >> /app/start.sh && \
-    echo '    MODULE_PATH=""' >> /app/start.sh && \
-    echo 'fi' >> /app/start.sh && \
-    echo '' >> /app/start.sh && \
-    echo 'exec java \$MODULE_PATH \' >> /app/start.sh && \
-    echo '    --add-opens=java.base/java.lang=ALL-UNNAMED \' >> /app/start.sh && \
-    echo '    --add-opens=javafx.graphics/javafx.scene=ALL-UNNAMED \' >> /app/start.sh && \
-    echo '    --add-opens=javafx.graphics/com.sun.javafx.application=ALL-UNNAMED \' >> /app/start.sh && \
-    echo '    -Djava.awt.headless=true \' >> /app/start.sh && \
-    echo '    -Dprism.order=sw \' >> /app/start.sh && \
-    echo '    -Dprism.verbose=false \' >> /app/start.sh && \
-    echo '    -Duser.dir=/app \' >> /app/start.sh && \
-    echo '    -Djpro.port=\$JPRO_PORT \' >> /app/start.sh && \
-    echo '    -Djpro.host=0.0.0.0 \' >> /app/start.sh && \
-    echo '    -Djpro.http.port=\$JPRO_PORT \' >> /app/start.sh && \
-    echo '    -Djpro.applications.default=com.mygitgor.JProWebApp \' >> /app/start.sh && \
-    echo '    -jar app.jar' >> /app/start.sh && \
+# Исправленный start.sh с правильным экранированием
+RUN echo "#!/bin/bash" > /app/start.sh && \
+    echo "set -e" >> /app/start.sh && \
+    echo "" >> /app/start.sh && \
+    echo "echo \"=== Starting JPro with JavaFX modules ===\"" >> /app/start.sh && \
+    echo "JPRO_PORT=\${PORT:-8080}" >> /app/start.sh && \
+    echo "echo \"Using port: \$JPRO_PORT\"" >> /app/start.sh && \
+    echo "" >> /app/start.sh && \
+    echo "JAVAFX_PATH=\"/app/javafx-libs\"" >> /app/start.sh && \
+    echo "MODULE_PARAMS=\"\"" >> /app/start.sh && \
+    echo "if [ -d \"\$JAVAFX_PATH\" ]; then" >> /app/start.sh && \
+    echo "    echo \"JavaFX modules found at: \$JAVAFX_PATH\"" >> /app/start.sh && \
+    echo "    MODULE_PARAMS=\"--module-path \$JAVAFX_PATH --add-modules javafx.controls,javafx.fxml,javafx.web,javafx.media\"" >> /app/start.sh && \
+    echo "else" >> /app/start.sh && \
+    echo "    echo \"WARNING: JavaFX modules not found, trying without module-path\"" >> /app/start.sh && \
+    echo "fi" >> /app/start.sh && \
+    echo "" >> /app/start.sh && \
+    echo "echo \"=== Java command ===\"" >> /app/start.sh && \
+    echo "echo java \$MODULE_PARAMS \\" >> /app/start.sh && \
+    echo "    --add-opens=java.base/java.lang=ALL-UNNAMED \\" >> /app/start.sh && \
+    echo "    --add-opens=javafx.graphics/javafx.scene=ALL-UNNAMED \\" >> /app/start.sh && \
+    echo "    --add-opens=javafx.graphics/com.sun.javafx.application=ALL-UNNAMED \\" >> /app/start.sh && \
+    echo "    -Djava.awt.headless=true \\" >> /app/start.sh && \
+    echo "    -Dprism.order=sw \\" >> /app/start.sh && \
+    echo "    -Dprism.verbose=false \\" >> /app/start.sh && \
+    echo "    -Duser.dir=/app \\" >> /app/start.sh && \
+    echo "    -Djpro.port=\$JPRO_PORT \\" >> /app/start.sh && \
+    echo "    -Djpro.host=0.0.0.0 \\" >> /app/start.sh && \
+    echo "    -Djpro.http.port=\$JPRO_PORT \\" >> /app/start.sh && \
+    echo "    -Djpro.applications.default=com.mygitgor.JProWebApp \\" >> /app/start.sh && \
+    echo "    -jar app.jar" >> /app/start.sh && \
+    echo "" >> /app/start.sh && \
+    echo "exec java \$MODULE_PARAMS \\" >> /app/start.sh && \
+    echo "    --add-opens=java.base/java.lang=ALL-UNNAMED \\" >> /app/start.sh && \
+    echo "    --add-opens=javafx.graphics/javafx.scene=ALL-UNNAMED \\" >> /app/start.sh && \
+    echo "    --add-opens=javafx.graphics/com.sun.javafx.application=ALL-UNNAMED \\" >> /app/start.sh && \
+    echo "    -Djava.awt.headless=true \\" >> /app/start.sh && \
+    echo "    -Dprism.order=sw \\" >> /app/start.sh && \
+    echo "    -Dprism.verbose=false \\" >> /app/start.sh && \
+    echo "    -Duser.dir=/app \\" >> /app/start.sh && \
+    echo "    -Djpro.port=\$JPRO_PORT \\" >> /app/start.sh && \
+    echo "    -Djpro.host=0.0.0.0 \\" >> /app/start.sh && \
+    echo "    -Djpro.http.port=\$JPRO_PORT \\" >> /app/start.sh && \
+    echo "    -Djpro.applications.default=com.mygitgor.JProWebApp \\" >> /app/start.sh && \
+    echo "    -jar app.jar" >> /app/start.sh && \
     chmod +x /app/start.sh
 
 EXPOSE 8080
