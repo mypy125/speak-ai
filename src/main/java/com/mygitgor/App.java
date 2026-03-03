@@ -29,20 +29,16 @@ public class App extends Application {
             DatabaseManager.getInstance().initializeDatabase();
             logger.info("База данных инициализирована");
 
-            // Загрузка главного окна - правильный путь для вашей структуры
             FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/mygitgor/view/fxml/main.fxml"));
             Parent root = loader.load();
             logger.info("FXML файл загружен успешно");
 
-            // Настройка контроллера
             ChatBotController controller = loader.getController();
             controller.setStage(stage);
             logger.info("Контроллер инициализирован");
 
-            // Создание сцены
             Scene scene = new Scene(root, 1200, 800);
 
-            // Загрузка CSS - правильный путь
             String cssPath = "/com/mygitgor/view/styles/main.css";
             InputStream cssStream = getClass().getResourceAsStream(cssPath);
 
@@ -71,7 +67,6 @@ public class App extends Application {
             stage.setMinWidth(1000);
             stage.setMinHeight(700);
 
-            // Обработка закрытия окна
             stage.setOnCloseRequest(event -> {
                 logger.info("Пользователь закрыл приложение");
                 DatabaseManager.getInstance().closeConnection();
@@ -92,23 +87,18 @@ public class App extends Application {
                             "2. Корректность структуры проекта\n" +
                             "3. Наличие необходимых библиотек");
 
-            // Завершаем приложение при критической ошибке
             Platform.exit();
             System.exit(1);
         }
     }
 
-    /**
-     * Создание необходимых директорий при запуске
-     */
     private void createApplicationDirectories() {
         try {
-            // Создаем директории для данных приложения
             String[] directories = {
-                    "data",          // База данных
-                    "recordings",    // Аудиозаписи
-                    "logs",          // Логи
-                    "exports"        // Экспортируемые файлы
+                    "data",
+                    "recordings",
+                    "logs",
+                    "exports"
             };
 
             for (String dir : directories) {
@@ -139,7 +129,6 @@ public class App extends Application {
                 alert.getDialogPane().setPrefSize(600, 400);
                 alert.showAndWait();
             } catch (Exception e) {
-                // Если даже диалог не может показаться, пишем в консоль
                 System.err.println(title + ": " + message);
                 e.printStackTrace();
             }
@@ -149,21 +138,17 @@ public class App extends Application {
     @Override
     public void stop() {
         logger.info("Приложение SpeakAI завершает работу");
-        // Очистка ресурсов
         DatabaseManager.getInstance().closeConnection();
 
-        // Логируем завершение работы
         logger.info("Работа приложения завершена корректно");
     }
 
     public static void main(String[] args) {
         logger.info("Запуск метода main()");
 
-        // Проверка Java версии
         String javaVersion = System.getProperty("java.version");
         logger.info("Версия Java: {}", javaVersion);
 
-        // Проверка наличия JavaFX
         try {
             Class.forName("javafx.application.Application");
             logger.info("JavaFX найден");
@@ -174,7 +159,6 @@ public class App extends Application {
             System.exit(1);
         }
 
-        // Запуск JavaFX приложения
         launch(args);
     }
 }
