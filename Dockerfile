@@ -10,9 +10,12 @@ COPY google-credentials.json ./
 
 RUN mvn clean package -DskipTests
 
-# Копируем JavaFX модули из кэша Maven
+# Копируем ВСЕ JavaFX модули из кэша Maven
 RUN mkdir -p /app/javafx-libs
-RUN cp -r /root/.m2/repository/org/openjfx/javafx-* /app/javafx-libs/ 2>/dev/null || true
+# Копируем все модули JavaFX
+RUN find /root/.m2/repository/org/openjfx -name "*.jar" -exec cp {} /app/javafx-libs/ \;
+# Также копируем JPro JavaFX модули
+RUN find /root/.m2/repository/org/openjfx -name "*.jar" -exec cp {} /app/javafx-libs/ \; 2>/dev/null || true
 
 FROM ubuntu:22.04
 
@@ -47,7 +50,13 @@ RUN if [ ! -d "/app/models/vosk-model-small-en" ]; then \
     rm -rf /tmp/model.zip /tmp/vosk-model-small-en-us-0.15; \
     fi
 
-# Исправленный start.sh с правильным экранированием
+# Создаем скрипт для проверки наличия модулей
+RUN echo '#!/bin/bash' > /app/check-modules.sh && \
+    echo 'echo "=== JavaFX Modules Available ==="' >> /app/check-modules.sh && \
+    echo 'ls -la /app/javafx-libs/ | grep javafx' >> /app/check-modules.sh && \
+    chmod +x /app/check-modules.sh
+
+# Исправленный start.sh
 RUN echo "#!/bin/bash" > /app/start.sh && \
     echo "set -e" >> /app/start.sh && \
     echo "" >> /app/start.sh && \
@@ -55,11 +64,21 @@ RUN echo "#!/bin/bash" > /app/start.sh && \
     echo "JPRO_PORT=\${PORT:-8080}" >> /app/start.sh && \
     echo "echo \"Using port: \$JPRO_PORT\"" >> /app/start.sh && \
     echo "" >> /app/start.sh && \
+    echo "# Проверяем наличие JavaFX модулей" >> /app/start.sh && \
+    echo "/app/check-modules.sh" >> /app/start.sh && \
+    echo "" >> /app/start.sh && \
     echo "JAVAFX_PATH=\"/app/javafx-libs\"" >> /app/start.sh && \
     echo "MODULE_PARAMS=\"\"" >> /app/start.sh && \
     echo "if [ -d \"\$JAVAFX_PATH\" ]; then" >> /app/start.sh && \
     echo "    echo \"JavaFX modules found at: \$JAVAFX_PATH\"" >> /app/start.sh && \
-    echo "    MODULE_PARAMS=\"--module-path \$JAVAFX_PATH --add-modules javafx.controls,javafx.fxml,javafx.web,javafx.media\"" >> /app/start.sh && \
+    echo "    # Используем только доступные модули" >> /app/start.sh && \
+    echo "    MODULE_PARAMS=\"--module-path \$JAVAFX_PATH --add-modules javafx.controls,javafx.fxml,javafx.media\"" >> /app/start.sh && \
+    echo "    # Добавляем javafx.web только если он существует" >> /app/start.sh && \
+    echo "    if ls \$JAVAFX_PATH/*web*.jar 1> /dev/null 2>&1; then" >> /app/start.sh && \
+    echo "        MODULE_PARAMS=\"\$MODULE_PARAMS,javafx.web\"" >> /app/start.sh && \
+    echo "    else" >> /app/start.sh && \
+    echo "        echo \"WARNING: javafx.web module not found, continuing without it\"" >> /app/start.sh && \
+    echo "    fi" >> /app/start.sh && \
     echo "else" >> /app/start.sh && \
     echo "    echo \"WARNING: JavaFX modules not found, trying without module-path\"" >> /app/start.sh && \
     echo "fi" >> /app/start.sh && \
