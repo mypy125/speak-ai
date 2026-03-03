@@ -45,7 +45,7 @@ RUN if [ ! -d "/app/models/vosk-model-small-en" ]; then \
     rm -rf /tmp/model.zip /tmp/vosk-model-small-en-us-0.15; \
     fi
 
-# Создаем улучшенный start.sh
+# ИСПРАВЛЕННЫЙ start.sh - без экранирования переменных
 RUN echo '#!/bin/bash' > /app/start.sh && \
     echo 'set -e' >> /app/start.sh && \
     echo '' >> /app/start.sh && \
@@ -59,17 +59,17 @@ RUN echo '#!/bin/bash' > /app/start.sh && \
     echo '' >> /app/start.sh && \
     echo 'echo "=== Port Check ==="' >> /app/start.sh && \
     echo 'echo "PORT environment variable: ${PORT}"' >> /app/start.sh && \
-    echo 'JPRO_PORT=\${PORT:-8080}' >> /app/start.sh && \
-    echo 'echo "Using port: \$JPRO_PORT"' >> /app/start.sh && \
+    echo 'JPRO_PORT=${PORT:-8080}' >> /app/start.sh && \
+    echo 'echo "Using port: $JPRO_PORT"' >> /app/start.sh && \
     echo 'echo "Testing port availability..."' >> /app/start.sh && \
-    echo 'nc -zv localhost \$JPRO_PORT 2>&1 || echo "Port \$JPRO_PORT is free"' >> /app/start.sh && \
+    echo 'nc -zv localhost $JPRO_PORT 2>&1 || echo "Port $JPRO_PORT is free"' >> /app/start.sh && \
     echo '' >> /app/start.sh && \
-    echo 'echo "=== Starting JPro on port \$JPRO_PORT ==="' >> /app/start.sh && \
-    echo 'mvn jpro:run -DskipTests \' >> /app/start.sh && \
-    echo '    -Dhttp.port=\$JPRO_PORT \' >> /app/start.sh && \
-    echo '    -Djpro.port=\$JPRO_PORT \' >> /app/start.sh && \
-    echo '    -Djpro.http.port=\$JPRO_PORT \' >> /app/start.sh && \
-    echo '    -Djpro.host=0.0.0.0 \' >> /app/start.sh && \
+    echo 'echo "=== Starting JPro on port $JPRO_PORT ==="' >> /app/start.sh && \
+    echo 'mvn jpro:run -DskipTests \\' >> /app/start.sh && \
+    echo '    -Dhttp.port=$JPRO_PORT \\' >> /app/start.sh && \
+    echo '    -Djpro.port=$JPRO_PORT \\' >> /app/start.sh && \
+    echo '    -Djpro.http.port=$JPRO_PORT \\' >> /app/start.sh && \
+    echo '    -Djpro.host=0.0.0.0 \\' >> /app/start.sh && \
     echo '    -X' >> /app/start.sh && \
     chmod +x /app/start.sh
 
