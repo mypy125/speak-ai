@@ -10,6 +10,10 @@ COPY google-credentials.json ./
 
 RUN mvn clean package -DskipTests
 
+# Копируем JavaFX модули
+RUN mkdir -p /app/javafx-libs
+RUN find /root/.m2/repository/org/openjfx -name "*21.0.6*linux*.jar" -exec cp {} /app/javafx-libs/ \;
+
 FROM ubuntu:22.04
 
 RUN apt-get update && apt-get install -y \
@@ -29,6 +33,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 COPY --from=builder /app/target/speakAI-*.jar app.jar
+COPY --from=builder /app/javafx-libs /app/javafx-libs
 COPY --from=builder /app/src/main/resources /app/resources
 COPY --from=builder /app/google-credentials.json /app/
 
@@ -42,15 +47,24 @@ RUN if [ ! -d "/app/models/vosk-model-small-en" ]; then \
     rm -rf /tmp/model.zip /tmp/vosk-model-small-en-us-0.15; \
     fi
 
-# Простой start.sh с правильным экранированием
+# Финальный start.sh с правильными параметрами
 RUN echo "#!/bin/bash" > /app/start.sh && \
     echo "set -e" >> /app/start.sh && \
     echo "" >> /app/start.sh && \
-    echo "echo \"=== Starting JPro with built-in headless ===\"" >> /app/start.sh && \
+    echo "echo \"=== Starting JPro with JavaFX modules ===\"" >> /app/start.sh && \
     echo "JPRO_PORT=\${PORT:-8080}" >> /app/start.sh && \
     echo "echo \"Using port: \$JPRO_PORT\"" >> /app/start.sh && \
     echo "" >> /app/start.sh && \
-    echo "exec java \\" >> /app/start.sh && \
+    echo "JAVAFX_PATH=\"/app/javafx-libs\"" >> /app/start.sh && \
+    echo "if [ -d \"\$JAVAFX_PATH\" ]; then" >> /app/start.sh && \
+    echo "    echo \"JavaFX modules found\"" >> /app/start.sh && \
+    echo "    MODULE_PARAMS=\"--module-path \$JAVAFX_PATH --add-modules javafx.controls,javafx.fxml\"" >> /app/start.sh && \
+    echo "else" >> /app/start.sh && \
+    echo "    echo \"WARNING: JavaFX modules not found\"" >> /app/start.sh && \
+    echo "    MODULE_PARAMS=\"\"" >> /app/start.sh && \
+    echo "fi" >> /app/start.sh && \
+    echo "" >> /app/start.sh && \
+    echo "exec java \$MODULE_PARAMS \\" >> /app/start.sh && \
     echo "    -Djava.awt.headless=true \\" >> /app/start.sh && \
     echo "    -Dprism.order=sw \\" >> /app/start.sh && \
     echo "    -Dprism.verbose=false \\" >> /app/start.sh && \
