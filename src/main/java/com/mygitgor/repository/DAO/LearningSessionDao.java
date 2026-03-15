@@ -30,9 +30,6 @@ public class LearningSessionDao {
         }
     }
 
-    /**
-     * Создание новой сессии
-     */
     public LearningSession createSession(LearningSession session) {
         try {
             session.prepareForSave();
@@ -47,9 +44,6 @@ public class LearningSessionDao {
         }
     }
 
-    /**
-     * Получение активной сессии пользователя
-     */
     public LearningSession getActiveSession(User user) {
         try {
             QueryBuilder<LearningSession, Integer> queryBuilder = sessionDao.queryBuilder();
@@ -69,9 +63,6 @@ public class LearningSessionDao {
         }
     }
 
-    /**
-     * Получение сессии по ID
-     */
     public LearningSession getSessionById(int id) {
         try {
             LearningSession session = sessionDao.queryForId(id);
@@ -85,9 +76,6 @@ public class LearningSessionDao {
         }
     }
 
-    /**
-     * Получение всех сессий пользователя
-     */
     public List<LearningSession> getSessionsByUser(User user) {
         try {
             QueryBuilder<LearningSession, Integer> queryBuilder = sessionDao.queryBuilder();
@@ -103,9 +91,6 @@ public class LearningSessionDao {
         }
     }
 
-    /**
-     * Получение последней сессии пользователя
-     */
     public LearningSession getLastSession(User user) {
         try {
             QueryBuilder<LearningSession, Integer> queryBuilder = sessionDao.queryBuilder();
@@ -124,9 +109,6 @@ public class LearningSessionDao {
         }
     }
 
-    /**
-     * Обновление сессии
-     */
     public void updateSession(LearningSession session) {
         try {
             session.prepareForSave();
@@ -138,9 +120,6 @@ public class LearningSessionDao {
         }
     }
 
-    /**
-     * Завершение сессии
-     */
     public void endSession(int sessionId) {
         try {
             UpdateBuilder<LearningSession, Integer> updateBuilder = sessionDao.updateBuilder();
@@ -153,9 +132,6 @@ public class LearningSessionDao {
         }
     }
 
-    /**
-     * Завершение всех активных сессий пользователя
-     */
     public void endAllActiveSessions(User user) {
         try {
             UpdateBuilder<LearningSession, Integer> updateBuilder = sessionDao.updateBuilder();
@@ -173,9 +149,6 @@ public class LearningSessionDao {
         }
     }
 
-    /**
-     * Удаление сессии
-     */
     public void deleteSession(int id) {
         try {
             sessionDao.deleteById(id);
@@ -186,9 +159,6 @@ public class LearningSessionDao {
         }
     }
 
-    /**
-     * Удаление всех сессий пользователя
-     */
     public void deleteSessionsByUser(User user) {
         try {
             QueryBuilder<LearningSession, Integer> queryBuilder = sessionDao.queryBuilder();
@@ -201,9 +171,6 @@ public class LearningSessionDao {
         }
     }
 
-    /**
-     * Получение статистики по сессиям
-     */
     public SessionStats getSessionStats(User user) {
         try {
             List<LearningSession> sessions = getSessionsByUser(user);
@@ -231,9 +198,6 @@ public class LearningSessionDao {
         }
     }
 
-    /**
-     * Внутренний класс для статистики
-     */
     public static class SessionStats {
         private final int totalSessions;
         private final long totalDuration;

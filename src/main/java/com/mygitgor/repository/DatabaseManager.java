@@ -49,10 +49,8 @@ public class DatabaseManager {
     }
 
     private void createTables() throws SQLException {
-        // Создаем таблицы через прямой JDBC
         createTablesWithDirectJDBC();
 
-        // Затем через ORMLite для создания если не существует
         TableUtils.createTableIfNotExists(connectionSource, User.class);
         TableUtils.createTableIfNotExists(connectionSource, Conversation.class);
         TableUtils.createTableIfNotExists(connectionSource, LearningProgress.class);
@@ -65,7 +63,6 @@ public class DatabaseManager {
         try (Connection connection = DriverManager.getConnection(databaseUrl);
              Statement stmt = connection.createStatement()) {
 
-            // Таблица users
             String createUsersTable =
                     "CREATE TABLE IF NOT EXISTS users (" +
                             "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
@@ -79,7 +76,6 @@ public class DatabaseManager {
                             ")";
             stmt.executeUpdate(createUsersTable);
 
-            // Таблица conversations
             String createConversationsTable =
                     "CREATE TABLE IF NOT EXISTS conversations (" +
                             "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
@@ -97,7 +93,6 @@ public class DatabaseManager {
                             ")";
             stmt.executeUpdate(createConversationsTable);
 
-            // Таблица learning_progress (обновленная в соответствии с классом)
             String createLearningProgressTable =
                     "CREATE TABLE IF NOT EXISTS learning_progress (" +
                             "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
@@ -115,7 +110,6 @@ public class DatabaseManager {
                             ")";
             stmt.executeUpdate(createLearningProgressTable);
 
-            // Таблица learning_sessions (обновленная в соответствии с классом)
             String createLearningSessionsTable =
                     "CREATE TABLE IF NOT EXISTS learning_sessions (" +
                             "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
@@ -138,9 +132,6 @@ public class DatabaseManager {
         }
     }
 
-    /**
-     * Получение ConnectionSource для ORMLite
-     */
     public ConnectionSource getConnectionSource() {
         if (connectionSource == null) {
             throw new IllegalStateException("База данных не инициализирована. Вызовите initializeDatabase() сначала.");
@@ -187,7 +178,6 @@ public class DatabaseManager {
         try (Connection conn = getJdbcConnection();
              Statement stmt = conn.createStatement()) {
 
-            // Удаляем в правильном порядке из-за внешних ключей
             stmt.executeUpdate("DELETE FROM learning_sessions");
             stmt.executeUpdate("DELETE FROM learning_progress");
             stmt.executeUpdate("DELETE FROM conversations");

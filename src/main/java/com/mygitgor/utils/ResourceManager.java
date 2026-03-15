@@ -20,9 +20,6 @@ public class ResourceManager implements AutoCloseable {
         logger.info("ResourceManager инициализирован");
     }
 
-    /**
-     * Регистрация ресурса
-     */
     public void register(AutoCloseable resource) {
         if (resource == null) return;
 
@@ -49,9 +46,6 @@ public class ResourceManager implements AutoCloseable {
         }
     }
 
-    /**
-     * Регистрирует ресурс с указанием имени
-     */
     public <T extends AutoCloseable> T register(T resource, String name) {
         if (resource != null && !closed) {
             resources.add(resource);
@@ -73,7 +67,6 @@ public class ResourceManager implements AutoCloseable {
             shutdownExecutor(executor);
         }
     }
-
 
     public void register(Object resource) {
         if (resource == null) return;
@@ -99,9 +92,6 @@ public class ResourceManager implements AutoCloseable {
         }
     }
 
-    /**
-     * Отмена регистрации ExecutorService
-     */
     public void unregisterExecutor(ExecutorService executor) {
         if (executor == null) return;
 
@@ -112,9 +102,6 @@ public class ResourceManager implements AutoCloseable {
         }
     }
 
-    /**
-     * Универсальный метод отмены регистрации
-     */
     public void unregister(Object resource) {
         if (resource == null) return;
 
@@ -128,9 +115,6 @@ public class ResourceManager implements AutoCloseable {
         }
     }
 
-    /**
-     * Закрытие всех ресурсов
-     */
     @Override
     public void close() {
         if (closed) {

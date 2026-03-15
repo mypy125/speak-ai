@@ -30,9 +30,9 @@ public class LearningProgressDao {
 
     public LearningProgress createProgress(LearningProgress progress) {
         try {
-            progress.prepareForSave(); // Сериализуем перед сохранением
+            progress.prepareForSave();
             progressDao.create(progress);
-            progress.afterLoad(); // Десериализуем после загрузки
+            progress.afterLoad();
             logger.info("Создан прогресс: user={}, mode={}, progress={}",
                     progress.getUser().getId(), progress.getLearningMode(), progress.getOverallProgress());
             return progress;
@@ -52,7 +52,7 @@ public class LearningProgressDao {
 
             LearningProgress progress = queryBuilder.queryForFirst();
             if (progress != null) {
-                progress.afterLoad(); // Десериализуем
+                progress.afterLoad();
             }
             return progress;
         } catch (SQLException e) {
@@ -76,7 +76,7 @@ public class LearningProgressDao {
 
     public void updateProgress(LearningProgress progress) {
         try {
-            progress.prepareForSave(); // Сериализуем перед обновлением
+            progress.prepareForSave();
             progressDao.update(progress);
             logger.debug("Прогресс обновлен: id={}", progress.getId());
         } catch (SQLException e) {

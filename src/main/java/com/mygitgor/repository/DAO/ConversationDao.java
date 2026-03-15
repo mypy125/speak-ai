@@ -91,7 +91,6 @@ public class ConversationDao {
         try (Connection connection = DatabaseManager.getInstance().getJdbcConnection();
              PreparedStatement stmt = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
 
-            // Определяем user_id
             int userId = conversation.getUser() != null ? conversation.getUser().getId() :
                     (conversation.getUserId() > 0 ? conversation.getUserId() : 1);
 
@@ -209,7 +208,6 @@ public class ConversationDao {
         }
     }
 
-    // Метод для получения разговоров по userId (альтернатива)
     public List<Conversation> getConversationsByUserId(int userId) {
         return getConversationsByUser(userId);
     }

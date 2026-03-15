@@ -28,7 +28,6 @@ public class ValidationUtils {
             return false;
         }
 
-        // Проверка на наличие хотя бы одной цифры и одной буквы
         boolean hasDigit = false;
         boolean hasLetter = false;
 
@@ -66,7 +65,6 @@ public class ValidationUtils {
             return "";
         }
 
-        // Удаляем потенциально опасные символы
         return input.replaceAll("[<>\"']", "");
     }
 
