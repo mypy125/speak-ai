@@ -619,7 +619,9 @@ public class ConversationStrategy implements LearningModeStrategy {
     }
 
     private String generateTtsText(String aiResponse, ConversationState state) {
-        String cleanResponse = aiResponse
+        String mainMessage = extractMainMessage(aiResponse);
+
+        String cleanResponse = mainMessage
                 .replaceAll("[\\*\\_\\`\\#]", "")
                 .replaceAll("\\[([^\\]]+)\\]\\([^\\)]+\\)", "$1")
                 .trim();
@@ -633,6 +635,72 @@ public class ConversationStrategy implements LearningModeStrategy {
         }
 
         return tts.toString();
+    }
+
+    private String extractMainMessage(String fullResponse) {
+        if (fullResponse == null || fullResponse.isEmpty()) {
+            return "";
+        }
+
+        String[] lines = fullResponse.split("\n");
+        StringBuilder mainMessage = new StringBuilder();
+
+        boolean inStats = false;
+        boolean inTopic = false;
+
+        for (String line : lines) {
+            if (line.contains("CONVERSATION STATS") ||
+                    line.contains("═══════════════════════════════════════") ||
+                    line.contains("CONVERSATION TOPIC") ||
+                    line.contains("📊 CONVERSATION STATS") ||
+                    line.contains("📊 CONVERSATION GOALS")) {
+                inStats = true;
+                continue;
+            }
+
+            if (inStats && line.contains("Keep the conversation going")) {
+                inStats = false;
+                continue;
+            }
+
+            if (inStats || inTopic) {
+                continue;
+            }
+
+            if (line.contains("════════════════") ||
+                    line.contains("────────────────────") ||
+                    line.trim().isEmpty()) {
+                continue;
+            }
+
+            if (!line.startsWith("📊") &&
+                    !line.startsWith("🎯") &&
+                    !line.startsWith("⏱️") &&
+                    !line.contains("Exchanges:") &&
+                    !line.contains("Fluency score:") &&
+                    !line.contains("Grammar score:") &&
+                    !line.contains("Vocabulary used:") &&
+                    !line.contains("Topics discussed:")) {
+
+                mainMessage.append(line).append(" ");
+            }
+        }
+
+        String result = mainMessage.toString().trim();
+
+        if (result.isEmpty()) {
+            int statsIndex = fullResponse.indexOf("CONVERSATION STATS");
+            if (statsIndex == -1) {
+                statsIndex = fullResponse.indexOf("📊 CONVERSATION STATS");
+            }
+            if (statsIndex != -1) {
+                result = fullResponse.substring(0, statsIndex).trim();
+            } else {
+                result = fullResponse;
+            }
+        }
+
+        return result;
     }
 
     private String generateTaskDisplayText(String topic, LearningTask.DifficultyLevel difficulty,
