@@ -488,9 +488,8 @@ public class ExerciseStrategy implements LearningModeStrategy {
             tts.append("Not quite right. Let's try again. ");
         }
 
-        tts.append(String.format("Your success rate is %.1f percent. ", state.getSuccessRate())); // FIX #6
+        tts.append(String.format("Your success rate is %.1f percent. ", state.getSuccessRate()));
         tts.append(String.format("You have completed %d exercises. ", state.completedCount));
-        tts.append(String.format("Your best streak is %d. ", state.bestStreak));
         tts.append("Next exercise type is ").append(template.name).append(". ");
 
         if (!isCorrect && !template.tips.isEmpty()) {
