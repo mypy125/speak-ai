@@ -25,23 +25,23 @@ public class GrammarStrategy implements LearningModeStrategy {
 
     private final Map<String, GrammarState> sessions = new ConcurrentHashMap<>();
 
-    private static final double BEGINNER_THRESHOLD     = 30.0;
+    private static final double BEGINNER_THRESHOLD = 30.0;
     private static final double INTERMEDIATE_THRESHOLD = 60.0;
-    private static final double ADVANCED_THRESHOLD     = 85.0;
+    private static final double ADVANCED_THRESHOLD = 85.0;
 
-    private static final double PASSING_SCORE   = 70.0;
-    private static final double GOOD_SCORE      = 80.0;
+    private static final double PASSING_SCORE = 70.0;
+    private static final double GOOD_SCORE = 80.0;
     private static final double EXCELLENT_SCORE = 90.0;
 
-    private static final int    ACHIEVEMENT_TOPICS_5      = 5;
-    private static final int    ACHIEVEMENT_TOPICS_10     = 10;
-    private static final int    ACHIEVEMENT_TOPICS_20     = 20;
-    private static final int    ACHIEVEMENT_EXERCISES_50  = 50;
-    private static final int    ACHIEVEMENT_EXERCISES_100 = 100;
-    private static final int    ACHIEVEMENT_EXERCISES_200 = 200;
-    private static final double ACHIEVEMENT_AVG_85        = 85.0;
-    private static final double ACHIEVEMENT_AVG_90        = 90.0;
-    private static final double ACHIEVEMENT_AVG_95        = 95.0;
+    private static final int ACHIEVEMENT_TOPICS_5 = 5;
+    private static final int ACHIEVEMENT_TOPICS_10 = 10;
+    private static final int ACHIEVEMENT_TOPICS_20 = 20;
+    private static final int ACHIEVEMENT_EXERCISES_50 = 50;
+    private static final int ACHIEVEMENT_EXERCISES_100 = 100;
+    private static final int ACHIEVEMENT_EXERCISES_200 = 200;
+    private static final double ACHIEVEMENT_AVG_85 = 85.0;
+    private static final double ACHIEVEMENT_AVG_90 = 90.0;
+    private static final double ACHIEVEMENT_AVG_95 = 95.0;
 
     private static final Duration SESSION_TIMEOUT = Duration.ofHours(2);
 
@@ -300,6 +300,77 @@ public class GrammarStrategy implements LearningModeStrategy {
                     state != null ? state.averageScore : 0,
                     state, currentTopic);
         }, executor);
+    }
+
+    private String generateTtsText(String aiResponse, double score,
+                                   GrammarState state, GrammarTopic topic) {
+        StringBuilder tts = new StringBuilder();
+
+        if (score >= EXCELLENT_SCORE) {
+            tts.append("Excellent! ");
+        } else if (score >= GOOD_SCORE) {
+            tts.append("Good job! ");
+        } else if (score >= PASSING_SCORE) {
+            tts.append("Good attempt! ");
+        } else {
+            tts.append("Let's practice more. ");
+        }
+
+        tts.append(String.format("Your score is %.1f out of 100. ", score));
+
+        String cleanResponse = extractMainGrammarMessage(aiResponse);
+        if (!cleanResponse.isEmpty()) {
+            tts.append(cleanResponse).append(" ");
+        }
+
+        if (state != null && state.currentTopic != null) {
+            GrammarTopic nextTopic = getTopicByName(state.currentTopic);
+            tts.append("Next topic: ").append(nextTopic.name).append(". ");
+        }
+
+        tts.append("Keep practicing to improve your grammar skills.");
+
+        return tts.toString();
+    }
+
+    private String extractMainGrammarMessage(String fullResponse) {
+        if (fullResponse == null || fullResponse.isEmpty()) {
+            return "";
+        }
+
+        String[] statsMarkers = {
+                "YOUR PROGRESS",
+                "📈 YOUR PROGRESS",
+                "REMEMBER THE FORMULA",
+                "📝 REMEMBER THE FORMULA",
+                "QUICK TIP",
+                "💡 QUICK TIP",
+                "═══════════════════════════════════════",
+                "────────────────"
+        };
+
+        String mainMessage = fullResponse;
+        for (String marker : statsMarkers) {
+            int markerIndex = fullResponse.indexOf(marker);
+            if (markerIndex != -1) {
+                mainMessage = fullResponse.substring(0, markerIndex).trim();
+                break;
+            }
+        }
+
+        mainMessage = mainMessage.replace("📚 GRAMMAR PRACTICE", "")
+                .replace("GRAMMAR PRACTICE", "")
+                .trim();
+
+        mainMessage = mainMessage.replaceAll("[\\n\\r]+", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+
+        if (mainMessage.length() > 200) {
+            mainMessage = mainMessage.substring(0, 200) + "... ";
+        }
+
+        return mainMessage;
     }
 
     @Override
@@ -596,28 +667,6 @@ public class GrammarStrategy implements LearningModeStrategy {
                 "💡 QUICK TIP\n" +
                 "────────────\n" +
                 "  " + getGrammarTip(topic) + "\n";
-    }
-
-    private String generateTtsText(String aiResponse, double score,
-                                   GrammarState state, GrammarTopic topic) {
-        String verdict = score >= EXCELLENT_SCORE ? "Excellent! "
-                : score >= GOOD_SCORE ? "Good job! "
-                : score >= PASSING_SCORE ? "Good attempt! "
-                : "Let's practice more. ";
-
-        String cleanResponse = aiResponse.replaceAll("[\\n\\r]+", " ").trim();
-        if (cleanResponse.length() > 150) cleanResponse = cleanResponse.substring(0, 150) + "... ";
-
-        StringBuilder tts = new StringBuilder(verdict);
-        tts.append(String.format("Your score is %.1f out of 100. ", score));
-        tts.append(cleanResponse).append(" ");
-        if (state != null) {
-            tts.append(String.format("Your average score is %.1f percent. ", state.averageScore));
-            tts.append(String.format("You have completed %d exercises. ", state.exercisesDone));
-            tts.append(String.format("You have mastered %d grammar topics. ", state.completedTopics.size()));
-        }
-        tts.append("Keep practicing to improve your grammar skills.");
-        return tts.toString();
     }
 
     private String generateTaskDisplayText(GrammarTopic topic, LearningContext context) {
