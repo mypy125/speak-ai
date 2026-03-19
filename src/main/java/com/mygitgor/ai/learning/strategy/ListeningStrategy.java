@@ -25,29 +25,27 @@ public class ListeningStrategy implements LearningModeStrategy {
 
     private final Map<String, ListeningState> sessions = new ConcurrentHashMap<>();
 
-    private static final double BEGINNER_THRESHOLD     = 30.0;
+    private static final double BEGINNER_THRESHOLD = 30.0;
     private static final double INTERMEDIATE_THRESHOLD = 60.0;
-    private static final double ADVANCED_THRESHOLD     = 85.0;
+    private static final double ADVANCED_THRESHOLD = 85.0;
 
-    private static final double GOOD_COMPREHENSION      = 70.0;
+    private static final double GOOD_COMPREHENSION = 70.0;
     private static final double EXCELLENT_COMPREHENSION = 85.0;
 
-    private static final int    ACHIEVEMENT_EXERCISES_10  = 10;
-    private static final int    ACHIEVEMENT_EXERCISES_25  = 25;
-    private static final int    ACHIEVEMENT_EXERCISES_50  = 50;
+    private static final int    ACHIEVEMENT_EXERCISES_10 = 10;
+    private static final int    ACHIEVEMENT_EXERCISES_25 = 25;
+    private static final int    ACHIEVEMENT_EXERCISES_50 = 50;
     private static final int    ACHIEVEMENT_EXERCISES_100 = 100;
     private static final double ACHIEVEMENT_COMPREHENSION_70 = 70.0;
     private static final double ACHIEVEMENT_COMPREHENSION_85 = 85.0;
     private static final double ACHIEVEMENT_COMPREHENSION_95 = 95.0;
 
-    // FIX #5: TTL сессий
     private static final Duration SESSION_TIMEOUT = Duration.ofHours(2);
 
-    // FIX #7: ограничения списков
-    private static final int MAX_SCORE_HISTORY  = 30;
+    private static final int MAX_SCORE_HISTORY = 30;
     private static final int MAX_TOPICS_HISTORY = 50;
 
-    private static final Map<String, String>              TOPIC_TO_SPEECH = new HashMap<>();
+    private static final Map<String, String> TOPIC_TO_SPEECH = new HashMap<>();
     private static final Map<String, List<ListeningTopic>> listeningTopics = new HashMap<>();
 
     static {
@@ -134,55 +132,48 @@ public class ListeningStrategy implements LearningModeStrategy {
         TOPIC_TO_SPEECH.put("Accented Speech",          "accented speech");
     }
 
-    // ─────────────────────────────────────────────────────────────
-    //  ListeningTopic
-    // ─────────────────────────────────────────────────────────────
     private static class ListeningTopic {
-        final String       name;
-        final String       description;
-        final String       defaultSpeed;
-        final int          durationSeconds;
+        final String name;
+        final String description;
+        final String defaultSpeed;
+        final int durationSeconds;
         final List<String> keywords;
 
         ListeningTopic(String name, String description, String defaultSpeed,
                        int durationSeconds, List<String> keywords) {
-            this.name            = name;
-            this.description     = description;
-            this.defaultSpeed    = defaultSpeed;
+            this.name = name;
+            this.description = description;
+            this.defaultSpeed = defaultSpeed;
             this.durationSeconds = durationSeconds;
-            this.keywords        = keywords;
+            this.keywords = keywords;
         }
     }
 
     private static class ListeningState {
-        // FIX #7: списки с ограниченным размером
-        final List<Double>        comprehensionScores = new ArrayList<>();
-        final List<String>        practicedTopics     = new ArrayList<>();
-        final Map<String, Double> topicScores         = new HashMap<>();
-        // FIX #3: счётчики попыток для честного среднего
-        final Map<String, int[]>  topicAttempts       = new HashMap<>(); // [attempts, sumScore*10]
-        final List<Long>          responseTimes       = new ArrayList<>();
+        final List<Double> comprehensionScores = new ArrayList<>();
+        final List<String> practicedTopics = new ArrayList<>();
+        final Map<String, Double> topicScores = new HashMap<>();
+        final Map<String, int[]>  topicAttempts = new HashMap<>();
+        final List<Long> responseTimes = new ArrayList<>();
 
-        String  currentTopic;
-        int     exercisesCompleted; // FIX #2: инкрементируется только в endExercise
-        int     correctKeyPoints;
-        double  averageComprehension;
-        double  bestScore;
-        String  lastTranscript;
-        long    totalTimeSpent;
-        long    sessionStartTime;
+        String currentTopic;
+        int exercisesCompleted;
+        int correctKeyPoints;
+        double averageComprehension;
+        double bestScore;
+        String lastTranscript;
+        long totalTimeSpent;
+        long sessionStartTime;
 
-        // FIX #5: TTL
         Instant lastActivity = Instant.now();
 
         void startExercise() {
             sessionStartTime = System.currentTimeMillis();
         }
 
-        // FIX #2: единственный инкремент exercisesCompleted
         void endExercise(boolean correct) {
             if (sessionStartTime > 0) {
-                totalTimeSpent  += System.currentTimeMillis() - sessionStartTime;
+                totalTimeSpent += System.currentTimeMillis() - sessionStartTime;
                 sessionStartTime = 0;
             }
             exercisesCompleted++;
@@ -201,7 +192,7 @@ public class ListeningStrategy implements LearningModeStrategy {
 
     public ListeningStrategy(AiService aiService) {
         this.aiService = aiService;
-        this.executor  = ThreadPoolManager.getInstance().getBackgroundExecutor();
+        this.executor = ThreadPoolManager.getInstance().getBackgroundExecutor();
         startSessionCleanup();
         logger.info("ListeningStrategy инициализирована с {} уровнями", listeningTopics.size());
     }
@@ -240,7 +231,7 @@ public class ListeningStrategy implements LearningModeStrategy {
 
             if (state.currentTopic == null) {
                 ListeningTopic topic = getNextTopic(context, state);
-                state.currentTopic   = topic.name;
+                state.currentTopic = topic.name;
                 state.lastTranscript = generateTranscript(topic, context.getCurrentLevel());
                 addPracticedTopic(state, topic.name);
             }
@@ -296,13 +287,88 @@ public class ListeningStrategy implements LearningModeStrategy {
                     ? getTopicByName(state.currentTopic)
                     : getNextTopic(context, state);
 
-            String prompt     = buildListeningPrompt(userInput, state, context, currentTopic);
+            String prompt = buildListeningPrompt(userInput, state, context, currentTopic);
             String aiResponse = aiService.generateBotResponse(prompt, null);
 
             return generateTtsText(aiResponse,
                     state != null ? state.averageComprehension : 0,
                     state, currentTopic);
         }, executor);
+    }
+
+    private String generateTtsText(String aiResponse, double score,
+                                   ListeningState state, ListeningTopic topic) {
+        StringBuilder tts = new StringBuilder();
+
+        String cleanResponse = extractMainListeningMessage(aiResponse);
+
+        if (score >= EXCELLENT_COMPREHENSION) {
+            tts.append("Excellent comprehension! ");
+        } else if (score >= GOOD_COMPREHENSION) {
+            tts.append("Good comprehension! ");
+        } else {
+            tts.append("Let's work on understanding this better. ");
+        }
+
+        if (!cleanResponse.isEmpty()) {
+            tts.append(cleanResponse);
+            if (!cleanResponse.endsWith(". ") && !cleanResponse.endsWith(".")) {
+                tts.append(". ");
+            } else {
+                tts.append(" ");
+            }
+        }
+
+        if (state != null && state.currentTopic != null) {
+            ListeningTopic nextTopic = getTopicByName(state.currentTopic);
+            tts.append("Next topic: ").append(nextTopic.name).append(". ");
+        }
+
+        tts.append("Keep practicing your listening skills!");
+
+        return tts.toString();
+    }
+
+    private String extractMainListeningMessage(String fullResponse) {
+        if (fullResponse == null || fullResponse.isEmpty()) {
+            return "";
+        }
+
+        String[] statsMarkers = {
+                "YOUR RESULTS",
+                "📊 YOUR RESULTS",
+                "💡 QUICK TIPS",
+                "═══════════════════════════════════════",
+                "────────────────"
+        };
+
+        String mainMessage = fullResponse;
+        for (String marker : statsMarkers) {
+            int markerIndex = fullResponse.indexOf(marker);
+            if (markerIndex != -1) {
+                mainMessage = fullResponse.substring(0, markerIndex).trim();
+                break;
+            }
+        }
+
+        mainMessage = mainMessage.replace("🎧 LISTENING PRACTICE", "")
+                .replace("LISTENING PRACTICE", "")
+                .trim();
+
+        mainMessage = mainMessage.replaceAll("[\\n\\r]+", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+
+        if (mainMessage.length() > 250) {
+            int firstSentenceEnd = mainMessage.indexOf(". ", 150);
+            if (firstSentenceEnd != -1 && firstSentenceEnd < 300) {
+                mainMessage = mainMessage.substring(0, firstSentenceEnd + 1);
+            } else {
+                mainMessage = mainMessage.substring(0, 250) + "...";
+            }
+        }
+
+        return mainMessage;
     }
 
     @Override
@@ -489,7 +555,7 @@ public class ListeningStrategy implements LearningModeStrategy {
 
         try {
             String aiResp = aiService.generateBotResponse(prompt, null);
-            String clean  = aiResp.replaceAll("```json|```", "").trim();
+            String clean = aiResp.replaceAll("```json|```", "").trim();
             java.util.regex.Matcher m = java.util.regex.Pattern
                     .compile("\"score\"\\s*:\\s*(\\d+(?:\\.\\d+)?)")
                     .matcher(clean);
@@ -543,7 +609,7 @@ public class ListeningStrategy implements LearningModeStrategy {
 
     private String buildListeningPrompt(String userInput, ListeningState state,
                                         LearningContext context, ListeningTopic topic) {
-        double level          = context.getCurrentLevel();
+        double level = context.getCurrentLevel();
         double avgComprehension = (state != null) ? state.averageComprehension : 0.0;
 
         return String.format("""
@@ -643,21 +709,6 @@ public class ListeningStrategy implements LearningModeStrategy {
                 "Keep going! You're improving with every session 🔥\n";
     }
 
-    private String generateTtsText(String aiResponse, double score,
-                                   ListeningState state, ListeningTopic topic) {
-        String cleanResponse = aiResponse.replaceAll("[\\n\\r]+", " ").trim();
-        if (cleanResponse.length() > 200) cleanResponse = cleanResponse.substring(0, 200) + "... ";
-
-        StringBuilder tts = new StringBuilder(cleanResponse).append(" ");
-        tts.append(String.format("Your comprehension score is %.1f percent. ", score));
-        if (state != null) {
-            tts.append(String.format("Your best score is %.1f percent. ", state.bestScore));
-            tts.append(String.format("You have completed %d listening exercises. ", state.exercisesCompleted));
-        }
-        tts.append("Keep practicing to improve your listening skills.");
-        return tts.toString();
-    }
-
     private String generateTaskDisplayText(ListeningTopic topic, LearningContext context) {
         String level = determineLevel(context.getCurrentLevel());
         String speed = getSpeed(context.getCurrentLevel());
@@ -682,7 +733,7 @@ public class ListeningStrategy implements LearningModeStrategy {
 
     private String generateTaskTtsText(ListeningTopic topic, LearningContext context) {
         String topicSpeech = TOPIC_TO_SPEECH.getOrDefault(topic.name, topic.name);
-        String speed       = getSpeed(context.getCurrentLevel());
+        String speed = getSpeed(context.getCurrentLevel());
 
         StringBuilder tts = new StringBuilder();
         tts.append("New listening exercise on ").append(topicSpeech).append(". ");
@@ -769,10 +820,10 @@ public class ListeningStrategy implements LearningModeStrategy {
         List<String> achievements = new ArrayList<>();
         if (state == null) return achievements;
 
-        if      (state.exercisesCompleted >= ACHIEVEMENT_EXERCISES_100) achievements.add("🏆 Listening Master - 100+ exercises!");
-        else if (state.exercisesCompleted >= ACHIEVEMENT_EXERCISES_50)  achievements.add("🎯 Dedicated Listener - 50+ exercises");
-        else if (state.exercisesCompleted >= ACHIEVEMENT_EXERCISES_25)  achievements.add("📚 Regular Listener - 25+ exercises");
-        else if (state.exercisesCompleted >= ACHIEVEMENT_EXERCISES_10)  achievements.add("🎧 Started Listening Journey - 10 exercises");
+        if (state.exercisesCompleted >= ACHIEVEMENT_EXERCISES_100) achievements.add("🏆 Listening Master - 100+ exercises!");
+        else if (state.exercisesCompleted >= ACHIEVEMENT_EXERCISES_50) achievements.add("🎯 Dedicated Listener - 50+ exercises");
+        else if (state.exercisesCompleted >= ACHIEVEMENT_EXERCISES_25) achievements.add("📚 Regular Listener - 25+ exercises");
+        else if (state.exercisesCompleted >= ACHIEVEMENT_EXERCISES_10) achievements.add("🎧 Started Listening Journey - 10 exercises");
 
         if      (state.bestScore >= ACHIEVEMENT_COMPREHENSION_95)
             achievements.add("🔥 Near-perfect comprehension! " + String.format("%.1f%%", state.bestScore));
@@ -826,7 +877,7 @@ public class ListeningStrategy implements LearningModeStrategy {
 
         @SuppressWarnings("unchecked")
         Map<String, int[]> topicAttempts = (Map<String, int[]>) stateMap.getOrDefault("topicAttempts", Collections.emptyMap());
-        state.topicAttempts.putAll(topicAttempts); // FIX #3
+        state.topicAttempts.putAll(topicAttempts);
 
         @SuppressWarnings("unchecked")
         List<Long> responseTimes = (List<Long>) stateMap.getOrDefault("responseTimes", Collections.emptyList());
