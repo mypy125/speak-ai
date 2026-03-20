@@ -15,6 +15,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.time.LocalDate;
 import java.util.stream.Collectors;
+
 public class PronunciationStrategy implements LearningModeStrategy {
     private static final Logger logger = LoggerFactory.getLogger(PronunciationStrategy.class);
 
@@ -43,7 +44,7 @@ public class PronunciationStrategy implements LearningModeStrategy {
 
     private static final Duration SESSION_TIMEOUT = Duration.ofHours(2);
 
-    private static final List<String> BEGINNER_PHONEMES     = Arrays.asList(
+    private static final List<String> BEGINNER_PHONEMES = Arrays.asList(
             "θ", "ð", "r", "æ", "ɪ", "ʌ", "ə", "iː", "uː", "v", "w");
     private static final List<String> INTERMEDIATE_PHONEMES = Arrays.asList(
             "eɪ", "aɪ", "ɔɪ", "aʊ", "oʊ", "ʃ", "ʒ", "tʃ", "dʒ", "ŋ", "l");
@@ -362,6 +363,61 @@ public class PronunciationStrategy implements LearningModeStrategy {
         }, executor);
     }
 
+    private String generateTtsText(String phoneme, double score,
+                                   PronunciationState state, PhonemeInfo info) {
+        StringBuilder tts = new StringBuilder();
+
+        if (score >= EXCELLENT_PRONUNCIATION) {
+            tts.append("Excellent pronunciation! ");
+        } else if (score >= GOOD_PRONUNCIATION) {
+            tts.append("Good job! ");
+        } else {
+            tts.append("Let's practice this sound more. ");
+        }
+
+        tts.append(String.format("Your score is %.1f out of 100. ", score));
+
+        String phonemeSpeech = PHONEME_TO_SPEECH.getOrDefault(phoneme, "the sound " + phoneme);
+        tts.append("You're practicing the ").append(phonemeSpeech).append(" sound. ");
+
+        tts.append("Practice with these words: ");
+        for (int i = 0; i < Math.min(3, info.exampleWords.size()); i++) {
+            tts.append(info.exampleWords.get(i));
+            if (i < Math.min(3, info.exampleWords.size()) - 1) tts.append(", ");
+        }
+        tts.append(". ");
+
+        String shortTip = getShortPronunciationTip(phoneme, info);
+        if (shortTip != null && !shortTip.isEmpty()) {
+            tts.append(shortTip).append(". ");
+        }
+
+        if (score >= GOOD_PRONUNCIATION) {
+            tts.append("Keep up the great work!");
+        } else {
+            tts.append("Keep practicing, you'll get better!");
+        }
+
+        return tts.toString();
+    }
+
+    private String getShortPronunciationTip(String phoneme, PhonemeInfo info) {
+        Map<String, String> quickTips = new HashMap<>();
+        quickTips.put("θ", "Place your tongue between your teeth and blow air");
+        quickTips.put("ð", "Place your tongue between your teeth and use your voice");
+        quickTips.put("r", "Curve your tongue back without touching the roof of your mouth");
+        quickTips.put("æ", "Open your mouth wide, like saying 'cat'");
+        quickTips.put("ɪ", "Make a short, relaxed sound like in 'sit'");
+        quickTips.put("ə", "Make a short, relaxed sound - it's never stressed");
+        quickTips.put("ŋ", "Make the sound in the back of your mouth, like 'sing'");
+        quickTips.put("w", "Round your lips like you're going to whistle");
+        quickTips.put("v", "Touch your top teeth to your bottom lip and vibrate");
+
+        return quickTips.getOrDefault(phoneme, info.articulation.length() > 100
+                ? info.articulation.substring(0, 100)
+                : info.articulation);
+    }
+
     @Override
     public CompletableFuture<LearningProgress> analyzeProgress(LearningContext context) {
         return CompletableFuture.supplyAsync(() -> {
@@ -434,7 +490,7 @@ public class PronunciationStrategy implements LearningModeStrategy {
                 .build();
     }
 
-    @Override public boolean isSupported()    { return pronunciationTrainer != null; }
+    @Override public boolean isSupported() { return pronunciationTrainer != null; }
     @Override public String getStrategyName() { return "Pronunciation Training Strategy"; }
 
     private double analyzePronunciation(String userInput, String phoneme, LearningContext context) {
@@ -547,43 +603,6 @@ public class PronunciationStrategy implements LearningModeStrategy {
         }
 
         return display.toString();
-    }
-
-    private String generateTtsText(String phoneme, double score,
-                                   PronunciationState state, PhonemeInfo info) {
-        String verdict = score >= EXCELLENT_PRONUNCIATION ? "Excellent! "
-                : score >= GOOD_PRONUNCIATION ? "Good job! "
-                : "Keep practicing. ";
-
-        String phonemeSpeech = PHONEME_TO_SPEECH.getOrDefault(phoneme, "the sound " + phoneme);
-
-        StringBuilder tts = new StringBuilder(verdict);
-        tts.append(String.format("Your score is %.1f out of 100. ", score));
-        tts.append("You are practicing the ").append(phonemeSpeech).append(" sound. ");
-        tts.append(info.description).append(". ");
-        tts.append("To pronounce it, ").append(info.articulation).append(". ");
-        tts.append("Practice with these words: ");
-        for (int i = 0; i < Math.min(3, info.exampleWords.size()); i++) {
-            tts.append(info.exampleWords.get(i));
-            if (i < Math.min(3, info.exampleWords.size()) - 1) tts.append(", ");
-        }
-        tts.append(". ");
-
-        if (state != null) {
-            tts.append(String.format("Your average score is %.1f percent. ", state.averageScore));
-            tts.append(String.format("You have completed %d exercises. ", state.exercisesCompleted));
-
-            List<String> weak = state.getWeakPhonemes();
-            if (!weak.isEmpty() && !weak.get(0).equals(phoneme)) {
-                String nextSpeech = PHONEME_TO_SPEECH.getOrDefault(weak.get(0), weak.get(0));
-                tts.append("Next, try working on the ").append(nextSpeech).append(" sound. ");
-            }
-        }
-
-        List<String> tips = generatePronunciationTips(phoneme, info);
-        if (!tips.isEmpty()) tts.append("Tip: ").append(tips.get(0)).append(". ");
-
-        return tts.toString();
     }
 
     private String generateTaskDisplayText(String phoneme, PhonemeInfo info, LearningContext context) {
