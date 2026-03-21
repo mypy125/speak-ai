@@ -53,7 +53,6 @@ public class VocabularyStrategy implements LearningModeStrategy {
     private static final Map<String, List<VocabularyTopic>> vocabularyTopics = new HashMap<>();
 
     static {
-        // Beginner topics (A1-A2)
         vocabularyTopics.put("beginner", Arrays.asList(
                 new VocabularyTopic("Family", "Basic family members and relationships",
                         Arrays.asList("mother", "father", "brother", "sister", "grandparents", "aunt", "uncle", "cousin")),
@@ -86,7 +85,6 @@ public class VocabularyStrategy implements LearningModeStrategy {
                         Arrays.asList("teacher", "student", "book", "pen", "desk", "homework", "exam", "lesson"))
         ));
 
-        // Intermediate topics (B1-B2)
         vocabularyTopics.put("intermediate", Arrays.asList(
                 new VocabularyTopic("Work", "Professional environment and career",
                         Arrays.asList("colleague", "deadline", "promotion", "salary", "interview", "resume", "manager", "project")),
@@ -119,7 +117,6 @@ public class VocabularyStrategy implements LearningModeStrategy {
                         Arrays.asList("tournament", "championship", "competition", "athlete", "spectator", "score", "victory", "defeat"))
         ));
 
-        // Advanced topics (C1-C2)
         vocabularyTopics.put("advanced", Arrays.asList(
                 new VocabularyTopic("Psychology", "Mental processes and behavior",
                         Arrays.asList("cognitive", "perception", "motivation", "personality", "emotion", "behavioral", "consciousness", "subconscious")),
@@ -324,6 +321,93 @@ public class VocabularyStrategy implements LearningModeStrategy {
 
             return generateTtsText(aiResponse, state, currentTopic);
         }, executor);
+    }
+
+    private String generateTtsText(String aiResponse, VocabularyState state, VocabularyTopic topic) {
+        StringBuilder tts = new StringBuilder();
+
+        String topicSpeech = TOPIC_TO_SPEECH.getOrDefault(topic.name, topic.name);
+        tts.append("Vocabulary topic: ").append(topicSpeech).append(". ");
+
+        String cleanResponse = extractMainVocabularyMessage(aiResponse);
+        if (!cleanResponse.isEmpty()) {
+            tts.append(cleanResponse);
+            if (!cleanResponse.endsWith(". ") && !cleanResponse.endsWith(".")) {
+                tts.append(". ");
+            } else {
+                tts.append(" ");
+            }
+        }
+
+        List<String> newWords = topic.keywords.stream()
+                .limit(5)
+                .collect(Collectors.toList());
+        if (!newWords.isEmpty()) {
+            tts.append("Learn words like: ");
+            for (int i = 0; i < newWords.size(); i++) {
+                tts.append(newWords.get(i));
+                if (i < newWords.size() - 1) tts.append(", ");
+            }
+            tts.append(". ");
+        }
+
+        List<String> tips = generateVocabularyTips(topic);
+        if (!tips.isEmpty()) {
+            tts.append("Tip: ").append(tips.get(0)).append(". ");
+        }
+
+        if (state != null && state.wordsLearned > 0) {
+            tts.append(String.format("You're expanding your vocabulary! ", state.wordsLearned));
+        }
+        tts.append("Keep practicing!");
+
+        return tts.toString();
+    }
+
+    /**
+     * Извлекает основное сообщение от AI, убирая статистику и заголовки
+     */
+    private String extractMainVocabularyMessage(String fullResponse) {
+        if (fullResponse == null || fullResponse.isEmpty()) {
+            return "";
+        }
+
+        // Ищем начало статистики
+        String[] statsMarkers = {
+                "YOUR PROGRESS",
+                "📊 YOUR PROGRESS",
+                "💪 STRONG WORDS",
+                "🎯 NEED MORE PRACTICE",
+                "💡 PRACTICE TIPS",
+                "═══════════════════════════════════════",
+                "────────────────"
+        };
+
+        String mainMessage = fullResponse;
+        for (String marker : statsMarkers) {
+            int markerIndex = fullResponse.indexOf(marker);
+            if (markerIndex != -1) {
+                mainMessage = fullResponse.substring(0, markerIndex).trim();
+                break;
+            }
+        }
+
+        // Убираем заголовок "VOCABULARY MASTERY" если есть
+        mainMessage = mainMessage.replace("📚 VOCABULARY MASTERY:", "")
+                .replace("VOCABULARY MASTERY:", "")
+                .trim();
+
+        // Очищаем от лишних символов и переносов строк
+        mainMessage = mainMessage.replaceAll("[\\n\\r]+", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+
+        // Обрезаем слишком длинное сообщение
+        if (mainMessage.length() > 200) {
+            mainMessage = mainMessage.substring(0, 200) + "...";
+        }
+
+        return mainMessage;
     }
 
     @Override
@@ -561,37 +645,6 @@ public class VocabularyStrategy implements LearningModeStrategy {
         generateVocabularyTips(topic).forEach(tip -> display.append("  • ").append(tip).append("\n"));
 
         return display.toString();
-    }
-
-
-    private String generateTtsText(String aiResponse, VocabularyState state, VocabularyTopic topic) {
-        StringBuilder tts = new StringBuilder();
-
-        tts.append("Vocabulary lesson on ").append(TOPIC_TO_SPEECH.getOrDefault(topic.name, topic.name)).append(". ");
-
-        String cleanResponse = aiResponse.replaceAll("[\\n\\r]+", " ").trim();
-        if (cleanResponse.length() > 200) {
-            cleanResponse = cleanResponse.substring(0, 200) + "... ";
-        }
-        tts.append(cleanResponse).append(" ");
-
-        tts.append(String.format("You have learned %d words, and mastered %d of them. ",
-                state.wordsLearned, state.wordsMastered));
-        tts.append(String.format("Your retention rate is %.1f percent. ", state.averageRetention));
-
-        List<String> weakWords = state.getWeakWords();
-        if (!weakWords.isEmpty()) {
-            tts.append("Words needing more practice: ");
-            weakWords.stream().limit(5).forEach(word -> tts.append(word).append(", "));
-            tts.append(". ");
-        }
-
-        List<String> tips = generateVocabularyTips(topic);
-        if (!tips.isEmpty()) {
-            tts.append("Tip: ").append(tips.get(0)).append(". ");
-        }
-
-        return tts.toString();
     }
 
     private String generateTaskDisplayText(VocabularyTopic topic, LearningContext context) {
