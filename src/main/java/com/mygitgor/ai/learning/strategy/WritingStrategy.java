@@ -45,7 +45,6 @@ public class WritingStrategy implements LearningModeStrategy {
     private static final Map<String, List<WritingTopic>> writingTopics = new HashMap<>();
 
     static {
-        // (A1-A2)
         writingTopics.put("beginner", Arrays.asList(
                 new WritingTopic("My Daily Routine",
                         "Describe what you do on a typical day",
@@ -88,7 +87,6 @@ public class WritingStrategy implements LearningModeStrategy {
                         Arrays.asList("beautiful", "peaceful", "visit", "enjoy", "special"))
         ));
 
-        // (B1-B2)
         writingTopics.put("intermediate", Arrays.asList(
                 new WritingTopic("A Memorable Travel Experience",
                         "Describe a trip you took and what made it special",
@@ -131,7 +129,6 @@ public class WritingStrategy implements LearningModeStrategy {
                         Arrays.asList("culture", "tradition", "custom", "difference", "respect"))
         ));
 
-        // (C1-C2)
         writingTopics.put("advanced", Arrays.asList(
                 new WritingTopic("Argumentative Essay: Climate Change",
                         "Present arguments for and against climate change policies",
@@ -384,6 +381,97 @@ public class WritingStrategy implements LearningModeStrategy {
         }, executor);
     }
 
+    private String generateTtsText(String aiResponse, WritingAnalysis analysis,
+                                   WritingState state, WritingTopic topic) {
+        StringBuilder tts = new StringBuilder();
+
+        tts.append("Writing task: ").append(topic.title).append(". ");
+
+        String cleanResponse = extractMainWritingMessage(aiResponse);
+        if (!cleanResponse.isEmpty()) {
+            tts.append(cleanResponse);
+            if (!cleanResponse.endsWith(". ") && !cleanResponse.endsWith(".")) {
+                tts.append(". ");
+            } else {
+                tts.append(" ");
+            }
+        }
+
+        if (analysis.overallScore >= EXCELLENT_SCORE) {
+            tts.append("Excellent work! ");
+        } else if (analysis.overallScore >= GOOD_SCORE) {
+            tts.append("Good job! ");
+        } else {
+            tts.append("Let's keep practicing. ");
+        }
+        tts.append(String.format("Score %.1f. ", analysis.overallScore));
+
+        tts.append(String.format("Grammar %.1f. ", analysis.grammarScore));
+        tts.append(String.format("Vocabulary %.1f. ", analysis.vocabularyScore));
+
+        tts.append(String.format("You wrote %d words. ", analysis.wordCount));
+
+        if (!analysis.strengths.isEmpty()) {
+            String strength = analysis.strengths.get(0);
+            if (strength.length() < 80) {
+                tts.append(strength).append(". ");
+            }
+        }
+
+        if (state != null) {
+            String weakest = state.getWeakestAspect();
+            tts.append("Focus on ").append(weakest.toLowerCase()).append(" next time. ");
+        }
+
+        tts.append("Keep writing to improve your skills!");
+
+        return tts.toString();
+    }
+
+    private String extractMainWritingMessage(String fullResponse) {
+        if (fullResponse == null || fullResponse.isEmpty()) {
+            return "";
+        }
+
+        String[] statsMarkers = {
+                "DETAILED SCORES",
+                "📊 DETAILED SCORES",
+                "STATISTICS",
+                "📝 STATISTICS",
+                "YOUR PROGRESS",
+                "📋 YOUR PROGRESS",
+                "STRENGTHS",
+                "💪 STRENGTHS",
+                "FOCUS FOR NEXT TIME",
+                "🎯 FOCUS FOR NEXT TIME",
+                "═══════════════════════════════════════",
+                "────────────────"
+        };
+
+        String mainMessage = fullResponse;
+        for (String marker : statsMarkers) {
+            int markerIndex = fullResponse.indexOf(marker);
+            if (markerIndex != -1) {
+                mainMessage = fullResponse.substring(0, markerIndex).trim();
+                break;
+            }
+        }
+
+        mainMessage = mainMessage.replace("✍️ WRITING ANALYSIS:", "")
+                .replace("WRITING ANALYSIS:", "")
+                .trim();
+
+        mainMessage = mainMessage.replaceAll("[\\n\\r]+", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+
+        if (mainMessage.length() > 200) {
+            mainMessage = mainMessage.substring(0, 200) + "...";
+        }
+
+        return mainMessage;
+    }
+
     @Override
     public CompletableFuture<LearningProgress> analyzeProgress(LearningContext context) {
         return CompletableFuture.supplyAsync(() -> {
@@ -438,10 +526,8 @@ public class WritingStrategy implements LearningModeStrategy {
 
         String weakestAspect = state != null ? state.getWeakestAspect() : "Grammar";
 
-        // Текст для отображения
         String displayDescription = generateTaskDisplayText(topic, context);
 
-        // Текст для TTS
         String ttsDescription = generateTaskTtsText(topic, context, weakestAspect);
 
         return LearningTask.builder()
@@ -687,9 +773,6 @@ public class WritingStrategy implements LearningModeStrategy {
         }
     }
 
-    /**
-     * Генерирует текст для отображения
-     */
     private String generateDisplayText(String aiResponse, WritingAnalysis analysis,
                                        WritingState state, WritingTopic topic) {
         StringBuilder display = new StringBuilder();
@@ -737,47 +820,6 @@ public class WritingStrategy implements LearningModeStrategy {
         display.append("Keep writing! Every text makes you a better writer! 🚀\n");
 
         return display.toString();
-    }
-
-    /**
-     * Генерирует текст для TTS
-     */
-    private String generateTtsText(String aiResponse, WritingAnalysis analysis,
-                                   WritingState state, WritingTopic topic) {
-        StringBuilder tts = new StringBuilder();
-
-        // Очищаем AI ответ от возможных маркдаун символов
-        String cleanResponse = aiResponse.replaceAll("[\\*\\_\\`\\#]", "")
-                .replaceAll("\\[([^\\]]+)\\]\\([^\\)]+\\)", "$1")
-                .trim();
-
-        // Берем первые 150 символов AI ответа
-        if (cleanResponse.length() > 150) {
-            cleanResponse = cleanResponse.substring(0, 150) + "... ";
-        }
-        tts.append(cleanResponse).append(" ");
-
-        tts.append(String.format("Your overall score is %.1f out of 100. ", analysis.overallScore));
-
-        tts.append("Detailed scores: ");
-        tts.append(String.format("Grammar %.1f, ", analysis.grammarScore));
-        tts.append(String.format("Style %.1f, ", analysis.styleScore));
-        tts.append(String.format("Structure %.1f, ", analysis.structureScore));
-        tts.append(String.format("Vocabulary %.1f, ", analysis.vocabularyScore));
-        tts.append(String.format("and Coherence %.1f. ", analysis.coherenceScore));
-
-        tts.append(String.format("You wrote %d words. ", analysis.wordCount));
-        tts.append(String.format("You have completed %d writing tasks. ", state.textsCompleted));
-
-        if (!analysis.strengths.isEmpty()) {
-            tts.append("Strengths include: ").append(analysis.strengths.get(0)).append(". ");
-        }
-
-        tts.append("Your focus for next time is ").append(state.getWeakestAspect()).append(". ");
-
-        tts.append("Keep writing to improve your skills.");
-
-        return tts.toString();
     }
 
     private String generateTaskDisplayText(WritingTopic topic, LearningContext context) {
