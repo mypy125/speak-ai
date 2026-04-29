@@ -376,7 +376,6 @@ public class WritingStrategy implements LearningModeStrategy {
             String prompt = buildDetailedWritingPrompt(userInput, state, context, currentTopic, analysis);
             String aiResponse = aiService.generateBotResponse(prompt, null);
 
-            // Возвращаем TTS текст
             return generateTtsText(aiResponse, analysis, state, currentTopic);
         }, executor);
     }
@@ -614,8 +613,6 @@ public class WritingStrategy implements LearningModeStrategy {
 
     private WritingAnalysis analyzeWriting(String text, WritingState state,
                                            WritingTopic topic, LearningContext context) {
-        // В реальном приложении здесь будет вызов AI для анализа
-        // Сейчас используем упрощенную логику
 
         int wordCount = text.split("\\s+").length;
         int sentenceCount = text.split("[.!?]+").length;

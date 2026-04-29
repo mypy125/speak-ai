@@ -30,7 +30,7 @@ public class ConversationStrategy implements LearningModeStrategy {
     private static final double GRAMMAR_PROGRESS_WEIGHT = 0.15;
 
     private static final int MAX_HISTORY_SIZE = 50;
-    private static final int ACHIEVEMENT_TURNS_50  = 50;
+    private static final int ACHIEVEMENT_TURNS_50 = 50;
     private static final int ACHIEVEMENT_TURNS_100 = 100;
     private static final int ACHIEVEMENT_TURNS_200 = 200;
     private static final double ACHIEVEMENT_FLUENCY_80 = 80.0;
@@ -359,8 +359,7 @@ public class ConversationStrategy implements LearningModeStrategy {
     }
 
     private String getTechnicalFocus(LearningContext context) {
-        // This would come from user's profile/preferences
-        // For now, return a default or empty string
+
         return "general software engineering";
     }
 

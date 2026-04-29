@@ -392,17 +392,14 @@ public class VocabularyStrategy implements LearningModeStrategy {
             }
         }
 
-        // Убираем заголовок "VOCABULARY MASTERY" если есть
         mainMessage = mainMessage.replace("📚 VOCABULARY MASTERY:", "")
                 .replace("VOCABULARY MASTERY:", "")
                 .trim();
 
-        // Очищаем от лишних символов и переносов строк
         mainMessage = mainMessage.replaceAll("[\\n\\r]+", " ")
                 .replaceAll("\\s+", " ")
                 .trim();
 
-        // Обрезаем слишком длинное сообщение
         if (mainMessage.length() > 200) {
             mainMessage = mainMessage.substring(0, 200) + "...";
         }
@@ -747,7 +744,6 @@ public class VocabularyStrategy implements LearningModeStrategy {
 
     private void updateWordMastery(VocabularyState state) {
         // Постепенное затухание для слов, которые давно не использовались
-        // В реальном приложении здесь будет более сложная логика
     }
 
     private void calculateRetention(VocabularyState state) {

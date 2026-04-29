@@ -47,7 +47,7 @@ public class GrammarStrategy implements LearningModeStrategy {
 
     private static final double EMA_WEIGHT = 0.3;
 
-    private static final Map<String, String>           TOPIC_TO_SPEECH = new HashMap<>();
+    private static final Map<String, String> TOPIC_TO_SPEECH = new HashMap<>();
     private static final Map<String, List<GrammarTopic>> grammarTopics = new HashMap<>();
 
     static {

@@ -271,7 +271,6 @@ public class ConversationManager {
 
     public List<Conversation> getConversationsByDate(Date date) {
         try {
-            // В реальном приложении здесь должен быть запрос к БД
             return getHistory().stream()
                     .filter(c -> isSameDay(c.getTimestamp(), date))
                     .toList();

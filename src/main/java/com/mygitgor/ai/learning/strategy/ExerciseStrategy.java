@@ -43,15 +43,15 @@ public class ExerciseStrategy implements LearningModeStrategy {
 
     private static final int COMPLETION_TARGET = 50;
 
-    private static final int    ACHIEVEMENT_EXERCISES_10 = 10;
-    private static final int    ACHIEVEMENT_EXERCISES_50 = 50;
-    private static final int    ACHIEVEMENT_EXERCISES_100 = 100;
-    private static final int    ACHIEVEMENT_EXERCISES_500 = 500;
+    private static final int ACHIEVEMENT_EXERCISES_10 = 10;
+    private static final int ACHIEVEMENT_EXERCISES_50 = 50;
+    private static final int ACHIEVEMENT_EXERCISES_100 = 100;
+    private static final int ACHIEVEMENT_EXERCISES_500 = 500;
     private static final double ACHIEVEMENT_SUCCESS_90 = 90.0;
     private static final double ACHIEVEMENT_SUCCESS_95 = 95.0;
-    private static final int    ACHIEVEMENT_STREAK_5 = 5;
-    private static final int    ACHIEVEMENT_STREAK_10 = 10;
-    private static final int    ACHIEVEMENT_STREAK_20 = 20;
+    private static final int ACHIEVEMENT_STREAK_5 = 5;
+    private static final int ACHIEVEMENT_STREAK_10 = 10;
+    private static final int ACHIEVEMENT_STREAK_20 = 20;
 
     private static final int MAX_HISTORY_SIZE = 50;
 

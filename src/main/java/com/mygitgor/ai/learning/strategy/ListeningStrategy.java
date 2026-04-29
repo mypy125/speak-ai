@@ -32,10 +32,10 @@ public class ListeningStrategy implements LearningModeStrategy {
     private static final double GOOD_COMPREHENSION = 70.0;
     private static final double EXCELLENT_COMPREHENSION = 85.0;
 
-    private static final int    ACHIEVEMENT_EXERCISES_10 = 10;
-    private static final int    ACHIEVEMENT_EXERCISES_25 = 25;
-    private static final int    ACHIEVEMENT_EXERCISES_50 = 50;
-    private static final int    ACHIEVEMENT_EXERCISES_100 = 100;
+    private static final int ACHIEVEMENT_EXERCISES_10 = 10;
+    private static final int ACHIEVEMENT_EXERCISES_25 = 25;
+    private static final int ACHIEVEMENT_EXERCISES_50 = 50;
+    private static final int ACHIEVEMENT_EXERCISES_100 = 100;
     private static final double ACHIEVEMENT_COMPREHENSION_70 = 70.0;
     private static final double ACHIEVEMENT_COMPREHENSION_85 = 85.0;
     private static final double ACHIEVEMENT_COMPREHENSION_95 = 95.0;
@@ -883,14 +883,14 @@ public class ListeningStrategy implements LearningModeStrategy {
         List<Long> responseTimes = (List<Long>) stateMap.getOrDefault("responseTimes", Collections.emptyList());
         state.responseTimes.addAll(responseTimes);
 
-        state.currentTopic          = (String) stateMap.get("currentTopic");
-        state.exercisesCompleted    = (int)    stateMap.getOrDefault("exercisesCompleted",    0);
-        state.correctKeyPoints      = (int)    stateMap.getOrDefault("correctKeyPoints",      0);
+        state.currentTopic = (String) stateMap.get("currentTopic");
+        state.exercisesCompleted = (int) stateMap.getOrDefault("exercisesCompleted",    0);
+        state.correctKeyPoints = (int) stateMap.getOrDefault("correctKeyPoints",      0);
         state.averageComprehension  = (double) stateMap.getOrDefault("averageComprehension",  0.0);
-        state.bestScore             = (double) stateMap.getOrDefault("bestScore",             0.0);
-        state.lastTranscript        = (String) stateMap.get("lastTranscript");
-        state.totalTimeSpent        = (long)   stateMap.getOrDefault("totalTimeSpent",        0L);
-        state.lastActivity          = Instant.now();
+        state.bestScore = (double) stateMap.getOrDefault("bestScore",             0.0);
+        state.lastTranscript = (String) stateMap.get("lastTranscript");
+        state.totalTimeSpent = (long) stateMap.getOrDefault("totalTimeSpent",        0L);
+        state.lastActivity = Instant.now();
 
         sessions.put(userId, state);
         logger.debug("Восстановлено состояние listening-сессии для пользователя {}", userId);

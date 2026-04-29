@@ -753,7 +753,7 @@ public class PronunciationStrategy implements LearningModeStrategy {
     }
 
     private String determineDifficultyLevel(double level) {
-        if (level < BEGINNER_THRESHOLD)     return "beginner";
+        if (level < BEGINNER_THRESHOLD) return "beginner";
         if (level < INTERMEDIATE_THRESHOLD) return "intermediate";
         return "advanced";
     }

@@ -16,11 +16,11 @@ import java.util.List;
 public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(AudioAnalyzer.class);
 
-    private static final int    SAMPLE_RATE          = 44100;
-    private static final int    FRAME_SIZE           = 1024;
+    private static final int SAMPLE_RATE = 44100;
+    private static final int FRAME_SIZE = 1024;
     private static final double MIN_VOLUME_THRESHOLD = 0.01;
-    private static final double PAUSE_THRESHOLD      = 0.3;
-    private static final double MAX_FLUENCY_SILENCE  = 0.5;
+    private static final double PAUSE_THRESHOLD = 0.3;
+    private static final double MAX_FLUENCY_SILENCE = 0.5;
 
     private volatile boolean closed = false;
     private final List<AudioInputStream> openStreams = Collections.synchronizedList(new ArrayList<>());
@@ -108,9 +108,9 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
     }
 
     private double[] convertToSamples(byte[] audioBytes, AudioFormat format) {
-        int     sampleSize = format.getSampleSizeInBits() / 8;
-        boolean bigEndian  = format.isBigEndian();
-        double[] samples   = new double[audioBytes.length / sampleSize];
+        int sampleSize = format.getSampleSizeInBits() / 8;
+        boolean bigEndian = format.isBigEndian();
+        double[] samples = new double[audioBytes.length / sampleSize];
 
         for (int i = 0; i < samples.length; i++) {
             int offset = i * sampleSize;
@@ -143,7 +143,7 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
                                       List<PauseInfo> pauses) {
         double pronunciationScore = 70.0;
 
-        double[] spectrum       = RealFFT.calculateSpectrum(audioData.samples, FRAME_SIZE);
+        double[] spectrum = RealFFT.calculateSpectrum(audioData.samples, FRAME_SIZE);
         double[] frequencyBands = computeFrequencyBands(spectrum, audioData.sampleRate);
 
         boolean hasVoice = detectVoicePresence(audioData.samples, audioData.sampleRate);
@@ -182,20 +182,20 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
         double totalEnergy = Arrays.stream(spectrum).sum();
         if (totalEnergy == 0) return;
 
-        double vowelEnergy    = bandEnergy(spectrum, sampleRate, 80,  300);
+        double vowelEnergy = bandEnergy(spectrum, sampleRate, 80,  300);
         double fricativeEnergy = bandEnergy(spectrum, sampleRate, 3000, 8000);
-        double nasalEnergy    = bandEnergy(spectrum, sampleRate, 250, 2000);
-        double stopEnergy     = bandEnergy(spectrum, sampleRate, 1000, 4000);
+        double nasalEnergy = bandEnergy(spectrum, sampleRate, 250, 2000);
+        double stopEnergy = bandEnergy(spectrum, sampleRate, 1000, 4000);
 
-        double normVowel     = Math.min(1.0, vowelEnergy    / totalEnergy * 4);
+        double normVowel = Math.min(1.0, vowelEnergy / totalEnergy * 4);
         double normFricative = Math.min(1.0, fricativeEnergy / totalEnergy * 8);
-        double normNasal     = Math.min(1.0, nasalEnergy    / totalEnergy * 5);
-        double normStop      = Math.min(1.0, stopEnergy     / totalEnergy * 6);
+        double normNasal = Math.min(1.0, nasalEnergy / totalEnergy * 5);
+        double normStop = Math.min(1.0, stopEnergy / totalEnergy * 6);
 
-        float vowelScore     = (float) (50 + normVowel     * 50);
+        float vowelScore = (float) (50 + normVowel     * 50);
         float fricativeScore = (float) (50 + normFricative * 50);
-        float nasalScore     = (float) (50 + normNasal     * 50);
-        float stopScore      = (float) (50 + normStop      * 50);
+        float nasalScore = (float) (50 + normNasal     * 50);
+        float stopScore = (float) (50 + normStop      * 50);
 
         analysis.addPhonemeScore("iː",  vowelScore);
         analysis.addPhonemeScore("ɪ",   vowelScore);
@@ -263,7 +263,7 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
 
     private void analyzeIntonation(AudioData audioData, EnhancedSpeechAnalysis analysis) {
         double intonationScore = 80.0;
-        List<int[]> phrases    = segmentIntoPhrases(audioData.samples, audioData.sampleRate);
+        List<int[]> phrases = segmentIntoPhrases(audioData.samples, audioData.sampleRate);
 
         if (phrases.size() < 2) {
             intonationScore -= 15;
@@ -286,7 +286,7 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
 
     private void analyzeVolume(AudioData audioData, EnhancedSpeechAnalysis analysis) {
         double volumeScore = 85.0;
-        double rms         = analysis.getVolumeLevel();
+        double rms = analysis.getVolumeLevel();
 
         if (rms < 0.05) {
             volumeScore -= 30;
@@ -317,7 +317,7 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
     private void analyzePauses(AudioData audioData, EnhancedSpeechAnalysis analysis,
                                List<PauseInfo> pauses) {
         double totalPauseDuration = pauses.stream().mapToDouble(p -> p.duration).sum();
-        double pausePercentage    = totalPauseDuration / audioData.duration * 100;
+        double pausePercentage = totalPauseDuration / audioData.duration * 100;
 
         analysis.setTotalPauseDuration((float) totalPauseDuration);
         analysis.setPausePercentage((float) pausePercentage);
@@ -336,9 +336,9 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
     private void calculateOverallScore(EnhancedSpeechAnalysis analysis) {
         float overallScore = (float) (
                 analysis.getPronunciationScore() * 0.35 +
-                        analysis.getFluencyScore()        * 0.25 +
-                        analysis.getIntonationScore()     * 0.20 +
-                        analysis.getVolumeScore()         * 0.20
+                        analysis.getFluencyScore() * 0.25 +
+                        analysis.getIntonationScore() * 0.20 +
+                        analysis.getVolumeScore() * 0.20
         );
         analysis.setOverallScore(overallScore);
 
@@ -404,8 +404,8 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
     }
 
     private double[] computeFrequencyBands(double[] spectrum, int sampleRate) {
-        double low  = bandEnergy(spectrum, sampleRate,    0,  300);
-        double mid  = bandEnergy(spectrum, sampleRate,  300, 3000);
+        double low = bandEnergy(spectrum, sampleRate,    0,  300);
+        double mid = bandEnergy(spectrum, sampleRate,  300, 3000);
         double high = bandEnergy(spectrum, sampleRate, 3000, sampleRate / 2);
 
         double total = low + mid + high;
@@ -437,15 +437,15 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
     }
 
     private List<PauseInfo> detectPauses(double[] samples, int sampleRate) {
-        List<PauseInfo> pauses    = new ArrayList<>();
-        int    windowSize         = sampleRate / 100;
-        double silenceThreshold   = MIN_VOLUME_THRESHOLD * 0.5;
-        boolean inPause           = false;
-        int pauseStart            = -1;
+        List<PauseInfo> pauses = new ArrayList<>();
+        int    windowSize = sampleRate / 100;
+        double silenceThreshold = MIN_VOLUME_THRESHOLD * 0.5;
+        boolean inPause = false;
+        int pauseStart = -1;
 
         for (int i = 0; i < samples.length / windowSize; i++) {
             int start = i * windowSize;
-            int end   = Math.min(start + windowSize, samples.length);
+            int end = Math.min(start + windowSize, samples.length);
             double energy = 0;
             for (int j = start; j < end; j++) energy += samples[j] * samples[j];
             energy = Math.sqrt(energy / (end - start));
@@ -465,7 +465,7 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
 
     private double calculateSpeakingRate(AudioData audioData, List<PauseInfo> pauses) {
         double totalPauseDuration = pauses.stream().mapToDouble(p -> p.duration).sum();
-        double speakingDuration   = audioData.duration - totalPauseDuration;
+        double speakingDuration = audioData.duration - totalPauseDuration;
         if (speakingDuration <= 0) return 0;
 
         int syllableCount = estimateSyllableCount(audioData.samples, audioData.sampleRate);
@@ -660,20 +660,20 @@ public class AudioAnalyzer implements IAudioAnalysisService, AutoCloseable {
 
     private static class AudioData {
         double[] samples;
-        int      sampleRate;
-        int      channels;
-        double   duration;
+        int sampleRate;
+        int channels;
+        double duration;
     }
 
     private static class PauseInfo {
-        int    startIndex;
-        int    endIndex;
+        int startIndex;
+        int endIndex;
         double duration;
 
         PauseInfo(int start, int end, double duration) {
             this.startIndex = start;
-            this.endIndex   = end;
-            this.duration   = duration;
+            this.endIndex = end;
+            this.duration = duration;
         }
     }
 }
