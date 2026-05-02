@@ -192,7 +192,7 @@ public class AIServiceFactory {
 
         String apiKey = config.getProperty("ai.api.key", "").trim();
 
-        if (apiKey.isEmpty() || apiKey.equals("your-api-key-here")) {
+        if (apiKey.isEmpty() || apiKey.equals("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")) {
             logger.debug("API ключ не настроен, используется MockAiService");
             return null;
         }
@@ -332,7 +332,6 @@ public class AIServiceFactory {
 
     private static void cacheService(String cacheKey, AiService service) {
         if (serviceCache.size() >= CACHE_SIZE) {
-            // Удаляем самую старую запись
             serviceCache.entrySet().stream()
                     .min(Map.Entry.comparingByKey())
                     .ifPresent(entry -> {
