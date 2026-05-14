@@ -75,10 +75,10 @@ public class ConversationStrategy implements LearningModeStrategy {
     private static class ConversationState {
         final List<String> history = Collections.synchronizedList(new ArrayList<>());
         String currentTopic;
-        int    turnCount;
-        double fluencyScore       = 50.0;
+        int turnCount;
+        double fluencyScore = 50.0;
         double averageResponseTime;
-        int    totalUserWords;
+        int totalUserWords;
 
         double grammarScore = 55.0;
 
@@ -86,7 +86,7 @@ public class ConversationStrategy implements LearningModeStrategy {
 
         double levelAtSessionStart = -1;
 
-        List<String>          topicsDiscussed = new ArrayList<>();
+        List<String> topicsDiscussed = new ArrayList<>();
         Map<String, Integer>  vocabularyUsed  = new ConcurrentHashMap<>();
 
         void addToHistory(String message) {
@@ -155,7 +155,7 @@ public class ConversationStrategy implements LearningModeStrategy {
                 updateStateFromAnalysis(state, context);
             }
 
-            String prompt     = buildConversationPrompt(userInput, state, context);
+            String prompt = buildConversationPrompt(userInput, state, context);
             String aiResponse = aiService.generateBotResponse(prompt, null);
 
             long responseTime = System.currentTimeMillis() - startTime;
@@ -165,7 +165,7 @@ public class ConversationStrategy implements LearningModeStrategy {
             state.addToHistory("ai: " + aiResponse);
 
             String displayText = generateDisplayText(aiResponse, state);
-            String ttsText     = generateTtsText(aiResponse, state);
+            String ttsText = generateTtsText(aiResponse, state);
 
             return LearningResponse.builder()
                     .message(displayText)
@@ -185,7 +185,7 @@ public class ConversationStrategy implements LearningModeStrategy {
             if (state == null) {
                 return "Hello! How can I help you practice English today?";
             }
-            String prompt     = buildConversationPrompt(userInput, state, context);
+            String prompt = buildConversationPrompt(userInput, state, context);
             String aiResponse = aiService.generateBotResponse(prompt, null);
             return generateTtsText(aiResponse, state);
         }, executor);
@@ -625,15 +625,7 @@ public class ConversationStrategy implements LearningModeStrategy {
                 .replaceAll("\\[([^\\]]+)\\]\\([^\\)]+\\)", "$1")
                 .trim();
 
-        StringBuilder tts = new StringBuilder(cleanResponse).append(" ");
-
-        if (state.turnCount % 5 == 0) {
-            tts.append(String.format("You've had %d exchanges so far. ", state.turnCount));
-            tts.append(String.format("You've used %d different words. ", state.vocabularyUsed.size()));
-            tts.append("Keep up the great work! ");
-        }
-
-        return tts.toString();
+        return cleanResponse;
     }
 
     private String extractMainMessage(String fullResponse) {
@@ -813,12 +805,12 @@ public class ConversationStrategy implements LearningModeStrategy {
         stateMap.put("currentTopic",        state.currentTopic);
         stateMap.put("turnCount",           state.turnCount);
         stateMap.put("fluencyScore",        state.fluencyScore);
-        stateMap.put("grammarScore",        state.grammarScore);      // FIX #2
-        stateMap.put("totalUserWords",      state.totalUserWords);    // FIX #1
+        stateMap.put("grammarScore",        state.grammarScore);      
+        stateMap.put("totalUserWords",      state.totalUserWords);
         stateMap.put("averageResponseTime", state.averageResponseTime);
         stateMap.put("topicsDiscussed",     new ArrayList<>(state.topicsDiscussed));
         stateMap.put("vocabularyUsed",      new HashMap<>(state.vocabularyUsed));
-        stateMap.put("levelAtSessionStart", state.levelAtSessionStart); // FIX #6
+        stateMap.put("levelAtSessionStart", state.levelAtSessionStart);
         return stateMap;
     }
 

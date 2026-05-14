@@ -838,6 +838,20 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
         if (text == null) return "";
 
         String cleaned = text
+                .replaceAll("(?s)📊 CONVERSATION STATS.*?(?=Keep the conversation going|$)", "")
+                .replaceAll("(?s)📊 CONVERSATION GOALS.*?(?=⏱️|$)", "")
+                .replaceAll("(?s)🗣️ CONVERSATION TOPIC:.*?(?=════|$)", "")
+
+                .replaceAll("(?s)## 🎯 ПЕРСОНАЛИЗИРОВАННЫЕ РЕКОМЕНДАЦИИ:.*?(?=##|$)", "")
+                .replaceAll("(?s)## 📅 НЕДЕЛЬНЫЙ ПЛАН ОБУЧЕНИЯ:.*?(?=##|$)", "")
+                .replaceAll("(?s)## 🎯 Упражнение для практики:.*?(?=##|$)", "")
+                .replaceAll("ℹ️ \\*.*?\\*", "")
+
+                .replaceAll("═{3,}", "")
+                .replaceAll("─{3,}", "")
+                .replaceAll("={3,}", "")
+                .replaceAll("-{3,}", "")
+
                 .replaceAll("#+\\s*", "")
                 .replaceAll("\\*\\*", "")
                 .replaceAll("\\*", "")
@@ -845,22 +859,18 @@ public class GoogleCloudTextToSpeechService implements ITTSService {
                 .replaceAll("_", "")
                 .replaceAll("\\[.*?\\]\\(.*?\\)", "")
                 .replaceAll("<[^>]*>", "")
+
                 .replaceAll("[🤖🎤📝📊🗣️✅⚠️🔴🔊▶️🏆🎉👍💪📚🔧❤️✨🌟🔥💡🎯📅❌ℹ️]", "")
-                .replaceAll("(?s)## 🎯 ПЕРСОНАЛИЗИРОВАННЫЕ РЕКОМЕНДАЦИИ:.*?(?=##|$)", "")
-                .replaceAll("(?s)## 📅 НЕДЕЛЬНЫЙ ПЛАН ОБУЧЕНИЯ:.*?(?=##|$)", "")
-                .replaceAll("(?s)## 🎯 Упражнение для практики:.*?(?=##|$)", "")
-                .replaceAll("ℹ️ \\*.*?\\*", "")
+
                 .replaceAll("\\s+", " ")
-                .replaceAll("\\n{3,}", "\n\n")
                 .trim();
 
         if (cleaned.length() > 4000) {
             int firstSentence = cleaned.indexOf('.');
             if (firstSentence > 200) {
-                cleaned = cleaned.substring(0, firstSentence + 1) +
-                        " Далее следует подробный ответ...";
+                cleaned = cleaned.substring(0, firstSentence + 1) + " Continuing the conversation.";
             } else {
-                cleaned = cleaned.substring(0, 2000) + "... [продолжение следует]";
+                cleaned = cleaned.substring(0, 2000) + "...";
             }
         }
 

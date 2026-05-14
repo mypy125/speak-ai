@@ -192,7 +192,7 @@ public class AIServiceFactory {
 
         String apiKey = config.getProperty("ai.api.key", "").trim();
 
-        if (apiKey.isEmpty() || apiKey.equals("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")) {
+        if (apiKey.isEmpty() || apiKey.equals("your-api-key-here")) {
             logger.debug("API ключ не настроен, используется MockAiService");
             return null;
         }
