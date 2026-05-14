@@ -40,7 +40,6 @@ public class FileUtils {
             Path source = Paths.get(sourcePath);
             Path destination = Paths.get(destinationPath);
 
-            // Создаем директорию назначения если нужно
             createDirectory(destination.getParent().toString());
 
             Files.copy(source, destination, StandardCopyOption.REPLACE_EXISTING);

@@ -805,7 +805,7 @@ public class ConversationStrategy implements LearningModeStrategy {
         stateMap.put("currentTopic",        state.currentTopic);
         stateMap.put("turnCount",           state.turnCount);
         stateMap.put("fluencyScore",        state.fluencyScore);
-        stateMap.put("grammarScore",        state.grammarScore);      
+        stateMap.put("grammarScore",        state.grammarScore);
         stateMap.put("totalUserWords",      state.totalUserWords);
         stateMap.put("averageResponseTime", state.averageResponseTime);
         stateMap.put("topicsDiscussed",     new ArrayList<>(state.topicsDiscussed));

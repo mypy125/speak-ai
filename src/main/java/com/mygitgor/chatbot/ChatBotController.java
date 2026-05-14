@@ -19,6 +19,7 @@ import com.mygitgor.service.interfaces.ITTSService;
 import com.mygitgor.speech.SpeechRecorder;
 import com.mygitgor.service.GoogleCloudTextToSpeechService;
 import com.mygitgor.state.ChatBotState;
+import com.mygitgor.utils.ConfigLoader;
 import com.mygitgor.utils.ResourceManager;
 import com.mygitgor.utils.ThreadPoolManager;
 import javafx.application.Platform;
@@ -213,8 +214,40 @@ public class ChatBotController implements Initializable, AutoCloseable {
         this.messagesManager = new ChatMessagesManager(chatMessagesContainer, chatScrollPane);
     }
 
+//    private void setupServices() {
+//        this.config = ServicesConfig.load();
+//
+//        this.audioAnalyzer = new AudioAnalyzer();
+//        this.pronunciationTrainer = new PronunciationTrainer();
+//        this.speechRecorder = new SpeechRecorder();
+//
+//        resourceManager.register(audioAnalyzer);
+//        resourceManager.register(pronunciationTrainer);
+//        resourceManager.register(speechRecorder);
+//
+//        this.textToSpeechService = initializeTTSService();
+//        resourceManager.register(textToSpeechService);
+//
+//        AiService aiService = initializeAIService();
+//        resourceManager.registerIfCloseable(aiService);
+//
+//        this.chatBotService = new ChatBotService(
+//                aiService,
+//                audioAnalyzer,
+//                pronunciationTrainer,
+//                textToSpeechService,
+//                speechRecorder
+//        );
+//        resourceManager.register(chatBotService);
+//
+//        state.setAiServiceAvailable(aiService.isAvailable());
+//
+//        logger.info("Все сервисы успешно инициализированы");
+//    }
+
     private void setupServices() {
-        this.config = ServicesConfig.load();
+        logger.info("Загрузка конфигурации из .env и ресурсов...");
+        Properties appProperties = ConfigLoader.loadConfig();
 
         this.audioAnalyzer = new AudioAnalyzer();
         this.pronunciationTrainer = new PronunciationTrainer();
@@ -224,10 +257,10 @@ public class ChatBotController implements Initializable, AutoCloseable {
         resourceManager.register(pronunciationTrainer);
         resourceManager.register(speechRecorder);
 
-        this.textToSpeechService = initializeTTSService();
+        this.textToSpeechService = initializeTTSService(appProperties);
         resourceManager.register(textToSpeechService);
 
-        AiService aiService = initializeAIService();
+        AiService aiService = initializeAIService(appProperties);
         resourceManager.registerIfCloseable(aiService);
 
         this.chatBotService = new ChatBotService(
@@ -241,7 +274,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
         state.setAiServiceAvailable(aiService.isAvailable());
 
-        logger.info("Все сервисы успешно инициализированы");
+        logger.info("Все сервисы успешно инициализированы с параметрами из .env");
     }
 
     private void setupLearningStrategies() {
@@ -1342,7 +1375,7 @@ public class ChatBotController implements Initializable, AutoCloseable {
         textStage.show();
     }
 
-    private ITTSService initializeTTSService() {
+    private ITTSService initializeTTSService(Properties props) {
         setupGoogleCloudTTSCredentials();
 
         try {
@@ -1356,6 +1389,12 @@ public class ChatBotController implements Initializable, AutoCloseable {
                         logger.info("✅ Google Cloud TTS успешно инициализирован");
                         logger.info("   Голос: {}", service.getCurrentVoice().getDescription());
                         logger.info("   Метод аутентификации: {}", service.getAuthMethod());
+
+                        String defaultLang = props.getProperty("speech.default.language");
+                        if (defaultLang != null && !defaultLang.trim().isEmpty()) {
+                            service.setLanguage(defaultLang.trim());
+                        }
+
                         return service;
                     } else {
                         logger.warn("⚠️ Google Cloud TTS создан, но недоступен");
@@ -1580,9 +1619,9 @@ public class ChatBotController implements Initializable, AutoCloseable {
         alert.show();
     }
 
-    private AiService initializeAIService() {
+    private AiService initializeAIService(Properties props) {
         return ErrorHandler.orElse(() -> {
-            AiService service = AIServiceFactory.createService(config.getRawProperties());
+            AiService service = AIServiceFactory.createService(props);
             logger.info("✅ AI сервис инициализирован: {}",
                     service.getClass().getSimpleName());
             return service;
