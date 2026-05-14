@@ -282,8 +282,7 @@ public class ChatBotState {
     }
 
     public String setCurrentTextInput(String text) {
-        String previous = currentTextInput.getAndSet(text);
-        return previous;
+        return currentTextInput.getAndSet(text);
     }
 
     public void clearCurrentTextInput() {
@@ -438,9 +437,9 @@ public class ChatBotState {
         states.put("learningMode", currentLearningMode.get());
         states.put("hasAudioFile", hasAudioFile());
         states.put("hasTextInput", hasTextInput());
-        states.put("hasTtsText", hasTtsText()); // ДОБАВЛЕНО
+        states.put("hasTtsText", hasTtsText());
         states.put("lastBotResponseLength", lastBotResponse.get() != null ? lastBotResponse.get().length() : 0);
-        states.put("lastTtsTextLength", lastTtsText.get() != null ? lastTtsText.get().length() : 0); // ДОБАВЛЕНО
+        states.put("lastTtsTextLength", lastTtsText.get() != null ? lastTtsText.get().length() : 0);
         states.put("statistics", statistics.snapshot());
         return states;
     }

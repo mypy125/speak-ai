@@ -130,7 +130,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
     private ResourceManager resourceManager;
 
     private ChatBotState state;
-    private ServicesConfig config;
     private Stage stage;
 
     private ChatMessagesManager messagesManager;
@@ -213,37 +212,6 @@ public class ChatBotController implements Initializable, AutoCloseable {
 
         this.messagesManager = new ChatMessagesManager(chatMessagesContainer, chatScrollPane);
     }
-
-//    private void setupServices() {
-//        this.config = ServicesConfig.load();
-//
-//        this.audioAnalyzer = new AudioAnalyzer();
-//        this.pronunciationTrainer = new PronunciationTrainer();
-//        this.speechRecorder = new SpeechRecorder();
-//
-//        resourceManager.register(audioAnalyzer);
-//        resourceManager.register(pronunciationTrainer);
-//        resourceManager.register(speechRecorder);
-//
-//        this.textToSpeechService = initializeTTSService();
-//        resourceManager.register(textToSpeechService);
-//
-//        AiService aiService = initializeAIService();
-//        resourceManager.registerIfCloseable(aiService);
-//
-//        this.chatBotService = new ChatBotService(
-//                aiService,
-//                audioAnalyzer,
-//                pronunciationTrainer,
-//                textToSpeechService,
-//                speechRecorder
-//        );
-//        resourceManager.register(chatBotService);
-//
-//        state.setAiServiceAvailable(aiService.isAvailable());
-//
-//        logger.info("Все сервисы успешно инициализированы");
-//    }
 
     private void setupServices() {
         logger.info("Загрузка конфигурации из .env и ресурсов...");
